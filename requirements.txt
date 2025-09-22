@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+python-multipart
+pdf2image
+pytesseract
+openpyxl
+pandas
+lxml
+python-docx
+Pillow
+aiofiles
+python-dotenv
+ezdxf
+requests
