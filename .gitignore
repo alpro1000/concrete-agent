@@ -1,0 +1,3 @@
+ENVIRONMENT=production
+OCR_ENGINE=tesseract   # или paddle
+OPENAI_API_KEY=sk-xxxx
