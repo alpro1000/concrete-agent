@@ -1,5 +1,5 @@
 from fastapi import APIRouter, UploadFile, File
-from ..agents.concrete_agent import analyze_concrete
+from agents.concrete_agent import analyze_concrete
 import shutil
 import os
 import tempfile
@@ -26,4 +26,5 @@ async def analyze_concrete_route(docs: list[UploadFile] = File(...), smeta: Uplo
 
         result = analyze_concrete(doc_paths, smeta_path)
         return result
+
 
