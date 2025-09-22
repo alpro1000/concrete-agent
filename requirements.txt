@@ -12,3 +12,5 @@ aiofiles
 python-dotenv
 ezdxf
 requests
+paddleocr
+paddlepaddle
