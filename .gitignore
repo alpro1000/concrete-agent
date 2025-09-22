@@ -1,3 +1,35 @@
-ENVIRONMENT=production
-OCR_ENGINE=tesseract   # или paddle
-OPENAI_API_KEY=sk-xxxx
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+*.egg
+*.pkl
+
+# --- Virtual Environments ---
+venv/
+ENV/
+env/
+.venv/
+.ENV/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+*.log
+logs/
+*.sqlite3
+
+# --- Config / Secrets ---
+.env
+*.key
+*.pem
+
+# --- Replit specific ---
+.replit
+*.replit*
+.local/
