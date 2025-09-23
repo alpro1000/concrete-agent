@@ -1,15 +1,10 @@
 services:
   - type: web
     name: concrete-agent
-    env: python
+    runtime: docker
+    dockerfilePath: ./Dockerfile
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.9   # ⬅️ фиксируем 3.11
-
-
+    
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false
@@ -33,3 +28,7 @@ services:
         value: "logs"
       - key: ALLOWED_EXTENSIONS
         value: ".pdf,.docx,.doc,.txt,.xml,.xls,.xlsx,.csv"
+      - key: PORT
+        value: "10000"
+      - key: PYTHON_VERSION
+        value: "3.11.9"
