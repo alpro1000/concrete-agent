@@ -3,11 +3,11 @@
 Задача: парсинг проектных документов (PDF, DOCX, Excel, XML)
 и подготовка данных для анализа ресурсов.
 """
-
 import logging
 from parsers.doc_parser import DocParser
 from parsers.smeta_parser import SmetaParser
 from parsers.xml_smeta_parser import XMLSmetaParser
+from outputs.save_report import save_merged_report  # ✅ добавлено
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +18,7 @@ class SmetnyInzenyr:
         self.xml_parser = XMLSmetaParser()
 
     def parse_documents(self, files: list[str]) -> dict:
-        """
-        Определяет парсер по расширению файла
-        """
+        """Определяет парсер по расширению файла"""
         results = {}
         for file_path in files:
             try:
@@ -36,10 +34,12 @@ class SmetnyInzenyr:
                 logger.error(f"Ошибка парсинга {file_path}: {e}")
                 results[file_path] = {"error": str(e)}
 
+        # ✅ сохраняем в JSON
+        save_merged_report(results, output_path="outputs/smetny_inzenyr_report.json")
         return results
 
 
-# Функция для быстрого использования без класса
 def parse_files(file_list: list[str]) -> dict:
+    """Функция для быстрого использования без класса"""
     agent = SmetnyInzenyr()
     return agent.parse_documents(file_list)
