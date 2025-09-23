@@ -1,0 +1,28 @@
+# === Python ===
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pkl
+
+# === Virtual env ===
+.venv/
+env/
+venv/
+
+# === Logs ===
+logs/
+*.log
+
+# === Uploads ===
+uploads/
+*.tmp
+
+# === Environment ===
+.env
+.env.local
+*.secrets
+
+# === System ===
+.DS_Store
+Thumbs.db
