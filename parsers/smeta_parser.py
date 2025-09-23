@@ -1,3 +1,7 @@
+"""
+smeta_parser.py
+Парсинг смет (XML, Excel, CSV).
+"""
 import pandas as pd
 import pathlib
 from .xml_smeta_parser import parse_xml_smeta
@@ -14,17 +18,15 @@ def extract_smeta_positions(path):
     else:
         return []
 
-    # Normalize column names to lowercase and strip whitespace
+    # Нормализуем заголовки
     df.columns = [str(c).strip().lower() for c in df.columns]
     
-    # Find the name column - support various Czech column names
     name_col = next((c for c in df.columns if any(keyword in c for keyword in [
         "položka", "polozka", "name", "název", "nazev", "popis", "description"
     ])), None)
     if not name_col:
         return []
     
-    # Rename the detected name column to standardized "name"
     if name_col != "name":
         df = df.rename(columns={name_col: "name"})
     
