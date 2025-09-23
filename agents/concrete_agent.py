@@ -31,7 +31,7 @@ class ConcreteAgent:
             'schodiště': r'\bschodiště\b|\bstairs\b|\bsteps\b',
         }
 
-    def analyze(self, text: str, smeta_data: Dict = None) -> Dict[str, Any]:
+    def analyze_concrete(self, text: str, smeta_data: Dict = None) -> Dict[str, Any]:
         """
         Основная функция анализа бетона
         """
