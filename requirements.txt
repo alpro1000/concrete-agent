@@ -11,7 +11,8 @@ pypdfium2==4.30.0            # PDF движок (ускорение pdfplumber)
 python-docx==1.1.2           # DOCX файлы
 openpyxl==3.1.2              # Excel файлы
 xlrd==2.0.1                  # Старые Excel файлы
-pandas==2.1.3                # Обработка данных
+numpy==1.26.4
+pandas==2.1.4                # Обработка данных
 lxml==4.9.3                  # XML парсинг
 textract==1.6.5              # Fallback для других форматов
 
