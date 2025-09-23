@@ -1,36 +1,65 @@
-name: Deploy to Render
+name: Deploy with Claude Fixer
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Install Render CLI
-        run: curl -fsSL https://render.com/install.sh | bash
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
       - name: Deploy to Render
-        run: render deploy --service concrete-agent --api-key ${{ secrets.RENDER_API_KEY }}
+        id: render-deploy
+        run: |
+          echo "Triggering Render deploy..."
+          curl -X POST "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys" \
+          -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+          -H "Content-Type: application/json"
 
-      - name: If failed, send logs to Claude
+      - name: Get Render logs
         if: failure()
         run: |
-          echo "DEPLOY FAILED. Sending logs to Claude..."
-          LOGS=$(render logs --service concrete-agent --lines 100)
-          curl https://api.anthropic.com/v1/messages \
+          echo "Fetching last Render logs..."
+          curl -s "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/logs" \
+          -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" > render_logs.txt
+          cat render_logs.txt
+
+      - name: Ask Claude to fix errors
+        if: failure()
+        run: |
+          echo "Sending logs to Claude..."
+          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
             -H "x-api-key: ${{ secrets.ANTHROPIC_API_KEY }}" \
             -H "Content-Type: application/json" \
             -d "{
               \"model\": \"claude-3-opus-20240229\",
-              \"max_tokens\": 500,
+              \"max_tokens\": 1000,
               \"messages\": [
-                {\"role\": \"system\", \"content\": \"You are a DevOps AI. Analyze logs and suggest code fixes.\"},
-                {\"role\": \"user\", \"content\": \"Here are the Render logs:\\n$LOGS\"}
+                {\"role\": \"user\", \"content\": \"Here are the Render deploy logs, fix the errors in code and propose a patch:\n$(cat render_logs.txt)\"}
               ]
-            }"
+            }")
+          echo "$RESPONSE" > claude_fix.json
+          cat claude_fix.json
+
+      - name: Create Pull Request with Claude fix
+        if: failure()
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "Claude suggested fix for Render deploy"
+          branch: "claude-fix"
+          title: "Fix: Claude patch for Render errors"
+          body: "This PR contains changes suggested by Claude based on Render logs."
