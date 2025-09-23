@@ -19,7 +19,3 @@ tenacity==8.2.3              # Retry логика
 requests==2.31.0
 python-dotenv==1.0.0
 python-json-logger==2.0.7
-
-# === Testing ===
-pytest==7.4.2
-fpdf==1.7.2
