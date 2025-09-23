@@ -1,4 +1,4 @@
-name: Deploy with Claude Fixer
+name: Deploy with Claude Fixer (Auto Mode with Limit)
 
 on:
   push:
@@ -30,21 +30,16 @@ jobs:
           -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
           -H "Content-Type: application/json"
 
-      - name: Get Render events (logs)
+      - name: Get Render logs
         if: failure()
         run: |
-          echo "Fetching last Render events..."
-          curl -s "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/events" \
-          -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
-          -H "Content-Type: application/json" \
-          | jq '.' > render_logs.json
-          cat render_logs.json
+          curl -s "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/logs" \
+          -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" > render_logs.txt
+          cat render_logs.txt
 
       - name: Ask Claude to fix errors
         if: failure()
         run: |
-          echo "Sending logs to Claude..."
-          LOGS=$(cat render_logs.json | jq -Rs .)
           RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
             -H "x-api-key: ${{ secrets.ANTHROPIC_API_KEY }}" \
             -H "Content-Type: application/json" \
@@ -52,17 +47,40 @@ jobs:
               \"model\": \"claude-3-opus-20240229\",
               \"max_tokens\": 1000,
               \"messages\": [
-                {\"role\": \"user\", \"content\": \"Here are the Render deploy logs, fix the errors in code and propose a patch:\n$LOGS\"}
+                {\"role\": \"user\", \"content\": \"Here are the Render deploy logs, fix the errors in code and propose a patch (return unified diff format):\n$(cat render_logs.txt)\"}
               ]
             }")
           echo "$RESPONSE" > claude_fix.json
           cat claude_fix.json
 
-      - name: Create Pull Request with Claude fix
+      - name: Apply Claude patch automatically
         if: failure()
-        uses: peter-evans/create-pull-request@v6
-        with:
-          commit-message: "Claude suggested fix for Render deploy"
-          branch: "claude-fix"
-          title: "Fix: Claude patch for Render errors"
-          body: "This PR contains changes suggested by Claude based on Render logs."
+        run: |
+          echo "Applying Claude fix..."
+          PATCH=$(jq -r '.content[0].text' claude_fix.json)
+          echo "$PATCH" > claude_patch.diff
+          git apply claude_patch.diff || echo "Failed to apply patch"
+          git config --global user.email "actions@github.com"
+          git config --global user.name "github-actions"
+          git add .
+          git commit -m "Auto-fix by Claude from Render logs"
+          git push origin main
+
+      - name: Track failure attempts
+        if: failure()
+        run: |
+          echo "Handling failure count..."
+          ATTEMPT_FILE=".deploy_failures"
+          if [ -f $ATTEMPT_FILE ]; then
+            COUNT=$(cat $ATTEMPT_FILE)
+          else
+            COUNT=0
+          fi
+          COUNT=$((COUNT+1))
+          echo $COUNT > $ATTEMPT_FILE
+          echo "Failure attempt: $COUNT"
+
+          if [ "$COUNT" -ge 3 ]; then
+            echo "Reached maximum 3 automatic fixes. Stopping auto-fix."
+            exit 1
+          fi
