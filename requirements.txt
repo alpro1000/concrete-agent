@@ -2,19 +2,19 @@
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 python-multipart==0.0.6
-pydantic==2.6.4
-pydantic-core==2.16.3
+pydantic==2.7.1
+pydantic-core==2.18.2
 aiofiles==23.2.1
 
 # === Document Processing ===
-python-docx==1.1.0           # DOCX
-openpyxl==3.1.2              # Excel
-xlrd==2.0.1                  # Старые Excel
-lxml==4.9.3                  # XML парсинг
+python-docx==1.1.0
+openpyxl==3.1.2
+xlrd==2.0.1
+lxml==4.9.3
 
 # === AI Integration ===
-anthropic==0.35.0            # Claude API
-tenacity==8.2.3              # Retry логика
+anthropic==0.35.0
+tenacity==8.2.3
 
 # === Utilities ===
 requests==2.31.0
