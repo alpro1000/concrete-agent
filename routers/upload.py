@@ -1,25 +1,30 @@
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, HTTPException
+from config.settings import settings
 import os
-import shutil
 import uuid
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 @router.post("/files")
 async def upload_files(files: list[UploadFile] = File(...)):
-    saved_paths = []
+    upload_dir = settings.UPLOAD_DIR
+    os.makedirs(upload_dir, exist_ok=True)
 
+    saved_files = []
     for file in files:
-        ext = os.path.splitext(file.filename)[1]
-        filename = f"{uuid.uuid4()}{ext}"
-        path = os.path.join(UPLOAD_DIR, filename)
+        if not any(file.filename.endswith(ext) for ext in settings.ALLOWED_EXTENSIONS):
+            raise HTTPException(status_code=400, detail=f"❌ Недопустимый тип файла: {file.filename}")
 
-        with open(path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        unique_name = f"{uuid.uuid4()}_{file.filename}"
+        file_path = os.path.join(upload_dir, unique_name)
 
-        saved_paths.append({"filename": filename, "path": path})
+        with open(file_path, "wb") as f:
+            f.write(await file.read())
 
-    return {"uploaded_files": saved_paths}
+        saved_files.append({"filename": file.filename, "path": file_path})
+        logger.info(f"📂 Файл загружен: {file.filename} → {file_path}")
+
+    return {"uploaded": saved_files}
