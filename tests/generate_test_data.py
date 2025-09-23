@@ -1,9 +1,14 @@
 import os
 from fpdf import FPDF
 
-TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+# Папка с тестовыми данными
+TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), "test_data")
 
 def ensure_test_data():
+    """
+    Создаёт тестовые файлы (PDF и XML) если их ещё нет.
+    Возвращает словарь с путями к файлам.
+    """
     os.makedirs(TEST_DATA_DIR, exist_ok=True)
 
     # === 1. PDF-документ ===
@@ -47,6 +52,8 @@ def ensure_test_data():
         print(f"✅ Сгенерирован {xml_path}")
     else:
         print(f"ℹ️ Уже существует {xml_path}")
+
+    return {"pdf": pdf_path, "xml": xml_path}
 
 
 if __name__ == "__main__":
