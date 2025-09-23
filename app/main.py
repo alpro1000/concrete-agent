@@ -1,3 +1,24 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from routers import analyze_concrete, analyze_materials, version_diff
+
+app = FastAPI(title="Construction Analysis API", version="1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(analyze_concrete.router, prefix="/analyze", tags=["Concrete"])
+app.include_router(analyze_materials.router, prefix="/analyze", tags=["Materials"])
+app.include_router(version_diff.router, prefix="/compare", tags=["Diff"])
+
+@app.get("/")
+def root():
+    return {"message": "Construction Analysis API", "endpoints": ["/analyze/concrete", "/analyze/materials", "/compare/docs", "/compare/smeta"]}
 # app/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
