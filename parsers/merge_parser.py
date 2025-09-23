@@ -1,3 +1,7 @@
+"""
+merge_parser.py
+Объединяет данные из документов и смет.
+"""
 from collections import defaultdict
 
 def merge_concrete_data(doc_data, smeta_data):
@@ -9,7 +13,7 @@ def merge_concrete_data(doc_data, smeta_data):
         "quantities": []
     })
 
-    # Из текстов/чертежей
+    # Данные из текстов
     for mark, data in doc_data.get("concrete_grades", {}).items():
         merged[mark]["contexts"].update(data.get("used_in", []))
         merged[mark]["smeta_positions"].extend(data.get("found_in_smeta", []))
@@ -18,6 +22,7 @@ def merge_concrete_data(doc_data, smeta_data):
         for mark in merged:
             merged[mark]["classes"].add(cls["code"])
 
+    # Данные из смет
     for s in smeta_data:
         mark = s.get("mark")
         if mark:
@@ -28,7 +33,7 @@ def merge_concrete_data(doc_data, smeta_data):
                 "description": s.get("name")
             })
 
-    # Преобразуем множества в списки
+    # Приводим множества в списки
     result = []
     for mark, data in merged.items():
         result.append({
@@ -41,3 +46,4 @@ def merge_concrete_data(doc_data, smeta_data):
         })
 
     return result
+
