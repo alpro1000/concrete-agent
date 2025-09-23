@@ -4,12 +4,13 @@ uvicorn[standard]==0.24.0
 python-multipart==0.0.6
 aiofiles==23.2.1
 
-# === Document Processing ===
+# === Document Processing (БЕЗ textract!) ===
 python-docx==1.1.0
 openpyxl==3.1.2
 xlrd==2.0.1
-lxml>=6.0.2
+lxml==4.9.4
 pdfplumber==0.11.0
+PyPDF2==3.0.1
 
 # === AI Integration ===
 anthropic==0.35.0
@@ -19,4 +20,13 @@ tenacity==8.2.3
 requests==2.31.0
 python-dotenv==1.0.0
 python-json-logger==2.0.7
+pandas==2.0.0
+pathlib2==2.3.7
 
+# === Testing (опционально) ===
+pytest==7.4.0
+pytest-asyncio==0.21.0
+httpx==0.25.0
+
+# === Production ===
+gunicorn==21.2.0
