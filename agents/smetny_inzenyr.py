@@ -1,4 +1,3 @@
-# smetny_inzenyr.py
 """
 Агент-сметчик (MVP)
 Задача: парсинг проектных документов (PDF, DOCX, Excel, XML)
@@ -18,7 +17,7 @@ class SmetnyInzenyr:
         self.smeta_parser = SmetaParser()
         self.xml_parser = XMLSmetaParser()
 
-    def parse_documents(self, files):
+    def parse_documents(self, files: list[str]) -> dict:
         """
         Определяет парсер по расширению файла
         """
@@ -41,6 +40,6 @@ class SmetnyInzenyr:
 
 
 # Функция для быстрого использования без класса
-def parse_files(file_list):
+def parse_files(file_list: list[str]) -> dict:
     agent = SmetnyInzenyr()
     return agent.parse_documents(file_list)
