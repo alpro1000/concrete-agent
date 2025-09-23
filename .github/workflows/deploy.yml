@@ -70,17 +70,21 @@ jobs:
           echo "COUNT=$COUNT" >> $GITHUB_ENV
 
       - name: Apply Claude patch automatically
-        if: failure() && env.COUNT < 3
+        if: failure()
         run: |
-          echo "Applying Claude fix (Auto mode)..."
-          PATCH=$(jq -r '.content[0].text' claude_fix.json)
-          echo "$PATCH" > claude_patch.diff
-          git apply claude_patch.diff || echo "⚠️ Failed to apply patch"
-          git config --global user.email "actions@github.com"
-          git config --global user.name "github-actions"
-          git add .
-          git commit -m "Auto-fix by Claude (attempt $COUNT)"
-          git push origin main
+          if [ "$COUNT" -lt 3 ]; then
+            echo "Applying Claude fix (Auto mode)..."
+            PATCH=$(jq -r '.content[0].text' claude_fix.json | sed 's/```diff//;s/```//')
+            echo "$PATCH" > claude_patch.diff
+            git apply claude_patch.diff || echo "⚠️ Failed to apply patch"
+            git config --global user.email "actions@github.com"
+            git config --global user.name "github-actions"
+            git add .
+            git commit -m "Auto-fix by Claude (attempt $COUNT)" || echo "⚠️ Nothing to commit"
+            git push origin main || echo "⚠️ Push failed"
+          else
+            echo "Exceeded 3 attempts, skipping auto-patch"
+          fi
 
       - name: Create Pull Request with Claude fix
         if: failure() && env.COUNT >= 3
