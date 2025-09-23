@@ -1,0 +1,36 @@
+name: Deploy to Render
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Install Render CLI
+        run: curl -fsSL https://render.com/install.sh | bash
+
+      - name: Deploy to Render
+        run: render deploy --service concrete-agent --api-key ${{ secrets.RENDER_API_KEY }}
+
+      - name: If failed, send logs to Claude
+        if: failure()
+        run: |
+          echo "DEPLOY FAILED. Sending logs to Claude..."
+          LOGS=$(render logs --service concrete-agent --lines 100)
+          curl https://api.anthropic.com/v1/messages \
+            -H "x-api-key: ${{ secrets.ANTHROPIC_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"model\": \"claude-3-opus-20240229\",
+              \"max_tokens\": 500,
+              \"messages\": [
+                {\"role\": \"system\", \"content\": \"You are a DevOps AI. Analyze logs and suggest code fixes.\"},
+                {\"role\": \"user\", \"content\": \"Here are the Render logs:\\n$LOGS\"}
+              ]
+            }"
