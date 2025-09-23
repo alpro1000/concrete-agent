@@ -1,17 +1,19 @@
 import re
 import json
-from parsers.doc_parser import extract_text_from_docs
-from parsers.pdf_parser import extract_text_from_pdfs
+import logging
+from parsers.doc_parser import DocParser
 
-# Загрузка промта с шаблоном поиска
+logger = logging.getLogger(__name__)
+
+# Загружаем промт с шаблонами, если он есть
 try:
     with open("prompts/materials_prompt.json", encoding="utf-8") as f:
         materials_prompt = json.load(f)
 except FileNotFoundError:
     materials_prompt = {}
-    print("⚠️ Файл prompts/materials_prompt.json не найден, используем дефолтные шаблоны.")
+    logger.warning("⚠️ Файл prompts/materials_prompt.json не найден, используем дефолтные шаблоны.")
 
-# Шаблоны поиска по категориям материалов (если нет внешнего файла)
+# Шаблоны поиска материалов (если нет внешнего файла)
 MATERIAL_PATTERNS = {
     "reinforcement": r"\b(výztuž|Fe\s?\d{3}|R\d{2,3}|ocel)\b",
     "windows": r"\b(okno|okna|PVC|dřevo|sklo)\b",
@@ -20,15 +22,24 @@ MATERIAL_PATTERNS = {
 }
 
 def analyze_materials(doc_paths: list[str]) -> dict:
-    # Извлечение текста из документов
-    text = extract_text_from_docs(doc_paths)
-    if not text.strip():
-        text = extract_text_from_pdfs(doc_paths)  # fallback, если не получилось
+    """
+    Поиск строительных материалов в текстах документов
+    """
+    parser = DocParser()
+    all_text = ""
+
+    # Собираем текст из всех документов
+    for path in doc_paths:
+        try:
+            all_text += "\n" + parser.parse(path)
+        except Exception as e:
+            logger.error(f"Ошибка при обработке {path}: {e}")
 
     results = []
 
+    # Проверяем каждую категорию материалов
     for category, pattern in MATERIAL_PATTERNS.items():
-        matches = re.findall(pattern, text, re.IGNORECASE)
+        matches = re.findall(pattern, all_text, re.IGNORECASE)
         if matches:
             results.append({
                 "type": category,
