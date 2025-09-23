@@ -1,9 +1,8 @@
-name: Deploy with Claude Fixer (Auto + PR fallback)
+name: Deploy with Claude Auto-Fix (with PR fallback)
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -20,42 +19,42 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          set -o pipefail
+          pip install -r requirements.txt 2>&1 | tee build.log
 
       - name: Deploy to Render
         id: render-deploy
         run: |
-          echo "Triggering Render deploy..."
-          curl -X POST "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys" \
-          -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
-          -H "Content-Type: application/json"
+          echo "Triggering Render deploy..." | tee -a build.log
+          curl -s -X POST "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys" \
+               -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+               -H "Content-Type: application/json" | tee -a build.log
 
-      - name: Get Render logs
+      - name: Save logs
         if: failure()
         run: |
-          echo "Fetching last Render logs..."
-          curl -s "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/logs" \
-          -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" > render_logs.txt
-          head -n 50 render_logs.txt
+          echo "⚠️ Build/Deploy failed. Saving logs..."
+          cat build.log || true
 
-      - name: Ask Claude to fix errors
+      - name: Ask Claude for fix
         if: failure()
         run: |
-          echo "Sending logs to Claude..."
+          echo "🤖 Sending logs to Claude..."
           RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
             -H "x-api-key: ${{ secrets.ANTHROPIC_API_KEY }}" \
             -H "Content-Type: application/json" \
             -d "{
               \"model\": \"claude-3-opus-20240229\",
-              \"max_tokens\": 1200,
+              \"max_tokens\": 1500,
               \"messages\": [
-                {\"role\": \"user\", \"content\": \"Here are the Render deploy logs, fix the errors in code and propose a patch (return unified diff format):\n$(cat render_logs.txt)\"}
+                {\"role\": \"user\", \"content\": \"Here are the logs from CI/CD (pip install + Render deploy). Please generate a unified diff patch to fix the issues:\n$(cat build.log)\"}
               ]
             }")
           echo "$RESPONSE" > claude_fix.json
-          cat claude_fix.json
+          echo "$RESPONSE" | jq -r '.content[0].text' > claude_patch.diff
 
-      - name: Check and increment failure counter
+      - name: Track failure counter
         if: failure()
         run: |
           ATTEMPT_FILE=".deploy_failures"
@@ -66,31 +65,27 @@ jobs:
           fi
           COUNT=$((COUNT+1))
           echo $COUNT > $ATTEMPT_FILE
-          echo "Failure attempt: $COUNT"
           echo "COUNT=$COUNT" >> $GITHUB_ENV
+          echo "❌ Deploy failed $COUNT times in a row."
 
       - name: Apply Claude patch automatically
-        if: failure()
+        if: failure() && env.COUNT < 3
         run: |
-          if [ "$COUNT" -lt 3 ]; then
-            echo "Applying Claude fix (Auto mode)..."
-            PATCH=$(jq -r '.content[0].text' claude_fix.json | sed 's/```diff//;s/```//')
-            echo "$PATCH" > claude_patch.diff
-            git apply claude_patch.diff || echo "⚠️ Failed to apply patch"
-            git config --global user.email "actions@github.com"
-            git config --global user.name "github-actions"
-            git add .
-            git commit -m "Auto-fix by Claude (attempt $COUNT)" || echo "⚠️ Nothing to commit"
-            git push origin main || echo "⚠️ Push failed"
-          else
-            echo "Exceeded 3 attempts, skipping auto-patch"
-          fi
+          echo "⚡ Applying Claude fix automatically (attempt $COUNT)..."
+          git apply claude_patch.diff || echo "⚠️ Failed to apply patch"
+          git config --global user.email "actions@github.com"
+          git config --global user.name "github-actions"
+          git add .
+          git commit -m "Auto-fix by Claude (attempt $COUNT)"
+          git push origin main
 
       - name: Create Pull Request with Claude fix
         if: failure() && env.COUNT >= 3
         uses: peter-evans/create-pull-request@v6
         with:
-          commit-message: "Claude suggested fix after 3 failed deploys"
+          commit-message: "Claude suggested fix after ${{ env.COUNT }} failed deploys"
           branch: "claude-fix"
           title: "Fix: Claude patch for Render errors"
-          body: "This PR contains changes suggested by Claude after 3 failed deploys. Please review manually."
+          body: |
+            This PR contains changes suggested by Claude after ${{ env.COUNT }} failed deploys.
+            Please review manually before merging.
