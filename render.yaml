@@ -3,13 +3,10 @@ services:
     name: concrete-agent
     env: python
     plan: free
-    runtime: python-3.11.9  # Явно указываем версию
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port 10000
 
-        envVars:
-      - key: PYTHON_VERSION
-        value: "3.11.9"  # Убедиться в совместимости
+    envVars:
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: RENDER_API_KEY
