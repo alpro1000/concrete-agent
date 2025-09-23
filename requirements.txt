@@ -6,12 +6,14 @@ pydantic==2.5.0
 aiofiles==23.2.1
 
 # === Document Processing ===
-PyMuPDF==1.23.5              # Быстрое извлечение PDF текста
-python-docx==1.1.0           # DOCX файлы
+pdfplumber==0.11.0           # Лёгкий парсер PDF
+pypdfium2==4.30.0            # PDF движок (ускорение pdfplumber)
+python-docx==1.1.2           # DOCX файлы
 openpyxl==3.1.2              # Excel файлы
 xlrd==2.0.1                  # Старые Excel файлы
 pandas==2.1.3                # Обработка данных
 lxml==4.9.3                  # XML парсинг
+textract==1.6.5              # Fallback для других форматов
 
 # === OCR (опционально) ===
 # Раскомментируйте если нужно OCR для сканированных PDF
