@@ -1,30 +1,23 @@
-from defusedxml import ElementTree as ET
+"""
+xml_smeta_parser.py
+Парсинг смет в формате XML.
+"""
+import xml.etree.ElementTree as ET
 
-def safe_float(value: str) -> float:
-    """Safely convert string to float, handling Czech decimal format"""
-    if not value:
-        return 0.0
-    try:
-        # Handle Czech decimal format (comma as decimal separator)
-        normalized = str(value).strip().replace(',', '.')
-        return float(normalized)
-    except (ValueError, TypeError):
-        return 0.0
-
-def parse_xml_smeta(path: str) -> list[dict]:
+def parse_xml_smeta(path):
     try:
         tree = ET.parse(path)
-        records = []
-        for el in tree.findall(".//polozka"):
-            name = el.findtext("nazev") or el.findtext("název") or ""
-            if name.strip():  # Only include records with non-empty names
-                records.append({
-                    "code": el.findtext("kod") or "",
-                    "name": name,
-                    "qty": safe_float(el.findtext("mnozstvi") or el.findtext("množství")),
-                    "unit": el.findtext("mj") or "",
-                    "price": safe_float(el.findtext("cena"))
-                })
-        return records
+        root = tree.getroot()
     except Exception:
         return []
+
+    rows = []
+    for idx, item in enumerate(root.findall(".//Item")):
+        rows.append({
+            "row": idx + 1,
+            "code": item.findtext("Code", "").strip(),
+            "name": item.findtext("Name", "").strip(),
+            "qty": float(item.findtext("Qty", "0").replace(",", ".") or 0),
+            "unit": item.findtext("Unit", "").strip()
+        })
+    return rows
