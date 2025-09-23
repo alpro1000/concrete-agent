@@ -6,24 +6,10 @@ pydantic==2.5.0
 aiofiles==23.2.1
 
 # === Document Processing ===
-pdfplumber==0.11.0           # Лёгкий парсер PDF
-pypdfium2==4.30.0            # PDF движок (ускорение pdfplumber)
-python-docx==1.1.2           # DOCX файлы
-openpyxl==3.1.2              # Excel файлы
-xlrd==2.0.1                  # Старые Excel файлы
-numpy==1.26.4
-pandas==2.1.4                # Обработка данных
+python-docx==1.1.0           # DOCX
+openpyxl==3.1.2              # Excel
+xlrd==2.0.1                  # Старые Excel
 lxml==4.9.3                  # XML парсинг
-textract==1.6.5              # Fallback для других форматов
-
-# === OCR (опционально) ===
-# Раскомментируйте если нужно OCR для сканированных PDF
-# pdf2image==1.16.3
-# pytesseract==0.3.10
-# Pillow==10.0.1
-
-# === CAD файлы (опционально) ===
-# ezdxf==1.1.0               # AutoCAD файлы
 
 # === AI Integration ===
 anthropic==0.35.0            # Claude API
