@@ -4,11 +4,12 @@ services:
     env: python
     plan: free
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port 10000
+
+    runtime: python
+    pythonVersion: 3.11   # 🔥 гарантируем Python 3.11
 
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11   # фиксируем 3.11, чтобы не тянулось 3.13
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: RENDER_API_KEY
@@ -31,4 +32,3 @@ services:
         value: "logs"
       - key: ALLOWED_EXTENSIONS
         value: ".pdf,.docx,.doc,.txt,.xml,.xls,.xlsx,.csv"
-
