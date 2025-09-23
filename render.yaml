@@ -2,21 +2,30 @@ services:
   - type: web
     name: concrete-agent
     env: python
+    plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port 10000
+
     envVars:
-      - key: PYTHONPATH
-        value: /opt/render/project/src
-      - key: PYTHONUNBUFFERED
-        value: "1"
+      - key: ANTHROPIC_API_KEY
+        sync: false   # брать из Render Secrets
+      - key: RENDER_API_KEY
+        sync: false
+      - key: RENDER_SERVICE_ID
+        sync: false
+      - key: CLAUDE_MODEL
+        value: claude-3-sonnet-20240229
       - key: USE_CLAUDE
         value: "true"
-      - key: CLAUDE_MODE
-        value: "enhancement"
-      - key: ANTHROPIC_API_KEY
-        sync: false  # Добавьте через Render Dashboard
-    healthCheckPath: /health
-    disk:
-      name: uploads
-      mountPath: /opt/render/project/src/uploads
-      sizeGB: 1
+      - key: LOG_LEVEL
+        value: "INFO"
+      - key: MAX_FILE_SIZE
+        value: "52428800"
+      - key: MAX_DOCUMENTS
+        value: "10"
+      - key: UPLOAD_DIR
+        value: "uploads"
+      - key: LOGS_DIR
+        value: "logs"
+      - key: ALLOWED_EXTENSIONS
+        value: ".pdf,.docx,.doc,.txt,.xml,.xls,.xlsx,.csv"
