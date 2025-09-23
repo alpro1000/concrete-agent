@@ -1,16 +1,24 @@
-# tests/test_concrete_agent.py
-import asyncio
+import os
 import pytest
+import asyncio
 from agents.concrete_agent import analyze_concrete
+from tests.generate_test_data import ensure_test_data
 
-@pytest.mark.asyncio
-async def test_basic_concrete_analysis():
-    # Заглушки (замени на реальные файлы в tests/data/)
-    doc_paths = ["tests/data/tech_sample.pdf"]
-    smeta_path = "tests/data/smeta_sample.xml"
+@pytest.fixture(scope="session", autouse=True)
+def prepare_test_data():
+    """Автоматически создаёт тестовые файлы перед тестами"""
+    ensure_test_data()
+    return {
+        "doc_paths": ["tests/test_data/tech_sample.pdf"],
+        "smeta_path": "tests/test_data/smeta_sample.xml"
+    }
 
-    result = await analyze_concrete(doc_paths, smeta_path)
+def test_analyze_concrete(prepare_test_data):
+    data = prepare_test_data
+    result = asyncio.run(analyze_concrete(data["doc_paths"], data["smeta_path"]))
 
     assert "concrete_summary" in result
     assert isinstance(result["concrete_summary"], list)
-    assert any("grade" in c for c in result["concrete_summary"])
+
+    # Проверим, что есть хотя бы одна марка бетона
+    assert any("grade" in item for item in result["concrete_summary"])
