@@ -30,18 +30,21 @@ jobs:
           -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
           -H "Content-Type: application/json"
 
-      - name: Get Render logs
+      - name: Get Render events (logs)
         if: failure()
         run: |
-          echo "Fetching last Render logs..."
-          curl -s "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/logs" \
-          -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" > render_logs.txt
-          cat render_logs.txt
+          echo "Fetching last Render events..."
+          curl -s "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/events" \
+          -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+          -H "Content-Type: application/json" \
+          | jq '.' > render_logs.json
+          cat render_logs.json
 
       - name: Ask Claude to fix errors
         if: failure()
         run: |
           echo "Sending logs to Claude..."
+          LOGS=$(cat render_logs.json | jq -Rs .)
           RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
             -H "x-api-key: ${{ secrets.ANTHROPIC_API_KEY }}" \
             -H "Content-Type: application/json" \
@@ -49,7 +52,7 @@ jobs:
               \"model\": \"claude-3-opus-20240229\",
               \"max_tokens\": 1000,
               \"messages\": [
-                {\"role\": \"user\", \"content\": \"Here are the Render deploy logs, fix the errors in code and propose a patch:\n$(cat render_logs.txt)\"}
+                {\"role\": \"user\", \"content\": \"Here are the Render deploy logs, fix the errors in code and propose a patch:\n$LOGS\"}
               ]
             }")
           echo "$RESPONSE" > claude_fix.json
