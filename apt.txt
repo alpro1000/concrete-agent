@@ -1,4 +1,1 @@
-tesseract-ocr
-tesseract-ocr-rus
-tesseract-ocr-ces
-poppler-utils
+# пусто — пока без OCR
