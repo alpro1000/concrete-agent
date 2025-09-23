@@ -1,49 +1,85 @@
+# parsers/merge_parser.py
 """
-merge_parser.py
-Объединяет данные из документов и смет.
+Модуль для объединения результатов анализа (concrete, materials, smeta, diff)
+согласно правилам из prompts/merge_logic_prompt.json
 """
-from collections import defaultdict
 
-def merge_concrete_data(doc_data, smeta_data):
-    merged = defaultdict(lambda: {
-        "classes": set(),
-        "workability": set(),
-        "contexts": set(),
-        "smeta_positions": [],
-        "quantities": []
-    })
+import json
+import os
+import logging
+from typing import Dict, Any
 
-    # Данные из текстов
-    for mark, data in doc_data.get("concrete_grades", {}).items():
-        merged[mark]["contexts"].update(data.get("used_in", []))
-        merged[mark]["smeta_positions"].extend(data.get("found_in_smeta", []))
+from outputs.save_report import save_merged_report
 
-    for cls in doc_data.get("environment_classes", []):
-        for mark in merged:
-            merged[mark]["classes"].add(cls["code"])
+logger = logging.getLogger(__name__)
 
-    # Данные из смет
-    for s in smeta_data:
-        mark = s.get("mark")
-        if mark:
-            merged[mark]["quantities"].append({
-                "qty": s.get("qty"),
-                "unit": s.get("unit"),
-                "row": s.get("row"),
-                "description": s.get("name")
-            })
+# Загружаем правила слияния
+MERGE_RULES = {}
+PROMPT_PATH = os.path.join("prompts", "merge_logic_prompt.json")
 
-    # Приводим множества в списки
-    result = []
-    for mark, data in merged.items():
-        result.append({
-            "mark": mark,
-            "classes": sorted(data["classes"]),
-            "workability": sorted(data["workability"]),
-            "contexts": sorted(data["contexts"]),
-            "quantities": data["quantities"],
-            "smeta_positions": data["smeta_positions"]
-        })
+try:
+    with open(PROMPT_PATH, encoding="utf-8") as f:
+        MERGE_RULES = json.load(f)
+    logger.info(f"✅ Загружены правила объединения из {PROMPT_PATH}")
+except FileNotFoundError:
+    logger.warning(f"⚠️ Файл {PROMPT_PATH} не найден. Используем дефолтные правила.")
+    MERGE_RULES = {
+        "conflict_resolution": {"strategy": "prefer_concrete_agent"},
+        "output_format": {"final_report": "json"}
+    }
 
-    return result
 
+def merge_results(
+    concrete_data: Dict[str, Any] = None,
+    materials_data: Dict[str, Any] = None,
+    smeta_data: Dict[str, Any] = None,
+    diff_data: Dict[str, Any] = None,
+    output_path: str = "outputs/merged_report.json"
+) -> Dict[str, Any]:
+    """
+    Объединяет результаты разных агентов в единый JSON-отчёт.
+
+    :param concrete_data: результат от concrete_agent
+    :param materials_data: результат от materials_agent
+    :param smeta_data: результат от smetny_inzenyr
+    :param diff_data: результат от version_diff_agent
+    :param output_path: путь для сохранения финального отчёта
+    :return: объединённый словарь
+    """
+
+    logger.info("🔄 Объединение результатов анализа")
+
+    final_report: Dict[str, Any] = {
+        "concrete": concrete_data or {},
+        "materials": materials_data or {},
+        "smeta": smeta_data or {},
+        "diff": diff_data or {},
+        "metadata": {
+            "merge_strategy": MERGE_RULES.get("merge_strategy", {}),
+            "conflict_resolution": MERGE_RULES.get("conflict_resolution", {}),
+        }
+    }
+
+    # --- Простейшие правила объединения ---
+    if concrete_data and materials_data:
+        # пример: если встречается "бетон + арматура" → помечаем связку
+        for mat in materials_data.get("materials_found", []):
+            if "ocel" in mat.get("found_terms", []):
+                final_report.setdefault("relations", []).append(
+                    {"material": "steel", "linked_with": "concrete"}
+                )
+
+    if smeta_data and concrete_data:
+        # если смета упоминает бетонные марки — связываем
+        for grade_info in concrete_data.get("concrete_summary", []):
+            mentions = grade_info.get("smeta_mentions", [])
+            if mentions:
+                final_report.setdefault("cross_links", []).append(
+                    {"grade": grade_info["grade"], "smeta_mentions": mentions}
+                )
+
+    # --- Сохраняем результат ---
+    save_merged_report(final_report, output_path)
+
+    logger.info(f"📊 Итоговый отчёт собран и сохранён в {output_path}")
+    return final_report
