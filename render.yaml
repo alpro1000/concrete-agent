@@ -2,7 +2,21 @@ services:
   - type: web
     name: concrete-agent
     env: python
-    plan: starter
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
-    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHONPATH
+        value: /opt/render/project/src
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: USE_CLAUDE
+        value: "true"
+      - key: CLAUDE_MODE
+        value: "enhancement"
+      - key: ANTHROPIC_API_KEY
+        sync: false  # Добавьте через Render Dashboard
+    healthCheckPath: /health
+    disk:
+      name: uploads
+      mountPath: /opt/render/project/src/uploads
+      sizeGB: 1
