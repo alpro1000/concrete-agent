@@ -1,7 +1,6 @@
 """
 Улучшенный ConcreteAgentHybrid — агент для комплексного анализа бетонов.
 """
-
 import re
 import os
 import json
