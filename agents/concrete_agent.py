@@ -36,51 +36,7 @@ class StructuralElement:
     location: str
     context: str
 
-
 class ConcreteAgentHybrid:
-    def __init__(self, knowledge_base_path="knowledge_base/complete-concrete-knowledge-base.json"):
-        self.kb_path = knowledge_base_path
-        self.knowledge_base = self._load_knowledge_base()
-        self.allowed_grades = set(self._extract_valid_grades_from_kb(self.knowledge_base))
-
-    def _load_knowledge_base(self) -> Dict:
-        with open(self.kb_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-
-    def _extract_valid_grades_from_kb(self, kb: Dict) -> List[str]:
-        grades = []
-        grades.extend(kb.get("strength_classes", {}).get("standard", {}).keys())
-        grades.extend(kb.get("strength_classes", {}).get("uhpc", {}).keys())
-        grades.extend(kb.get("concrete_types_by_density", {}).get("lehký_beton", {}).get("strength_classes", []))
-        return grades
-
-    def _normalize_concrete_grade(self, raw: str) -> str:
-        return raw.upper().replace(" ", "").strip()
-
-    def _local_concrete_analysis(self, text: str) -> List[ConcreteMatch]:
-        results = []
-        pattern = r'\b(?:LC|C)\d{1,3}/\d{1,3}\b'
-        matches = re.finditer(pattern, text)
-        for match in matches:
-            grade = self._normalize_concrete_grade(match.group())
-            if grade not in self.allowed_grades:
-                continue
-            context_window = 50
-            start, end = match.start(), match.end()
-            context = text[max(0, start - context_window):min(len(text), end + context_window)]
-            if not re.search(r'\b(beton(u|em|y)?|třída|stupeň|XC\d|XF\d|XD\d|XA\d|XM\d)\b', context, re.IGNORECASE):
-                continue
-            if len(grade) > 8 or '/' not in grade or re.match(r'C\d{4,}', grade):
-                continue
-            results.append(ConcreteMatch(
-                grade=grade,
-                context=context,
-                location="text",
-                confidence=0.95,
-                method="regex"
-            ))
-        return results
-
     def __init__(self, knowledge_base_path="knowledge_base/complete-concrete-knowledge-base.json"):
         # Загружаем базу знаний
         try:
