@@ -1,0 +1,19 @@
+{
+  "role": "concrete_specialist",
+  "task": "Extract all concrete grades and their usage locations from technical documentation and bills of quantities.",
+  "constraints": [
+    "Do not hallucinate concrete types or places of use",
+    "Use only the information from provided documents and spreadsheets"
+  ],
+  "output_format": {
+    "C25/30": {
+      "used_in": ["foundations", "ring beam", "stairs"],
+      "mentioned_in_docs": true,
+      "found_in_smeta": [
+        {"row": 212, "description": "Monolithic base slab C25/30"}
+      ]
+    }
+  },
+  "ssrl_enabled": true,
+  "language": "cs"
+}
