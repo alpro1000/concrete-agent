@@ -19,7 +19,7 @@ class ClaudeAnalysisClient:
             raise ValueError("ANTHROPIC_API_KEY не найден в переменных окружения")
         
         self.client = anthropic.Anthropic(api_key=self.api_key)
-        self.model = "claude-3-sonnet-20240229"  # Используем Claude 3 Sonnet
+        self.model = "claude-3-7-sonnet-20250219"  # Используем Claude 3.7 Sonnet
         
         # Загружаем промпты из JSON файлов
         self.concrete_prompt = self._load_prompt("prompt/concrete_extractor_prompt.json")
