@@ -11,9 +11,9 @@ class ClaudeConfig:
 
     # Модели Claude
     MODELS = {
-        "sonnet": "claude-3-sonnet-20240229",
+        "sonnet": "claude-3-7-sonnet-20250219",
         "haiku": "claude-3-haiku-20240307",  # Быстрая и дешёвая
-        "opus": "claude-3-opus-20240229"     # Самая мощная, но дорогая
+        "opus": "claude-opus-4-1-20250805"     # Самая мощная, но дорогая
     }
 
     # Настройки по умолчанию
