@@ -48,7 +48,7 @@ class StructuralElement:
     location: str
     context: str
 
-class ConcreteAgentHybrid:
+class analyze_concrete:
     def __init__(self, knowledge_base_path="complete-concrete-knowledge-base.json"):
         # Загружаем базу знаний
         try:
@@ -137,12 +137,12 @@ class ConcreteAgentHybrid:
 # Глобальный экземпляр агента
 _hybrid_agent = None
 
-def get_hybrid_agent() -> ConcreteAgentHybrid:
+def get_hybrid_agent() -> analyze_concrete:
     """Получение глобального экземпляра гибридного агента"""
     global _hybrid_agent
     if _hybrid_agent is None:
-        _hybrid_agent = ConcreteAgentHybrid()
-        logger.info("🤖 ConcreteAgentHybrid инициализирован")
+        _hybrid_agent = analyze_concrete()
+        logger.info("🤖 analyze_concrete инициализирован")
     return _hybrid_agent
 
 # ==============================
