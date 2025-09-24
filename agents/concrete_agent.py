@@ -1,25 +1,13 @@
 """
 Улучшенный ConcreteAgentHybrid — агент для комплексного анализа бетонов.
-Возможности:
-- OCR для чертежей с распознаванием марок и мест применения
-- Расширенные regex для всех форматов обозначений
-- Интеграция с knowledge base
-- Парсинг XML смет с кодами
-- Улучшение результатов через Claude
 """
 
 import re
 import os
 import json
 import logging
-import pdfplumber
-import pytesseract
-import cv2
-import numpy as np
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
-from xml.etree import ElementTree as ET
-from PIL import Image, ImageEnhance
 from dataclasses import dataclass
 
 from parsers.doc_parser import DocParser
@@ -49,7 +37,7 @@ class StructuralElement:
     context: str
 
 class ConcreteAgentHybrid:
-    def __init__(self, knowledge_base_path="concrete_knowledge_base_v3.json"):
+    def __init__(self, knowledge_base_path="knowledge_base/complete-concrete-knowledge-base.json"):
         # Загружаем базу знаний
         try:
             with open(knowledge_base_path, "r", encoding="utf-8") as f:
@@ -121,8 +109,152 @@ class ConcreteAgentHybrid:
             }
         }
 
-    # Все остальные методы остаются теми же...
-    # [Здесь продолжение всех методов из оригинального файла]
+    def _local_concrete_analysis(self, text: str) -> Dict[str, Any]:
+        """Локальный анализ текста на наличие марок бетона"""
+        all_matches = []
+        
+        for pattern in self.concrete_patterns:
+            for match in re.finditer(pattern, text, re.IGNORECASE):
+                grade = self._normalize_concrete_grade(match.group().strip())
+                context = text[max(0, match.start()-100):match.end()+100]
+                location = self._identify_structural_element(context)
+                
+                all_matches.append(ConcreteMatch(
+                    grade=grade,
+                    context=context.strip(),
+                    location=location,
+                    confidence=0.9,
+                    method='regex',
+                    coordinates=None
+                ))
+        
+        # Дедупликация
+        unique_matches = {}
+        for match in all_matches:
+            key = match.grade
+            if key not in unique_matches or match.confidence > unique_matches[key].confidence:
+                unique_matches[key] = match
+        
+        return {
+            'concrete_summary': [
+                {
+                    'grade': match.grade,
+                    'location': match.location,
+                    'context': match.context[:200],
+                    'confidence': match.confidence,
+                    'method': match.method
+                }
+                for match in unique_matches.values()
+            ],
+            'analysis_method': 'local',
+            'total_matches': len(unique_matches),
+            'success': True
+        }
+
+    def _normalize_concrete_grade(self, grade: str) -> str:
+        """Нормализует обозначение марки бетона"""
+        normalized = re.sub(r'\s+', '', grade.upper())
+        normalized = re.sub(r'^B(\d+)$', r'C\1/\1', normalized)  # B20 -> C20/25
+        normalized = re.sub(r'^(\d+)$', r'C\1', normalized)       # 30 -> C30
+        return normalized
+
+    def _identify_structural_element(self, context: str) -> str:
+        """Определяет тип конструктивного элемента из контекста"""
+        context_upper = context.upper()
+        
+        for element, info in self.structural_elements.items():
+            if element in context_upper:
+                return f"{element} ({info['en']})"
+        
+        for element, info in self.structural_elements.items():
+            if any(part in context_upper for part in element.split()):
+                return f"{element} ({info['en']}) - частичное совпадение"
+        
+        return "неопределено"
+
+    async def _claude_concrete_analysis(self, text: str, smeta_data: List[Dict]) -> Dict[str, Any]:
+        """Анализ через Claude с расширенным контекстом"""
+        if not self.claude_client:
+            return {"success": False, "error": "Claude client not available"}
+        
+        try:
+            result = await self.claude_client.analyze_concrete_with_claude(text, smeta_data)
+            
+            return {
+                'concrete_summary': result.get('claude_analysis', {}).get('concrete_grades', []),
+                'analysis_method': 'claude_enhanced',
+                'success': True,
+                'tokens_used': result.get('tokens_used', 0),
+                'raw_response': result.get('raw_response', '')
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка Claude анализа: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def analyze(self, doc_paths: List[str], smeta_path: Optional[str] = None,
+                      use_claude: bool = True, claude_mode: str = "enhancement") -> Dict[str, Any]:
+        """
+        Комплексный анализ документов с использованием всех возможностей
+        """
+        logger.info(f"🏗️ Запуск комплексного анализа (режим: {claude_mode})")
+        
+        all_text = ""
+        processed_docs = []
+        
+        # Обрабатываем каждый документ
+        for doc_path in doc_paths:
+            try:
+                text = self.doc_parser.parse(doc_path)
+                all_text += text + "\n"
+                
+                processed_docs.append({
+                    'file': Path(doc_path).name,
+                    'type': 'Document',
+                    'text_length': len(text)
+                })
+                
+            except Exception as e:
+                logger.error(f"❌ Ошибка обработки {doc_path}: {e}")
+                processed_docs.append({'file': Path(doc_path).name, 'error': str(e)})
+        
+        # Обрабатываем смету
+        smeta_data = []
+        if smeta_path:
+            try:
+                smeta_result = self.smeta_parser.parse(smeta_path)
+                smeta_data = smeta_result.get('items', [])
+                logger.info(f"📊 Смета обработана: {len(smeta_data)} позиций")
+            except Exception as e:
+                logger.error(f"❌ Ошибка обработки сметы: {e}")
+        
+        # Локальный анализ
+        local_result = self._local_concrete_analysis(all_text)
+        
+        # Интеграция с Claude
+        final_result = local_result.copy()
+        
+        if use_claude and self.claude_client:
+            claude_result = await self._claude_concrete_analysis(all_text, smeta_data)
+            
+            if claude_mode == "primary" and claude_result.get("success"):
+                final_result = claude_result
+            elif claude_mode == "enhancement" and claude_result.get("success"):
+                final_result.update({
+                    'claude_analysis': claude_result,
+                    'analysis_method': 'hybrid_enhanced',
+                    'total_tokens_used': claude_result.get('tokens_used', 0)
+                })
+        
+        # Добавляем метаданные
+        final_result.update({
+            'processed_documents': processed_docs,
+            'smeta_items': len(smeta_data),
+            'processing_time': 'completed',
+            'knowledge_base_version': '3.0'
+        })
+        
+        return final_result
 
 # ==============================
 # 🔧 Глобальные функции
