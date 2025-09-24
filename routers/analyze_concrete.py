@@ -10,7 +10,6 @@ import logging
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-
 @router.post("/concrete")
 async def analyze_concrete_endpoint(
     docs: list[UploadFile] = File(...),
