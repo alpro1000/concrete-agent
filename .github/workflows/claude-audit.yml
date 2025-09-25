@@ -1,0 +1,19 @@
+name: Claude Code Audit
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: "Проанализируй проект на наличие ошибок, нестыковок в агенте concrete_agent, проверь использование модели Claude (обнови на claude-3-7-sonnet-20250219), исправь неправильные вызовы и внедри стандарты ČSN EN 206 для марки бетона."
+          claude_args: |
+            --model claude-3-7-sonnet-20250219
+            --max-turns 12
