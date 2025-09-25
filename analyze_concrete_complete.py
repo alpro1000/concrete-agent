@@ -193,7 +193,10 @@ async def main():
     """Главная функция"""
     parser = setup_arguments()
     args = parser.parse_args()
-    
+    # ДОБАВИТЬ СЮДА проверку прав
+    if not check_write_permissions():
+        logger.error("❌ Нет прав на запись в папку outputs/")
+        sys.exit(1)
     # Настройка уровня логирования
     if args.quiet:
         logging.getLogger().setLevel(logging.WARNING)
