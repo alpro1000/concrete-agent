@@ -62,7 +62,7 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_args: |
-            --model claude-3-5-sonnet-20241022
+            --model claude-3-7-sonnet-2025021
             --max-turns 20
             --allowedTools "CreateFile,EditFile,Bash(python),Bash(pip),Bash(mkdir),Bash(ls),Bash(cat)"
             --system-prompt "Ты эксперт по Python разработке и анализу строительных материалов. Специализируешься на системах анализа бетона и чешских стандартах ČSN EN 206+A2. Работаешь только через GitHub web interface, без локальной разработки. ВСЕГДА создаваешь Pull Request для изменений."
