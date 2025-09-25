@@ -1,5 +1,6 @@
 """
 Улучшенный ConcreteAgentHybrid — агент для комплексного анализа бетонов.
+agents/concrete_agent.py - ПОЛНЫЙ КОМПЛЕКТНЫЙ КОД СО ВСЕМИ ИЗМЕНЕНИЯМИ
 """
 
 import re
@@ -15,6 +16,7 @@ from parsers.smeta_parser import SmetaParser
 from utils.claude_client import get_claude_client
 from config.settings import settings
 from outputs.save_report import save_merged_report
+from utils.czech_preprocessor import get_czech_preprocessor
 
 logger = logging.getLogger(__name__)
 
@@ -58,18 +60,28 @@ class ConcreteAgentHybrid:
         # Строгий паттерн для поиска марок бетона (только стандартные форматы)
         self.concrete_pattern = r'\b(?:LC|C)\d{1,3}/\d{1,3}\b'
 
-        # Контекстные слова для фильтрации (чешские термины)
+        # Расширенные чешские ключевые слова
         self.context_keywords = [
-            'beton', 'betonu', 'betonem', 'betony', 'betonové', 'betonových',
-            'třída', 'třídy', 'třídu', 'třídě',
+            # Основные термины с диакритикой
+            'beton', 'betonu', 'betonem', 'betony', 'betonové', 'betonových', 'betonářsk',
+            'třída', 'třídy', 'třídu', 'třídě', 'tříd',
             'stupeň', 'stupně', 'stupni',
             'odolnost', 'odolnosti',
             'pevnost', 'pevnosti',
+            
+            # Коды воздействия
             'XC1', 'XC2', 'XC3', 'XC4',
-            'XA1', 'XA2', 'XA3',
+            'XA1', 'XA2', 'XA3', 
             'XF1', 'XF2', 'XF3', 'XF4',
             'XD1', 'XD2', 'XD3',
-            'XM1', 'XM2', 'XM3'
+            'XM1', 'XM2', 'XM3', 'X0',
+            
+            # Конструктивные элементы (с исправленной диакритикой)
+            'dřík', 'základová', 'část', 'piloty', 'vrtané',
+            'říms', 'opěrná', 'zeď', 'konstrukce', 'nosná',
+            'podkladní', 'vrstva', 'výztuž', 'ocel',
+            'izolace', 'vodotěsn', 'drenážn', 'štěrkodrt',
+            'železobetonová', 'monolitický', 'prefabrikát'
         ]
 
         # Конструктивные элементы (чешские термины)
@@ -102,6 +114,9 @@ class ConcreteAgentHybrid:
             'HSV': 'Hlavní stavební výroba',
             'PSV': 'Přidružená stavební výroba',
         }
+
+        # Добавить препроцессор чешского текста
+        self.czech_preprocessor = get_czech_preprocessor()
 
     def _extract_valid_grades_from_kb(self, kb: Dict) -> List[str]:
         """Извлекает допустимые марки бетона из базы знаний"""
@@ -201,11 +216,18 @@ class ConcreteAgentHybrid:
         return bool(re.search(rf'\b({keywords_pattern})\b', context, re.IGNORECASE))
 
     def _local_concrete_analysis(self, text: str) -> Dict[str, Any]:
-        """Улучшенный локальный анализ текста на наличие марок бетона"""
+        """Улучшенный локальный анализ с предобработкой чешского текста"""
+        
+        # НОВОЕ: Предобработка чешского текста
+        preprocessed = self.czech_preprocessor.preprocess_document_text(text)
+        fixed_text = preprocessed['fixed_text']
+        
+        logger.info(f"🇨🇿 Применено {preprocessed['changes_count']} исправлений диакритики")
+        
         all_matches = []
         
-        # Используем строгий паттерн для поиска марок
-        for match in re.finditer(self.concrete_pattern, text, re.IGNORECASE):
+        # Используем ИСПРАВЛЕННЫЙ текст для поиска
+        for match in re.finditer(self.concrete_pattern, fixed_text, re.IGNORECASE):
             grade = self._normalize_concrete_grade(match.group().strip())
             
             # Фильтр 1: Марка должна быть в whitelist из базы знаний
@@ -214,29 +236,28 @@ class ConcreteAgentHybrid:
             
             start_pos, end_pos = match.start(), match.end()
             
+            # УЛУЧШЕННОЕ извлечение контекста с бОльшим окном (150 символов)
+            context = self.czech_preprocessor.enhance_context_window(
+                fixed_text, start_pos, end_pos, window_size=150
+            )
+            
             # Фильтр 2: Проверяем контекст (наличие ключевых слов)
-            if not self._has_concrete_context(text, start_pos, end_pos):
+            if not self._has_concrete_context(context, 0, len(context)):
                 continue
             
             # Фильтр 3: Дополнительная проверка формата
             if not self._is_valid_grade_format(grade):
                 continue
             
-            # Извлекаем расширенный контекст для анализа
-            context_window = 100
-            context_start = max(0, start_pos - context_window)
-            context_end = min(len(text), end_pos + context_window)
-            context = text[context_start:context_end]
-            
-            # Определяем тип конструктивного элемента
-            location = self._identify_structural_element(context)
+            # УЛУЧШЕННОЕ определение конструктивного элемента
+            location = self.czech_preprocessor.identify_construction_element_enhanced(context)
             
             all_matches.append(ConcreteMatch(
                 grade=grade,
                 context=context.strip(),
                 location=location,
-                confidence=0.95,  # Высокая уверенность благодаря строгой фильтрации
-                method='regex_enhanced',
+                confidence=0.95,
+                method='regex_enhanced_czech',
                 coordinates=None
             ))
         
@@ -258,10 +279,15 @@ class ConcreteAgentHybrid:
                 }
                 for match in unique_matches.values()
             ],
-            'analysis_method': 'local_enhanced',
+            'analysis_method': 'local_enhanced_czech',
             'total_matches': len(unique_matches),
             'success': True,
-            'allowed_grades_count': len(self.allowed_grades)
+            'allowed_grades_count': len(self.allowed_grades),
+            'czech_preprocessing': {
+                'diacritic_fixes': preprocessed['changes_count'],
+                'original_length': preprocessed['original_length'],
+                'fixed_length': preprocessed['fixed_length']
+            }
         }
 
     def _normalize_concrete_grade(self, grade: str) -> str:
@@ -278,20 +304,8 @@ class ConcreteAgentHybrid:
         return normalized
 
     def _identify_structural_element(self, context: str) -> str:
-        """Определяет тип конструктивного элемента из контекста"""
-        context_upper = context.upper()
-        
-        # Точное совпадение
-        for element, info in self.structural_elements.items():
-            if element in context_upper:
-                return f"{element} ({info['en']})"
-        
-        # Частичное совпадение
-        for element, info in self.structural_elements.items():
-            if any(part in context_upper for part in element.split()):
-                return f"{element} ({info['en']}) - частичное совпадение"
-        
-        return "неопределено"
+        """Определяет тип конструктивного элемента с использованием чешского препроцессора"""
+        return self.czech_preprocessor.identify_construction_element_enhanced(context)
 
     async def _claude_concrete_analysis(self, text: str, smeta_data: List[Dict]) -> Dict[str, Any]:
         """Анализ через Claude с расширенным контекстом"""
@@ -349,7 +363,7 @@ class ConcreteAgentHybrid:
             except Exception as e:
                 logger.error(f"❌ Ошибка обработки сметы: {e}")
         
-        # Локальный анализ (теперь улучшенный)
+        # Локальный анализ (теперь улучшенный с чешской предобработкой)
         local_result = self._local_concrete_analysis(all_text)
         
         # Интеграция с Claude
@@ -363,7 +377,7 @@ class ConcreteAgentHybrid:
             elif claude_mode == "enhancement" and claude_result.get("success"):
                 final_result.update({
                     'claude_analysis': claude_result,
-                    'analysis_method': 'hybrid_enhanced',
+                    'analysis_method': 'hybrid_enhanced_czech',
                     'total_tokens_used': claude_result.get('tokens_used', 0)
                 })
         
@@ -376,6 +390,7 @@ class ConcreteAgentHybrid:
         })
         
         return final_result
+
 
 # ==============================
 # 🔧 Глобальные функции
@@ -409,7 +424,7 @@ async def analyze_concrete(doc_paths: List[str], smeta_path: Optional[str] = Non
         try:
             save_merged_report(result, "outputs/concrete_analysis_report.json")
             logger.info("💾 Отчет сохранен в outputs/concrete_analysis_report.json")
-        except Exception in e:
+        except Exception as e:
             logger.warning(f"⚠️ Не удалось сохранить отчёт: {e}")
         
         return result
