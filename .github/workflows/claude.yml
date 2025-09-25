@@ -9,6 +9,8 @@ on:
     types: [opened, assigned]
   pull_request_review:
     types: [submitted]
+env:
+  GITHUB_TOKEN: ${{ secrets.CLAUDE_TOKEN }}
 
 jobs:
   claude:
