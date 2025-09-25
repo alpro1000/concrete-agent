@@ -1,145 +1,58 @@
-name: Claude Debug
+name: Claude Code
 
 on:
   issue_comment:
     types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened, assigned]
+  pull_request_review:
+    types: [submitted]
 
 jobs:
-  debug-test:
-    if: contains(github.event.comment.body, '@claude-debug')
+  claude:
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read # Required for Claude to read CI results on PRs
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          fetch-depth: 1
 
-      - name: Install your dependencies
-        run: |
-          python -m pip install --upgrade pip
-          echo "📦 Устанавливаю ваши зависимости..."
-          pip install -r requirements.txt
-          echo "✅ Установка завершена"
-
-      - name: Test imports
-        run: |
-          echo "🔍 Тестирую импорты..."
-          python -c "
-          # Test key imports from your requirements.txt
-          try:
-              import fastapi
-              print('✅ FastAPI:', fastapi.__version__)
-          except Exception as e:
-              print('❌ FastAPI:', e)
-              
-          try:
-              import pandas as pd
-              print('✅ Pandas:', pd.__version__)
-          except Exception as e:
-              print('❌ Pandas:', e)
-              
-          try:
-              import numpy as np
-              print('✅ NumPy:', np.__version__)
-          except Exception as e:
-              print('❌ NumPy:', e)
-              
-          try:
-              import anthropic
-              print('✅ Anthropic:', anthropic.__version__)
-          except Exception as e:
-              print('❌ Anthropic:', e)
-              
-          try:
-              import openpyxl
-              print('✅ OpenPyXL:', openpyxl.__version__)
-          except Exception as e:
-              print('❌ OpenPyXL:', e)
-              
-          try:
-              import PyPDF2
-              print('✅ PyPDF2:', PyPDF2.__version__)
-          except Exception as e:
-              print('❌ PyPDF2:', e)
-          "
-
-      - name: Test project structure
-        run: |
-          echo "📁 Структура проекта:"
-          find . -maxdepth 2 -type f -name "*.py" | head -10
-          echo ""
-          echo "📊 Статистика:"
-          echo "Python файлов: $(find . -name '*.py' | wc -l)"
-          echo "Папок: $(find . -maxdepth 1 -type d | wc -l)"
-
-      - name: Simple test run
-        run: |
-          echo "🧪 Простая проверка тестов..."
-          if [ -d "tests" ]; then
-            echo "Найдена папка tests, попробуем запустить:"
-            # Just syntax check, don't actually run tests
-            find tests -name "*.py" -exec python -m py_compile {} \; || echo "Есть проблемы синтаксиса в тестах"
-            echo "✅ Синтаксис тестов проверен"
-          else
-            echo "ℹ️ Папка tests не найдена"
-          fi
-
-      - name: Check for missing test dependencies
-        run: |
-          echo "🔍 Ищем проблемы с зависимостями тестов..."
-          python -c "
-          from pathlib import Path
-          import re
-          
-          if Path('tests/generate_test_data.py').exists():
-              print('📄 Найден tests/generate_test_data.py')
-              with open('tests/generate_test_data.py', 'r') as f:
-                  content = f.read()
-              
-              # Find imports
-              imports = re.findall(r'from (\w+) import|import (\w+)', content)
-              for imp in imports:
-                  module = imp[0] or imp[1]
-                  if module:
-                      try:
-                          __import__(module)
-                          print(f'  ✅ {module}')
-                      except ImportError:
-                          print(f'  ❌ {module} - НЕ УСТАНОВЛЕН!')
-                          if module == 'fpdf':
-                              print('    💡 Решение: замените fpdf на другую библиотеку или удалите')
-          else:
-              print('ℹ️ generate_test_data.py не найден')
-          "
-
-      - name: Comment result
-        uses: actions/github-script@v7
+      - name: Run Claude Code
+        id: claude
+        uses: anthropics/claude-code-action@v1
         with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `## 🐛 Claude Debug Results
-              
-              Отладочная проверка выполнена!
-              
-              ✅ Ваши зависимости из requirements.txt установлены корректно
-              📦 Протестированы ключевые импорты  
-              📁 Проверена структура проекта
-              🧪 Проверен синтаксис тестов
-              
-              Проверьте логи выше для деталей.
-              
-              ### Если есть проблемы:
-              1. Проблема с \`fpdf\` в тестах - замените на \`PyPDF2\` или \`pdfplumber\`
-              2. FastAPI deprecation warnings - используйте lifespan events
-              3. Проблемы с тестами - проверьте все импорты в test файлах
-              
-              ---
-              *Используйте \`@claude\` для полного анализа*`
-            });
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+
+          # Optional: Customize the trigger phrase (default: @claude)
+          # trigger_phrase: "/claude"
+
+          # Optional: Trigger when specific user is assigned to an issue
+          # assignee_trigger: "claude-bot"
+
+          # Optional: Configure Claude's behavior with CLI arguments
+          # claude_args: |
+          #   --model claude-opus-4-1-20250805
+          #   --max-turns 10
+          #   --allowedTools "Bash(npm install),Bash(npm run build),Bash(npm run test:*),Bash(npm run lint:*)"
+          #   --system-prompt "Follow our coding standards. Ensure all new code has tests. Use TypeScript for new files."
+
+          # Optional: Advanced settings configuration
+          # settings: |
+          #   {
+          #     "env": {
+          #       "NODE_ENV": "test"
+          #     }
+          #   }
