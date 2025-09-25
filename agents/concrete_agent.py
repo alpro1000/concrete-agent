@@ -1,6 +1,6 @@
 """
 Улучшенный ConcreteAgentHybrid — агент для комплексного анализа бетонов.
-agents/concrete_agent.py - ПОЛНЫЙ КОМПЛЕКТНЫЙ КОД СО ВСЕМИ ИЗМЕНЕНИЯМИ
+agents/concrete_agent.py - ИСПРАВЛЕННАЯ ВЕРСИЯ
 """
 
 import re
@@ -17,6 +17,8 @@ from utils.claude_client import get_claude_client
 from config.settings import settings
 from outputs.save_report import save_merged_report
 from utils.czech_preprocessor import get_czech_preprocessor
+from utils.volume_analyzer import get_volume_analyzer
+from utils.report_generator import get_report_generator
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,10 @@ class ConcreteAgentHybrid:
 
         # Строгий паттерн для поиска марок бетона (только стандартные форматы)
         self.concrete_pattern = r'\b(?:LC|C)\d{1,3}/\d{1,3}\b'
+
+        # Добавить анализатор объемов и генератор отчетов
+        self.volume_analyzer = get_volume_analyzer()
+        self.report_generator = get_report_generator()
 
         # Расширенные чешские ключевые слова
         self.context_keywords = [
@@ -307,6 +313,109 @@ class ConcreteAgentHybrid:
         """Определяет тип конструктивного элемента с использованием чешского препроцессора"""
         return self.czech_preprocessor.identify_construction_element_enhanced(context)
 
+    def _analyze_volumes_from_documents(self, doc_paths: List[str], smeta_path: Optional[str] = None) -> List:
+        """Анализирует объемы бетона из документов и смет"""
+        all_volumes = []
+        
+        # Анализируем основные документы
+        for doc_path in doc_paths:
+            try:
+                text = self.doc_parser.parse(doc_path)
+                if text:
+                    volumes = self.volume_analyzer.analyze_volumes_from_text(
+                        text, Path(doc_path).name
+                    )
+                    all_volumes.extend(volumes)
+                    logger.info(f"📊 Найдено объемов в {Path(doc_path).name}: {len(volumes)}")
+            except Exception as e:
+                logger.error(f"❌ Ошибка анализа объемов в {doc_path}: {e}")
+        
+        # Анализируем смету, если есть
+        if smeta_path and os.path.exists(smeta_path):
+            try:
+                smeta_text = self.doc_parser.parse(smeta_path)
+                if smeta_text:
+                    smeta_volumes = self.volume_analyzer.analyze_volumes_from_text(
+                        smeta_text, Path(smeta_path).name
+                    )
+                    all_volumes.extend(smeta_volumes)
+                    logger.info(f"📊 Найдено объемов в смете: {len(smeta_volumes)}")
+            except Exception as e:
+                logger.error(f"❌ Ошибка анализа сметы {smeta_path}: {e}")
+        
+        return all_volumes
+
+    async def analyze_with_volumes(self, doc_paths: List[str], smeta_path: Optional[str] = None,
+                                   use_claude: bool = True, claude_mode: str = "enhancement",
+                                   language: str = "cz") -> Dict[str, Any]:
+        """
+        Расширенный анализ с извлечением объемов и генерацией отчетов
+        """
+        logger.info(f"🏗️ Запуск комплексного анализа с объемами (язык: {language})")
+        
+        # Основной анализ марок бетона
+        concrete_analysis = await self.analyze(doc_paths, smeta_path, use_claude, claude_mode)
+        
+        # Анализ объемов
+        volumes = self._analyze_volumes_from_documents(doc_paths, smeta_path)
+        logger.info(f"📊 Общий анализ объемов: найдено {len(volumes)} позиций")
+        
+        # Интеграция результатов
+        if volumes:
+            enhanced_result = self.volume_analyzer.merge_with_concrete_analysis(
+                concrete_analysis, volumes
+            )
+            logger.info("🔗 Результаты объединены с анализом марок бетона")
+        else:
+            enhanced_result = concrete_analysis
+            logger.warning("⚠️ Объемы не найдены, используются только результаты анализа марок")
+        
+        # Установка языка для отчетов
+        self.report_generator = get_report_generator(language)
+        
+        # Добавляем метаданные
+        enhanced_result.update({
+            'volume_entries_found': len(volumes),
+            'report_language': language,
+            'analysis_type': 'complete_with_volumes'
+        })
+        
+        return enhanced_result
+
+    def save_comprehensive_reports(self, analysis_result: Dict[str, Any], 
+                                   output_dir: str = "outputs", 
+                                   language: str = "cz") -> Dict[str, str]:
+        """
+        Сохраняет все виды отчетов
+        """
+        saved_files = {}
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        # Генератор отчетов
+        generator = get_report_generator(language)
+        
+        # Markdown отчет
+        markdown_file = output_path / f"concrete_analysis_report_{language}.md"
+        if generator.save_markdown_report(analysis_result, str(markdown_file)):
+            saved_files['markdown'] = str(markdown_file)
+        
+        # JSON данные для Excel
+        json_file = output_path / f"concrete_analysis_data_{language}.json"
+        if generator.save_json_data(analysis_result, str(json_file)):
+            saved_files['json'] = str(json_file)
+        
+        # Оригинальный JSON отчет
+        json_report_file = output_path / "concrete_analysis_report.json"
+        try:
+            save_merged_report(analysis_result, str(json_report_file))
+            saved_files['json_report'] = str(json_report_file)
+        except Exception as e:
+            logger.warning(f"⚠️ Не удалось сохранить JSON отчет: {e}")
+        
+        logger.info(f"💾 Сохранено {len(saved_files)} файлов отчетов")
+        return saved_files
+
     async def _claude_concrete_analysis(self, text: str, smeta_data: List[Dict]) -> Dict[str, Any]:
         """Анализ через Claude с расширенным контекстом"""
         if not self.claude_client:
@@ -431,6 +540,54 @@ async def analyze_concrete(doc_paths: List[str], smeta_path: Optional[str] = Non
         
     except Exception as e:
         logger.error(f"❌ Критическая ошибка в analyze_concrete: {e}")
+        return {
+            "error": str(e),
+            "success": False,
+            "analysis_method": "error",
+            "concrete_summary": []
+        }
+
+async def analyze_concrete_with_volumes(doc_paths: List[str], smeta_path: Optional[str] = None,
+                                        use_claude: bool = True, claude_mode: str = "enhancement",
+                                        language: str = "cz") -> Dict[str, Any]:
+    """
+    Главная функция для полного анализа бетона с объемами и отчетами
+    
+    Args:
+        doc_paths: Список путей к документам
+        smeta_path: Путь к смете или výkaz výměr (опционально)
+        use_claude: Использовать ли Claude AI
+        claude_mode: Режим Claude ("enhancement" или "primary")
+        language: Язык отчетов ("cz", "en", "ru")
+        
+    Returns:
+        Полный анализ с объемами и сохранением отчетов
+    """
+    agent = get_hybrid_agent()
+    
+    try:
+        # Полный анализ с объемами
+        result = await agent.analyze_with_volumes(
+            doc_paths, smeta_path, use_claude, claude_mode, language
+        )
+        
+        # Сохранение отчетов
+        saved_files = agent.save_comprehensive_reports(result, "outputs", language)
+        result['saved_reports'] = saved_files
+        
+        # Логирование результатов
+        concrete_count = len(result.get('concrete_summary', []))
+        volume_count = result.get('volume_entries_found', 0)
+        
+        logger.info(f"✅ Анализ завершен:")
+        logger.info(f"   - Найдено марок бетона: {concrete_count}")
+        logger.info(f"   - Найдено объемов: {volume_count}")
+        logger.info(f"   - Сохранено отчетов: {len(saved_files)}")
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Критическая ошибка в analyze_concrete_with_volumes: {e}")
         return {
             "error": str(e),
             "success": False,
