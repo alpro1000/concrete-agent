@@ -1,32 +1,93 @@
 {
-  "prompt_name": "materials_extraction",
-  "description": "Вытянуть из проектной документации все упоминания о строительных материалах, кроме бетона.",
-  "targets": [
-    {
-      "category": "Арматура",
-      "keywords": ["výztuž", "Fe500", "R100", "ocel", "armatura"]
-    },
-    {
-      "category": "Окна и двери",
-      "keywords": ["okno", "PVC", "dřevo", "hliník", "dveře"]
-    },
-    {
-      "category": "Уплотнители",
-      "keywords": ["těsnění", "gumové pásy", "profil", "pás"]
-    },
-    {
-      "category": "Металлоконструкции",
-      "keywords": ["ocelová konstrukce", "traverza", "nosník", "rám"]
-    },
-    {
-      "category": "Изоляция",
-      "keywords": ["izolace", "tepelná izolace", "vodotěsná izolace", "polystyren", "EPS", "XPS"]
-    }
-  ],
-  "language": "cs",
-  "extraction_mode": "regex+context",
-  "output_format": {
-    "fields": ["category", "term", "context_snippet", "document_name", "page_number"]
+  "system_prompt": "Ты эксперт по строительным материалам. Твоя задача - анализировать технические документы и извлекать информацию о ВСЕХ строительных материалах КРОМЕ бетона (бетон обрабатывается отдельным агентом). Ищи любые материалы, используемые в строительстве.",
+  
+  "analysis_prompts": {
+    "universal_materials_search": "Найди в документе ВСЕ упоминания строительных материалов: металлы, арматуру, изоляционные материалы, крепежные элементы, добавки, герметики, покрытия, засыпки, геотекстиль, трубы, кабели и любые другие материалы. НЕ ищи бетон - он обрабатывается отдельно.",
+    
+    "material_specifications": "Для каждого найденного материала определи его характеристики: марку, размеры, количество, единицы измерения, назначение и область применения.",
+    
+    "material_classification": "Классифицируй найденные материалы по категориям: металлические конструкции, изоляционные материалы, крепежные элементы, инженерные системы, отделочные материалы, защитные покрытия, засыпные материалы."
   },
-  "notes": "Ищем термины и ближайший контекст, чтобы понять, в какой части проекта применяются. Рабочий язык — чешский."
+  
+  "material_categories": {
+    "metals_and_steel": {
+      "keywords": ["ocel", "ocele", "výztuž", "armatúra", "armatura", "B500", "S235", "S355", "nerez", "hliník", "měď", "zinek"],
+      "examples": ["betonářská ocel B500B", "konstrukční ocel S235", "nerezová ocel", "pozinkované plechy"]
+    },
+    
+    "insulation": {
+      "keywords": ["izolace", "izolační", "tepelná", "zvuková", "hydroizolace", "parozábrana", "polystyren", "minerální vlna", "PUR", "XPS"],
+      "examples": ["tepelná izolace", "hydroizolace", "parozábrana", "minerální vlna"]
+    },
+    
+    "fasteners": {
+      "keywords": ["šrouby", "kotvy", "hmoždinky", "spojovací", "svorníky", "matice", "podložky", "hřebíky"],
+      "examples": ["chemické kotvy", "samořezné šrouby", "expanzní hmoždinky"]
+    },
+    
+    "pipes_and_systems": {
+      "keywords": ["potrubí", "trubky", "kanalizace", "vodovod", "elektro", "kabel", "chránička", "PVC", "PE", "PP"],
+      "examples": ["PVC potrubí", "elektrické kabely", "kanalizační trubky"]
+    },
+    
+    "protective_materials": {
+      "keywords": ["nátěr", "barva", "ochranná", "impregnace", "penetrace", "základní", "antikorozní"],
+      "examples": ["antikorozní nátěr", "ochranná penetrace", "základní barva"]
+    },
+    
+    "fill_materials": {
+      "keywords": ["zásyp", "štěrk", "písek", "kamivo", "kačírek", "recyklát", "stabilizace"],
+      "examples": ["štěrkový zásyp", "stabilizovaný štěrk", "kačírek frakce"]
+    },
+    
+    "geotechnical": {
+      "keywords": ["geotextilie", "geomřížka", "drenáž", "separace", "filtrace", "stabilizace"],
+      "examples": ["separační geotextilie", "drenážní trubka", "stabilizační geomřížka"]
+    },
+    
+    "finishing": {
+      "keywords": ["dlažba", "obklad", "omítka", "stěrka", "laminát", "keramika", "přírodní kámen"],
+      "examples": ["kamenná dlažba", "keramický obklad", "vápenná omítka"]
+    },
+    
+    "chemicals": {
+      "keywords": ["přísada", "aditiv", "impregnace", "tmel", "lepidlo", "silikon", "polyuretan"],
+      "examples": ["silikonové těsnění", "polyuretanové lepidlo", "stavební tmel"]
+    }
+  },
+  
+  "extraction_template": {
+    "material_entry": {
+      "name": "název materiálu",
+      "category": "kategorie (kov, izolace, krепеж atd.)",
+      "specification": "specifikace/marka/typ",
+      "dimensions": "rozměry/průměr/tloušťka",
+      "quantity": "množství",
+      "unit": "jednotka (kg, m, m2, m3, ks, t)",
+      "application": "použití/umístění",
+      "standard": "norma/standard (pokud uveden)",
+      "supplier": "výrobce/dodavatel (pokud uveden)"
+    }
+  },
+  
+  "search_strategy": "Systematicky procházej dokument a hledej JAKÉKOLI materiály. Zaměř se na číselné údaje s jednotkami (kg, t, m, m2, m3, ks), kódy materiálů, značky výrobců. Neomezuj se jen na klíčová slova - hledaj i neznámé názvy materiálů.",
+  
+  "response_format": {
+    "structure": "JSON",
+    "required_fields": [
+      "total_materials_found",
+      "materials_by_category", 
+      "detailed_materials_list",
+      "summary_statistics",
+      "extraction_confidence"
+    ],
+    "exclude": "NEPŘIDÁVEJ beton, betony, concrete - ty zpracovává jiný agent"
+  },
+  
+  "quality_checks": [
+    "Zkontroluj, že jsi nenašel beton - ten patří do jiného agenta",
+    "Ověř správnost jednotek měření (m, kg, t, ks)",
+    "Zkontroluj logičnost množstevních údajů",
+    "Ujisti se, že každý materiál má alespoň základní popis"
+  ]
 }
