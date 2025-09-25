@@ -47,18 +47,29 @@ class ConcreteAgentHybrid:
             logger.warning(f"⚠️ Не удалось загрузить knowledge-base: {e}")
             self.knowledge_base = self._create_default_kb()
 
+        # Извлекаем допустимые марки из базы знаний
+        self.allowed_grades = set(self._extract_valid_grades_from_kb(self.knowledge_base))
+        logger.info(f"🎯 Загружено {len(self.allowed_grades)} допустимых марок бетона")
+
         self.doc_parser = DocParser()
         self.smeta_parser = SmetaParser()
         self.claude_client = get_claude_client() if settings.is_claude_enabled() else None
 
-        # Расширенные паттерны для поиска марок бетона
-        self.concrete_patterns = [
-            r'\bC\d{1,2}/\d{1,2}(?:\s*[-–]\s*[XO][CDFASM]?\d*(?:\s*,\s*[XO][CDFASM]?\d*)*)*\b',
-            r'\b[BC]\s*\d{1,2}(?:/\d{1,2})?\b',
-            r'\bLC\s*\d{1,2}/\d{1,2}\b',
-            r'(?i)(?:beton[uá]?\s+)?(?:tříd[ayě]\s+)?(\d{2}/\d{2}|\d{2,3})\b',
-            r'(?i)(?:betony?|betonové[j]?)\s+(?:tříd[yě]\s+)?([BC]?\d{1,2}(?:/\d{1,2})?)',
-            r'\b(?:vysokopevnostn[íý]|lehk[ýá]|těžk[ýá])\s+beton\s+([BC]?\d{1,2}(?:/\d{1,2})?)\b',
+        # Строгий паттерн для поиска марок бетона (только стандартные форматы)
+        self.concrete_pattern = r'\b(?:LC|C)\d{1,3}/\d{1,3}\b'
+
+        # Контекстные слова для фильтрации (чешские термины)
+        self.context_keywords = [
+            'beton', 'betonu', 'betonem', 'betony', 'betonové', 'betonových',
+            'třída', 'třídy', 'třídu', 'třídě',
+            'stupeň', 'stupně', 'stupni',
+            'odolnost', 'odolnosti',
+            'pevnost', 'pevnosti',
+            'XC1', 'XC2', 'XC3', 'XC4',
+            'XA1', 'XA2', 'XA3',
+            'XF1', 'XF2', 'XF3', 'XF4',
+            'XD1', 'XD2', 'XD3',
+            'XM1', 'XM2', 'XM3'
         ]
 
         # Конструктивные элементы (чешские термины)
@@ -92,9 +103,59 @@ class ConcreteAgentHybrid:
             'PSV': 'Přidružená stavební výroba',
         }
 
+    def _extract_valid_grades_from_kb(self, kb: Dict) -> List[str]:
+        """Извлекает допустимые марки бетона из базы знаний"""
+        grades = []
+        
+        # Стандартные классы прочности
+        standard_classes = kb.get("strength_classes", {}).get("standard", {})
+        if standard_classes:
+            grades.extend(standard_classes.keys())
+        
+        # UHPC классы
+        uhpc_classes = kb.get("strength_classes", {}).get("uhpc", {})
+        if uhpc_classes:
+            grades.extend(uhpc_classes.keys())
+        
+        # Легкий бетон
+        lightweight_classes = kb.get("concrete_types_by_density", {}).get("lehký_beton", {}).get("strength_classes", [])
+        if lightweight_classes:
+            grades.extend(lightweight_classes)
+        
+        # Нормализуем все марки
+        normalized_grades = []
+        for grade in grades:
+            normalized = self._normalize_concrete_grade(grade)
+            if normalized and self._is_valid_grade_format(normalized):
+                normalized_grades.append(normalized)
+        
+        return normalized_grades
+
     def _create_default_kb(self) -> Dict:
         """Создает минимальную базу знаний по умолчанию"""
         return {
+            "strength_classes": {
+                "standard": {
+                    "C12/15": {"fck": 12, "fcm": 20},
+                    "C16/20": {"fck": 16, "fcm": 24},
+                    "C20/25": {"fck": 20, "fcm": 28},
+                    "C25/30": {"fck": 25, "fcm": 33},
+                    "C30/37": {"fck": 30, "fcm": 38},
+                    "C35/45": {"fck": 35, "fcm": 43},
+                    "C40/50": {"fck": 40, "fcm": 48},
+                    "C45/55": {"fck": 45, "fcm": 53},
+                    "C50/60": {"fck": 50, "fcm": 58}
+                },
+                "uhpc": {
+                    "C80/95": {"fck": 80, "fcm": 88},
+                    "C90/105": {"fck": 90, "fcm": 98}
+                }
+            },
+            "concrete_types_by_density": {
+                "lehký_beton": {
+                    "strength_classes": ["LC12/13", "LC16/18", "LC20/22", "LC25/28", "LC30/33", "LC35/38", "LC40/44", "LC45/50", "LC50/55", "LC55/60", "LC60/66", "LC70/77", "LC80/88"]
+                }
+            },
             "environment_classes": {
                 "XC1": {"description": "suché nebo stále mokré", "applications": ["interiér", "základy"]},
                 "XC2": {"description": "mokré, občas suché", "applications": ["základy", "spodní stavba"]},
@@ -109,26 +170,77 @@ class ConcreteAgentHybrid:
             }
         }
 
+    def _is_valid_grade_format(self, grade: str) -> bool:
+        """Проверяет корректность формата марки бетона"""
+        if not grade or len(grade) > 8:
+            return False
+        
+        if '/' not in grade:
+            return False
+        
+        # Проверяем на слишком большие числа
+        if re.match(r'C\d{4,}', grade):
+            return False
+        
+        # Проверяем правильный формат
+        if not re.match(r'^(?:LC|C)\d{1,3}/\d{1,3}$', grade):
+            return False
+        
+        return True
+
+    def _has_concrete_context(self, text: str, start_pos: int, end_pos: int) -> bool:
+        """Проверяет наличие контекстных слов рядом с маркой бетона"""
+        context_window = 50
+        context_start = max(0, start_pos - context_window)
+        context_end = min(len(text), end_pos + context_window)
+        context = text[context_start:context_end].lower()
+        
+        # Создаем паттерн для поиска контекстных слов
+        keywords_pattern = '|'.join(re.escape(keyword.lower()) for keyword in self.context_keywords)
+        
+        return bool(re.search(rf'\b({keywords_pattern})\b', context, re.IGNORECASE))
+
     def _local_concrete_analysis(self, text: str) -> Dict[str, Any]:
-        """Локальный анализ текста на наличие марок бетона"""
+        """Улучшенный локальный анализ текста на наличие марок бетона"""
         all_matches = []
         
-        for pattern in self.concrete_patterns:
-            for match in re.finditer(pattern, text, re.IGNORECASE):
-                grade = self._normalize_concrete_grade(match.group().strip())
-                context = text[max(0, match.start()-100):match.end()+100]
-                location = self._identify_structural_element(context)
-                
-                all_matches.append(ConcreteMatch(
-                    grade=grade,
-                    context=context.strip(),
-                    location=location,
-                    confidence=0.9,
-                    method='regex',
-                    coordinates=None
-                ))
+        # Используем строгий паттерн для поиска марок
+        for match in re.finditer(self.concrete_pattern, text, re.IGNORECASE):
+            grade = self._normalize_concrete_grade(match.group().strip())
+            
+            # Фильтр 1: Марка должна быть в whitelist из базы знаний
+            if grade not in self.allowed_grades:
+                continue
+            
+            start_pos, end_pos = match.start(), match.end()
+            
+            # Фильтр 2: Проверяем контекст (наличие ключевых слов)
+            if not self._has_concrete_context(text, start_pos, end_pos):
+                continue
+            
+            # Фильтр 3: Дополнительная проверка формата
+            if not self._is_valid_grade_format(grade):
+                continue
+            
+            # Извлекаем расширенный контекст для анализа
+            context_window = 100
+            context_start = max(0, start_pos - context_window)
+            context_end = min(len(text), end_pos + context_window)
+            context = text[context_start:context_end]
+            
+            # Определяем тип конструктивного элемента
+            location = self._identify_structural_element(context)
+            
+            all_matches.append(ConcreteMatch(
+                grade=grade,
+                context=context.strip(),
+                location=location,
+                confidence=0.95,  # Высокая уверенность благодаря строгой фильтрации
+                method='regex_enhanced',
+                coordinates=None
+            ))
         
-        # Дедупликация
+        # Дедупликация с сохранением лучших совпадений
         unique_matches = {}
         for match in all_matches:
             key = match.grade
@@ -146,26 +258,35 @@ class ConcreteAgentHybrid:
                 }
                 for match in unique_matches.values()
             ],
-            'analysis_method': 'local',
+            'analysis_method': 'local_enhanced',
             'total_matches': len(unique_matches),
-            'success': True
+            'success': True,
+            'allowed_grades_count': len(self.allowed_grades)
         }
 
     def _normalize_concrete_grade(self, grade: str) -> str:
         """Нормализует обозначение марки бетона"""
-        normalized = re.sub(r'\s+', '', grade.upper())
-        normalized = re.sub(r'^B(\d+)$', r'C\1/\1', normalized)  # B20 -> C20/25
-        normalized = re.sub(r'^(\d+)$', r'C\1', normalized)       # 30 -> C30
+        if not grade:
+            return ""
+        
+        # Базовая нормализация
+        normalized = grade.upper().strip().replace(" ", "")
+        
+        # Убираем лишние символы
+        normalized = re.sub(r'[^\w/]', '', normalized)
+        
         return normalized
 
     def _identify_structural_element(self, context: str) -> str:
         """Определяет тип конструктивного элемента из контекста"""
         context_upper = context.upper()
         
+        # Точное совпадение
         for element, info in self.structural_elements.items():
             if element in context_upper:
                 return f"{element} ({info['en']})"
         
+        # Частичное совпадение
         for element, info in self.structural_elements.items():
             if any(part in context_upper for part in element.split()):
                 return f"{element} ({info['en']}) - частичное совпадение"
@@ -228,7 +349,7 @@ class ConcreteAgentHybrid:
             except Exception as e:
                 logger.error(f"❌ Ошибка обработки сметы: {e}")
         
-        # Локальный анализ
+        # Локальный анализ (теперь улучшенный)
         local_result = self._local_concrete_analysis(all_text)
         
         # Интеграция с Claude
@@ -288,7 +409,7 @@ async def analyze_concrete(doc_paths: List[str], smeta_path: Optional[str] = Non
         try:
             save_merged_report(result, "outputs/concrete_analysis_report.json")
             logger.info("💾 Отчет сохранен в outputs/concrete_analysis_report.json")
-        except Exception as e:
+        except Exception in e:
             logger.warning(f"⚠️ Не удалось сохранить отчёт: {e}")
         
         return result
