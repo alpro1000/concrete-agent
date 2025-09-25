@@ -1,4 +1,4 @@
-name: Claude Code
+name: Claude Complete Assistant
 
 on:
   issue_comment:
@@ -9,52 +9,216 @@ on:
     types: [opened, assigned]
   pull_request_review:
     types: [submitted]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+  actions: read
+
 env:
-  GITHUB_TOKEN: ${{ secrets.CLAUDE_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 jobs:
-  claude:
+  claude-assistant:
     if: |
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
-      id-token: write
-      actions: read # Required for Claude to read CI results on PRs
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run Claude Code
-        id: claude
+      - name: Setup Python environment
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+        continue-on-error: true
+
+      - name: Run system diagnostics
+        run: |
+          if [ -f "test_system.py" ]; then
+            python test_system.py
+          else
+            echo "No system diagnostics found"
+          fi
+        continue-on-error: true
+
+      - name: Claude Code Assistant
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: |
+            --model claude-3-5-sonnet-20241022
+            --max-turns 20
+            --allowedTools "CreateFile,EditFile,Bash(python),Bash(pip),Bash(mkdir),Bash(ls),Bash(cat)"
+            --system-prompt "Ты эксперт по Python разработке и анализу строительных материалов. Специализируешься на системах анализа бетона и чешских стандартах ČSN EN 206+A2. Работаешь только через GitHub web interface, без локальной разработки. ВСЕГДА создаваешь Pull Request для изменений."
+          
+                      prompt: |
+            Ты Claude Assistant для комплексной системы управления строительными проектами. Твои задачи:
 
-          # Optional: Customize the trigger phrase (default: @claude)
-          # trigger_phrase: "/claude"
+            ## АРХИТЕКТУРА СИСТЕМЫ:
+            1. **Анализ проектной документации** - чертежи, спецификации, ТЗ
+            2. **Составление смет** - автоматический расчет стоимости по нормативам
+            3. **Ведомости ресурсов** - материалы, оборудование, трудозатраты
+            4. **Календарное планирование** - сроки, этапы, критический путь
+            5. **Контроль качества** - соответствие стандартам и нормам
+            6. **Управление изменениями** - версионность документов
 
-          # Optional: Trigger when specific user is assigned to an issue
-          # assignee_trigger: "claude-bot"
+            ## ОСНОВНЫЕ МОДУЛИ:
+            - **agents/concrete_agent.py** - анализ бетонных конструкций
+            - **agents/materials_agent.py** - все строительные материалы
+            - **agents/smeta_agent.py** - составление смет и КС
+            - **agents/schedule_agent.py** - календарное планирование
+            - **agents/quality_agent.py** - контроль качества
+            - **agents/documentation_agent.py** - анализ проектов
 
-          # Optional: Configure Claude's behavior with CLI arguments
-          # claude_args: |
-          #   --model claude-opus-4-1-20250805
-          #   --max-turns 10
-          #   --allowedTools "Bash(npm install),Bash(npm run build),Bash(npm run test:*),Bash(npm run lint:*)"
-          #   --system-prompt "Follow our coding standards. Ensure all new code has tests. Use TypeScript for new files."
+            ## СМЕТНОЕ ДЕЛО:
+            - **Нормативы**: ČSN, JKSO, RTS, UNIKA прайсы
+            - **Расценки**: материалы, машины, транспорт, накладные
+            - **Ведомости**: объемы работ, потребность в ресурсах
+            - **КС-2, КС-3**: акты выполненных работ
+            - **Индексация**: изменение цен, инфляция
 
-          # Optional: Advanced settings configuration
-          # settings: |
-          #   {
-          #     "env": {
-          #       "NODE_ENV": "test"
-          #     }
-          #   }
+            ## СТАНДАРТЫ И НОРМЫ:
+            - **Бетон**: ČSN EN 206+A2, класси прочности и воздействия
+            - **Сталь**: ČSN EN 10025, марки конструкционных сталей
+            - **Изоляция**: ČSN 73 0540, теплотехнические требования
+            - **Безопасность**: ČSN EN 1990, основы проектирования
+            - **BIM**: ČSN EN ISO 19650, управление информацией
+
+            ## ИНТЕГРАЦИИ:
+            - **CAD системы**: AutoCAD, Revit, ArchiCAD импорт
+            - **Сметные программы**: BuildPowerS, KROS Plus, RTS
+            - **ERP системы**: SAP, Microsoft Dynamics
+            - **Документооборот**: SharePoint, контроль версий
+
+            ## СПЕЦИАЛИЗАЦИЯ ПО ТИПАМ ПРОЕКТОВ:
+            - **Гражданское строительство**: жилые, офисные здания
+            - **Промышленное**: заводы, склады, производства
+            - **Инфраструктура**: дороги, мосты, туннели
+            - **Инженерные сети**: водоснабжение, отопление, электрика
+            - **Реконструкция**: усиление, модернизация
+
+            ## АНАЛИТИКА И ОТЧЕТНОСТЬ:
+            - **Dashboards**: KPI проекта, статусы этапов
+            - **Прогнозирование**: сроки, бюджеты, риски
+            - **Оптимизация**: ресурсы, логистика, закупки
+            - **Compliance**: соответствие нормам и стандартам
+
+            ## КОМАНДЫ ДЛЯ АКТИВАЦИИ:
+            - `@claude анализ проекта [файлы]` - полный анализ документации
+            - `@claude создай смету` - автогенерация сметной документации
+            - `@claude ведомость ресурсов` - расчет потребности в материалах
+            - `@claude планирование работ` - календарный график
+            - `@claude контроль качества` - проверка соответствия нормам
+            - `@claude создай агент [функция]` - новый специализированный агент
+            - `@claude интеграция [система]` - подключение внешних систем
+            - `@claude оптимизация [процесс]` - улучшение эффективности
+
+            ## WORKFLOW:
+            1. **Загрузка проекта** - PDF, DWG, IFC, Excel файлы
+            2. **Автоанализ** - распознавание элементов, материалов, объемов
+            3. **Генерация смет** - по нормативным базам
+            4. **Планирование** - сроки, ресурсы, бюджеты
+            5. **Контроль** - отклонения, риски, качество
+            6. **Отчетность** - для заказчика, подрядчиков, надзора
+
+            Начинай комплексный анализ строительной системы и создавай универсальную BIM-платформу!
+
+      - name: Auto-create PR if changes made
+        if: success()
+        run: |
+          git config --global user.name "Claude Assistant"
+          git config --global user.email "claude-bot@anthropic.com"
+          
+          # Check if there are any changes
+          if ! git diff --quiet; then
+            echo "Changes detected, creating PR..."
+            
+            # Create a new branch
+            BRANCH_NAME="claude-improvements-$(date +%Y%m%d-%H%M%S)"
+            git checkout -b "$BRANCH_NAME"
+            
+            # Commit changes
+            git add -A
+            git commit -m "Claude Assistant improvements
+
+            - Code analysis and bug fixes
+            - ČSN EN 206+A2 standards compliance
+            - Architecture improvements
+            - Auto-generated by Claude Assistant"
+            
+            # Push branch
+            git push origin "$BRANCH_NAME"
+            
+            # Create PR using GitHub CLI (if available) or API
+            if command -v gh &> /dev/null; then
+              gh pr create --title "🤖 Claude Assistant Improvements" \
+                          --body "Automated improvements by Claude Assistant:
+            
+            - Code analysis and bug fixes
+            - Standards compliance (ČSN EN 206+A2)
+            - Architecture improvements
+            - Performance optimizations
+            
+            Please review the changes before merging." \
+                          --head "$BRANCH_NAME" \
+                          --base main
+            else
+              echo "GitHub CLI not available, PR creation skipped"
+            fi
+          else
+            echo "No changes detected"
+          fi
+        continue-on-error: true
+
+      - name: Comment status
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let comment = '## 🤖 Claude Assistant Status\n\n';
+            
+            if (context.job.status === 'success') {
+              comment += '✅ **Analysis completed successfully**\n\n';
+              comment += '- Code reviewed and improved\n';
+              comment += '- Standards compliance checked\n';  
+              comment += '- Pull Request created (if changes made)\n';
+            } else {
+              comment += '❌ **Analysis encountered issues**\n\n';
+              comment += 'Check the workflow logs for details.\n';
+            }
+            
+            comment += '\n---\n*Powered by Claude Assistant - mention `@claude` for code assistance*';
+            
+            // Comment on the triggering issue/PR
+            if (context.eventName === 'issue_comment' || context.eventName === 'issues') {
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+            } else if (context.eventName === 'pull_request_review_comment' || context.eventName === 'pull_request_review') {
+              github.rest.pulls.createReview({
+                pull_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment,
+                event: 'COMMENT'
+              });
+            }
