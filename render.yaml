@@ -4,6 +4,7 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: free
+     buildCommand: pip install -r requirements.txt && mkdir -p outputs
     
     envVars:
       - key: ANTHROPIC_API_KEY
