@@ -19,6 +19,8 @@ from outputs.save_report import save_merged_report
 from utils.czech_preprocessor import get_czech_preprocessor
 from utils.volume_analyzer import get_volume_analyzer
 from utils.report_generator import get_report_generator
+from utils.knowledge_base_service import get_knowledge_service
+from agents.concrete_volume_agent import get_concrete_volume_agent
 
 logger = logging.getLogger(__name__)
 
@@ -42,18 +44,28 @@ class StructuralElement:
 
 class ConcreteAgentHybrid:
     def __init__(self, knowledge_base_path="knowledge_base/complete-concrete-knowledge-base.json"):
-        # Загружаем базу знаний
+        # Инициализируем новые сервисы
+        self.knowledge_service = get_knowledge_service()
+        self.volume_agent = get_concrete_volume_agent()
+        self.volume_analyzer = get_volume_analyzer()  # Для обратной совместимости
+        self.report_generator = get_report_generator()
+        self.czech_preprocessor = get_czech_preprocessor()
+        
+        # Получаем допустимые марки из нового сервиса
+        self.allowed_grades = set(self.knowledge_service.get_all_concrete_grades())
+        logger.info(f"🎯 Загружено {len(self.allowed_grades)} допустимых марок бетона")
+        
+        # Получаем контекстные ключевые слова
+        self.context_keywords = list(self.knowledge_service.get_context_keywords())
+        
+        # Загружаем базу знаний (для обратной совместимости)
         try:
             with open(knowledge_base_path, "r", encoding="utf-8") as f:
                 self.knowledge_base = json.load(f)
-            logger.info("📚 Knowledge-base загружен успешно")
+            logger.info("📚 Legacy knowledge-base загружен успешно")
         except Exception as e:
-            logger.warning(f"⚠️ Не удалось загрузить knowledge-base: {e}")
+            logger.warning(f"⚠️ Не удалось загрузить legacy knowledge-base: {e}")
             self.knowledge_base = self._create_default_kb()
-
-        # Извлекаем допустимые марки из базы знаний
-        self.allowed_grades = set(self._extract_valid_grades_from_kb(self.knowledge_base))
-        logger.info(f"🎯 Загружено {len(self.allowed_grades)} допустимых марок бетона")
 
         self.doc_parser = DocParser()
         self.smeta_parser = SmetaParser()
@@ -61,10 +73,6 @@ class ConcreteAgentHybrid:
 
         # Строгий паттерн для поиска марок бетона (только стандартные форматы)
         self.concrete_pattern = r'\b(?:LC|C)\d{1,3}/\d{1,3}\b'
-
-        # Добавить анализатор объемов и генератор отчетов
-        self.volume_analyzer = get_volume_analyzer()
-        self.report_generator = get_report_generator()
 
         # Расширенные чешские ключевые слова
         self.context_keywords = [
@@ -356,19 +364,16 @@ class ConcreteAgentHybrid:
         # Основной анализ марок бетона
         concrete_analysis = await self.analyze(doc_paths, smeta_path, use_claude, claude_mode)
         
-        # Анализ объемов
-        volumes = self._analyze_volumes_from_documents(doc_paths, smeta_path)
-        logger.info(f"📊 Общий анализ объемов: найдено {len(volumes)} позиций")
+        # Анализ объемов с использованием нового агента
+        volumes = await self.volume_agent.analyze_volumes_from_documents(doc_paths, smeta_path)
+        logger.info(f"📊 Новый анализ объемов: найдено {len(volumes)} позиций")
         
-        # Интеграция результатов
-        if volumes:
-            enhanced_result = self.volume_analyzer.merge_with_concrete_analysis(
-                concrete_analysis, volumes
-            )
-            logger.info("🔗 Результаты объединены с анализом марок бетона")
-        else:
-            enhanced_result = concrete_analysis
-            logger.warning("⚠️ Объемы не найдены, используются только результаты анализа марок")
+        # Создаем сводку по объемам
+        volume_summary = self.volume_agent.create_volume_summary(volumes)
+        
+        # Интеграция результатов с валидацией
+        enhanced_result = self._merge_concrete_and_volumes(concrete_analysis, volumes, volume_summary)
+        logger.info("🔗 Результаты объединены с валидацией через базу знаний")
         
         # Установка языка для отчетов
         self.report_generator = get_report_generator(language)
@@ -376,10 +381,59 @@ class ConcreteAgentHybrid:
         # Добавляем метаданные
         enhanced_result.update({
             'volume_entries_found': len(volumes),
+            'volume_summary': volume_summary,
             'report_language': language,
-            'analysis_type': 'complete_with_volumes'
+            'analysis_type': 'complete_with_volumes_v2'
         })
         
+        return enhanced_result
+
+    def _merge_concrete_and_volumes(self, concrete_analysis: Dict[str, Any], 
+                                   volumes: List, volume_summary: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Объединяет результаты анализа марок и объемов с валидацией
+        """
+        enhanced_result = concrete_analysis.copy()
+        
+        # Добавляем сводку по объемам
+        enhanced_result['volume_summary'] = volume_summary
+        
+        # Улучшаем информацию о каждой найденной марке
+        enhanced_summary = []
+        for concrete_item in concrete_analysis.get('concrete_summary', []):
+            grade = concrete_item['grade']
+            enhanced_item = concrete_item.copy()
+            
+            # Ищем объемы для этой марки
+            grade_volumes = [v for v in volumes if hasattr(v, 'concrete_grade') and v.concrete_grade == grade]
+            
+            if grade_volumes:
+                total_volume = sum(v.volume_m3 for v in grade_volumes)
+                total_cost = sum(v.total_cost or 0 for v in grade_volumes)
+                
+                enhanced_item.update({
+                    'total_volume_m3': round(total_volume, 2),
+                    'total_cost': round(total_cost, 2) if total_cost > 0 else None,
+                    'volume_entries_count': len(grade_volumes),
+                    'construction_elements': list(set(v.construction_element for v in grade_volumes))
+                })
+                
+                # Валидация через базу знаний
+                for element in enhanced_item['construction_elements']:
+                    validation = self.knowledge_service.validate_analysis_result(grade, element)
+                    if not validation['valid'] or validation['warnings']:
+                        if 'validation_warnings' not in enhanced_item:
+                            enhanced_item['validation_warnings'] = []
+                        enhanced_item['validation_warnings'].extend(validation['warnings'])
+                        
+                        if validation['recommendations']:
+                            if 'recommendations' not in enhanced_item:
+                                enhanced_item['recommendations'] = []
+                            enhanced_item['recommendations'].extend(validation['recommendations'])
+            
+            enhanced_summary.append(enhanced_item)
+        
+        enhanced_result['concrete_summary'] = enhanced_summary
         return enhanced_result
 
     def save_comprehensive_reports(self, analysis_result: Dict[str, Any], 

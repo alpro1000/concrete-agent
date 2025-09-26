@@ -2,6 +2,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
 import logging
 import os
 import sys
@@ -16,13 +17,38 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("🚀 Construction Analysis API запускается...")
+    
+    # Создаем необходимые директории
+    os.makedirs("uploads", exist_ok=True)
+    os.makedirs("logs", exist_ok=True)
+    os.makedirs("outputs", exist_ok=True)
+    
+    # Проверяем зависимости
+    deps = check_dependencies()
+    logger.info(f"📦 Статус зависимостей: {deps}")
+    
+    # Подключаем роутеры
+    setup_routers()
+    
+    logger.info("✅ Сервер успешно запущен")
+    
+    yield
+    
+    # Shutdown
+    logger.info("🛑 Construction Analysis API останавливается")
+
 # Создание приложения FastAPI
 app = FastAPI(
     title="Construction Analysis API",
     description="Агент для анализа бетона, материалов и версий документов",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 # CORS middleware
@@ -101,28 +127,7 @@ def setup_routers():
     except Exception as e:
         logger.error(f"❌ Ошибка подключения роутера upload: {e}")
 
-# === События жизненного цикла ===
-@app.on_event("startup")
-async def startup_event():
-    logger.info("🚀 Construction Analysis API запускается...")
-    
-    # Создаем необходимые директории
-    os.makedirs("uploads", exist_ok=True)
-    os.makedirs("logs", exist_ok=True)
-    os.makedirs("outputs", exist_ok=True)
-    
-    # Проверяем зависимости
-    deps = check_dependencies()
-    logger.info(f"📦 Статус зависимостей: {deps}")
-    
-    # Подключаем роутеры
-    setup_routers()
-    
-    logger.info("✅ Сервер успешно запущен")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    logger.info("🛑 Construction Analysis API останавливается")
+# === Функции для настройки приложения ===
 
 # === Основные эндпоинты ===
 @app.get("/")
