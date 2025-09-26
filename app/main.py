@@ -133,10 +133,10 @@ def setup_routers():
 def setup_routers_fallback():
     """Резервное ручное подключение роутеров"""
     router_configs = [
-        ("routers.analyze_concrete", "concrete_router", "/analyze", ["Concrete"]),
-        ("routers.analyze_materials", "materials_router", "/analyze", ["Materials"]),
-        ("routers.version_diff", "diff_router", "/compare", ["Diff"]),
-        ("routers.upload", "upload_router", "/upload", ["Upload"]),
+        ("routers.analyze_concrete", "router", "/analyze", ["Concrete"]),
+        ("routers.analyze_materials", "router", "/analyze", ["Materials"]),
+        ("routers.version_diff", "router", "/compare", ["Diff"]),
+        ("routers.upload", "router", "/upload", ["Upload"]),
         ("routers.tzd_router", "router", "/tzd", ["TZD"]),
     ]
     
