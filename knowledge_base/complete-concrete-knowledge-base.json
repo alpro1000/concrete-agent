@@ -6,552 +6,127 @@
     "language": "cs",
     
     "definitions": {
-      "beton": "materiál ze směsi cementu, hrubého a drobného kameniva a vody, s přísadami, příměsmi nebo s vlákny nebo bez nich, který získá své vlastnosti hydratací cementu",
-      "čerstvý_beton": "beton, který je zcela zamíchán a je ještě v takovém stavu, který umožňuje jeho zhutnění zvoleným způsobem",
-      "ztvrdlý_beton": "beton, který je v pevném stavu a má již určitou pevnost",
-      "charakteristická_pevnost": "hodnota pevnosti, pro kterou lze očekávat nižší hodnoty nejvýše u 5 % vzorků základního souboru všech možných výsledků zkoušek pevnosti hodnoceného objemu betonu"
+      "beton": "materiál ze směsi cementu, hrubého a drobného kameniva a vody",
+      "čerstvý_beton": "beton, který je zcela zamíchán a je ještě v takovém stavu, který umožňuje jeho zhutnění",
+      "ztvrdlý_beton": "beton, který je v pevném stavu a má již určitou pevnost"
     },
 
-    "concrete_types_by_density": {
-      "lehký_beton": {
-        "density_range": "800-2000 kg/m³",
-        "designation": "LC",
-        "classes": {
-          "D1.0": "≥800 a ≤1000 kg/m³",
-          "D1.2": ">1000 a ≤1200 kg/m³", 
-          "D1.4": ">1200 a ≤1400 kg/m³",
-          "D1.6": ">1400 a ≤1600 kg/m³",
-          "D1.8": ">1600 a ≤1800 kg/m³",
-          "D2.0": ">1800 a ≤2000 kg/m³"
-        },
-        "strength_classes": ["LC8/9", "LC12/13", "LC16/18", "LC20/22", "LC25/28", "LC30/33", "LC35/38", "LC40/44", "LC45/50", "LC50/55", "LC55/60", "LC60/66", "LC70/77", "LC80/88"]
+    "concrete_grades": {
+      "C12/15": {
+        "strength_class": "C12/15",
+        "exposure_classes": ["X0", "XC1"],
+        "applications": ["Podkládání", "Nenosné konstrukce"],
+        "density": 2400,
+        "max_w_c": 0.65
       },
-      "obyčejný_beton": {
-        "density_range": "2000-2600 kg/m³",
-        "designation": "C",
-        "most_common": true
+      "C16/20": {
+        "strength_class": "C16/20", 
+        "exposure_classes": ["X0", "XC1", "XC2"],
+        "applications": ["Základy", "Stěny"],
+        "density": 2400,
+        "max_w_c": 0.60
       },
-      "těžký_beton": {
-        "density_range": "≥2600 kg/m³",
-        "designation": "C",
-        "min_density_specification_required": true
+      "C20/25": {
+        "strength_class": "C20/25",
+        "exposure_classes": ["XC1", "XC2", "XC3"],
+        "applications": ["Stěny", "Základy", "Sloupy"],
+        "density": 2400,
+        "max_w_c": 0.55
+      },
+      "C25/30": {
+        "strength_class": "C25/30",
+        "exposure_classes": ["XC1", "XC2", "XC3", "XC4", "XD1"],
+        "applications": ["Železobetonové konstrukce", "Základy"],
+        "density": 2400,
+        "max_w_c": 0.50
+      },
+      "C30/37": {
+        "strength_class": "C30/37",
+        "exposure_classes": ["XC3", "XC4", "XD1", "XD2", "XF1", "XF2"],
+        "applications": ["Mostní konstrukce", "Opěry", "Římsy"],
+        "density": 2400,
+        "max_w_c": 0.45
+      },
+      "C35/45": {
+        "strength_class": "C35/45",
+        "exposure_classes": ["XD2", "XD3", "XF2", "XF3", "XF4"],
+        "applications": ["Kritické konstrukce", "Mostní pilíře"],
+        "density": 2400,
+        "max_w_c": 0.40
+      },
+      "LC25/28": {
+        "strength_class": "LC25/28",
+        "exposure_classes": ["XC1", "XC2", "XC3"],
+        "applications": ["Lehký konstrukční beton"],
+        "density": 2000,
+        "max_w_c": 0.50
       }
     },
 
-    "strength_classes": {
-      "standard": {
-        "C-/5": {"fck_cyl": null, "fck_cube": 5},
-        "C-/7.5": {"fck_cyl": null, "fck_cube": 7.5},
-        "C8/10": {"fck_cyl": 8, "fck_cube": 10},
-        "C12/15": {"fck_cyl": 12, "fck_cube": 15},
-        "C16/20": {"fck_cyl": 16, "fck_cube": 20},
-        "C20/25": {"fck_cyl": 20, "fck_cube": 25},
-        "C25/30": {"fck_cyl": 25, "fck_cube": 30},
-        "C30/37": {"fck_cyl": 30, "fck_cube": 37},
-        "C35/45": {"fck_cyl": 35, "fck_cube": 45},
-        "C40/50": {"fck_cyl": 40, "fck_cube": 50},
-        "C45/55": {"fck_cyl": 45, "fck_cube": 55},
-        "C50/60": {"fck_cyl": 50, "fck_cube": 60},
-        "C55/67": {"fck_cyl": 55, "fck_cube": 67},
-        "C60/75": {"fck_cyl": 60, "fck_cube": 75},
-        "C70/85": {"fck_cyl": 70, "fck_cube": 85},
-        "C80/95": {"fck_cyl": 80, "fck_cube": 95},
-        "C90/105": {"fck_cyl": 90, "fck_cube": 105},
-        "C100/115": {"fck_cyl": 100, "fck_cube": 115}
+    "construction_elements": {
+      "foundation": {
+        "czech": ["základ", "základy", "založení", "fundament"],
+        "english": ["foundation", "footing", "base"],
+        "typical_grades": ["C20/25", "C25/30", "C30/37"],
+        "exposure": ["X0", "XC1", "XC2", "XA1"],
+        "keywords": ["založení", "základní", "spodní"]
       },
-      "uhpc": {
-        "description": "Ultra-vysokohodnotný beton",
-        "C110": {"fck_cyl": 110},
-        "C120": {"fck_cyl": 120},
-        "C130": {"fck_cyl": 130},
-        "C140": {"fck_cyl": 140},
-        "C150": {"fck_cyl": 150},
-        "C160": {"fck_cyl": 160},
-        "C170": {"fck_cyl": 170}
+      "wall": {
+        "czech": ["stěna", "stěny", "stěn", "zeď"],
+        "english": ["wall", "partition"],
+        "typical_grades": ["C16/20", "C20/25", "C25/30"],
+        "exposure": ["XC1", "XC2", "XC3"],
+        "keywords": ["obvodová", "nosná", "dělící"]
+      },
+      "column": {
+        "czech": ["sloup", "sloupy", "pilíř", "pilíře"],
+        "english": ["column", "pillar", "pier"],
+        "typical_grades": ["C25/30", "C30/37", "C35/45"],
+        "exposure": ["XC2", "XC3", "XC4"],
+        "keywords": ["nosný", "svislá", "podpora"]
+      },
+      "beam": {
+        "czech": ["trám", "trámy", "nosník"],
+        "english": ["beam", "girder"],
+        "typical_grades": ["C25/30", "C30/37"],
+        "exposure": ["XC2", "XC3", "XC4"],
+        "keywords": ["vodorovný", "nosný", "překlady"]
+      },
+      "slab": {
+        "czech": ["deska", "desky", "desk"],
+        "english": ["slab", "deck", "plate"],
+        "typical_grades": ["C20/25", "C25/30", "C30/37"],
+        "exposure": ["XC1", "XC2", "XC3"],
+        "keywords": ["stropní", "podlahová", "plošná"]
+      },
+      "abutment": {
+        "czech": ["opěra", "opěry", "opěrná"],
+        "english": ["abutment", "retaining wall"],
+        "typical_grades": ["C30/37", "C35/45"],
+        "exposure": ["XC4", "XD1", "XD2", "XF2"],
+        "keywords": ["mostní", "podpěrná", "opěrný"]
+      },
+      "cornice": {
+        "czech": ["římsa", "říms", "římse"],
+        "english": ["cornice", "ledge"],
+        "typical_grades": ["C30/37", "C35/45"],
+        "exposure": ["XC4", "XD3", "XF4"],
+        "keywords": ["venkovní", "přesah", "ochranná"]
       }
     },
 
-    "environment_classes": {
-      "X0": {
-        "description": "bez nebezpečí koroze nebo narušení; všechny vlivy s výjimkou zmrazování a rozmrazování, obrusu nebo chemicky agresivního prostředí",
-        "max_w_c": null,
-        "min_strength": "C12/15",
-        "min_cement": null,
-        "min_air_content": null,
-        "applications": [
-          "beton uvnitř budov s velmi nízkou vlhkostí vzduchu",
-          "beton základů bez výztuže v prostředí bez vlivu mrazu",
-          "beton bez výztuže uvnitř budov",
-          "beton chráněný před účinky vnějšího prostředí vrstvou izolace"
-        ]
-      },
-
-      "XC1": {
-        "description": "suché nebo stále mokré",
-        "max_w_c": 0.65,
-        "min_strength": "C16/20",
-        "min_cement": 260,
-        "min_air_content": null,
-        "applications": [
-          "beton uvnitř budov s nízkou vlhkostí vzduchu",
-          "beton trvale ponořený ve vodě",
-          "části staveb uvnitř budov se střední vlhkostí vzduchu (včetně kuchyní, koupelen a prádelen v obytných budovách)"
-        ]
-      },
-
-      "XC2": {
-        "description": "mokré, občas suché",
-        "max_w_c": 0.60,
-        "min_strength": "C16/20", 
-        "min_cement": 280,
-        "min_air_content": null,
-        "applications": [
-          "povrch betonu vystavený dlouhodobému působení vody",
-          "většina základů",
-          "části vodojemů"
-        ]
-      },
-
-      "XC3": {
-        "description": "středně mokré, vlhké",
-        "max_w_c": 0.55,
-        "min_strength": "C20/25",
-        "min_cement": 280,
-        "min_air_content": null,
-        "applications": [
-          "beton uvnitř budov se střední nebo velkou vlhkostí vzduchu",
-          "venkovní beton chráněný proti dešti",
-          "haly, vnitřní prostory s velkou vlhkostí vzduchu",
-          "kuchyně pro hromadná stravování, lázně, prádelny",
-          "veřejné a kryté bazény, stáje a chlévy"
-        ]
-      },
-
-      "XC4": {
-        "description": "střídavě mokré a suché",
-        "max_w_c": 0.50,
-        "min_strength": "C25/30",
-        "min_cement": 300,
-        "min_air_content": null,
-        "max_water_penetration": 50,
-        "applications": [
-          "povrchy betonu ve styku s vodou, které nejsou zahrnuty ve stupni vlivu prostředí XC2",
-          "vnější části staveb z betonu přímo vystaveného srážkám"
-        ]
-      },
-
-      "XD1": {
-        "description": "středně mokré, vlhké (chloridy)",
-        "max_w_c": 0.55,
-        "min_strength": "C25/30",
-        "min_cement": 300,
-        "min_air_content": null,
-        "applications": [
-          "povrchy betonů vystavené chloridům rozptýleným ve vzduchu",
-          "stavební části dopravních ploch",
-          "jednotlivé garáže"
-        ]
-      },
-
-      "XD2": {
-        "description": "mokré, občas suché (chloridy)",
-        "max_w_c": 0.55,
-        "min_strength": "C25/30", 
-        "min_cement": 300,
-        "min_air_content": null,
-        "max_water_penetration": 50,
-        "applications": [
-          "plavecké bazény",
-          "beton vystavený působení průmyslových vod obsahujících chloridy"
-        ]
-      },
-
-      "XD3": {
-        "description": "střídavě mokré a suché (chloridy)",
-        "max_w_c": 0.45,
-        "min_strength": "C30/37",
-        "min_cement": 320,
-        "min_air_content": null,
-        "max_water_penetration": 35,
-        "applications": [
-          "části mostů vystavené postřikům obsahujícím chloridy",
-          "vozovky",
-          "betonové povrchy parkovišť",
-          "části mostů a inženýrských staveb vystavené postřikům obsahujícím chloridy"
-        ]
-      },
-
-      "XF1": {
-        "description": "mírně nasycen vodou bez rozmrazovacích prostředků",
-        "max_w_c": 0.55,
-        "min_strength": "C25/30",
-        "min_cement": 300,
-        "min_air_content": null,
-        "max_water_penetration": 50,
-        "special_requirements": "kamenivo podle EN 12620 s dostatečnou mrazuvzdorností",
-        "applications": [
-          "svislé betonové povrchy vystavené dešti a mrazu"
-        ]
-      },
-
-      "XF2": {
-        "description": "mírně nasycen vodou s rozmrazovacími prostředky",
-        "max_w_c": 0.55,
-        "min_strength": "C25/30",
-        "min_cement": 300,
-        "min_air_content": 4,
-        "max_water_penetration": 50,
-        "freeze_thaw_resistance": ["A/75/1250", "C/50/1500"],
-        "applications": [
-          "svislé betonové povrchy silničních konstrukcí vystavené mrazu a rozmrazovacím prostředkům rozptýleným ve vzduchu",
-          "pokud nespadají do prostředí XF4"
-        ]
-      },
-
-      "XF3": {
-        "description": "značně nasycen vodou bez rozmrazovacích prostředků",
-        "max_w_c": 0.50,
-        "min_strength": "C25/30",
-        "min_cement": 320,
-        "min_air_content": 4,
-        "max_water_penetration": 35,
-        "applications": [
-          "vodorovné betonové povrchy vystavené dešti a mrazu",
-          "otevřené nádrže na vodu",
-          "části staveb v zóně kolísání hladiny sladké vody",
-          "přelivná tělesa vodních staveb"
-        ]
-      },
-
-      "XF4": {
-        "description": "značně nasycen vodou s rozmrazovacími prostředky nebo mořskou vodou",
-        "max_w_c": 0.45,
-        "min_strength": "C30/37",
-        "min_cement": 340,
-        "min_air_content": 4,
-        "max_water_penetration": 35,
-        "freeze_thaw_resistance": ["A/100/1000", "C/75/1000"],
-        "applications": [
-          "vozovky a mostovky vystavené rozmrazovacím prostředkům",
-          "betonové povrchy vystavené přímému postřiku rozmrazovacími prostředky a mrazu",
-          "omývaná část staveb v moři vystavená mrazu",
-          "lapoly a nádrže u komunikací",
-          "betonová svodidla"
-        ]
-      },
-
-      "XA1": {
-        "description": "slabě agresivní chemické prostředí",
-        "max_w_c": 0.55,
-        "min_strength": "C25/30",
-        "min_cement": 300,
-        "min_air_content": null,
-        "max_water_penetration": 50,
-        "applications": [
-          "beton vystavený rostlé zemině a podzemní vodě podle tabulky 2 normy",
-          "nádrže čistíren odpadních vod",
-          "jímky odpadních vod (žumpy, septiky)",
-          "základy staveb v prostředí XA1 podle tabulky 2 ČSN EN 206+A2"
-        ],
-        "chemical_limits": {
-          "SO4_groundwater": "≥200 a ≤600 mg/l",
-          "pH": "≤6.5 a ≥5.5",
-          "CO2_aggressive": "≥15 a ≤40 mg/l",
-          "NH4": "≥15 a ≤30 mg/l",
-          "Mg2": "≥300 a ≤1000 mg/l",
-          "SO4_soil": "≥2000 a ≤3000 mg/kg",
-          "Baumann_Gully": ">200 ml/kg"
-        }
-      },
-
-      "XA2": {
-        "description": "středně agresivní chemické prostředí",
-        "max_w_c": 0.50,
-        "min_strength": "C25/30",
-        "min_cement": 320,
-        "min_air_content": null,
-        "max_water_penetration": 35,
-        "special_requirements": "síranovzdorný cement",
-        "applications": [
-          "beton vystavený rostlé zemině a podzemní vodě podle tabulky 2 normy",
-          "části staveb v půdách agresivních vůči betonu",
-          "základy staveb v prostředí XA2 podle tabulky 2 ČSN EN 206+A2"
-        ],
-        "chemical_limits": {
-          "SO4_groundwater": ">600 a ≤3000 mg/l",
-          "pH": "<5.5 a ≥4.5",
-          "CO2_aggressive": ">40 a ≤100 mg/l",
-          "NH4": ">30 a ≤60 mg/l",
-          "Mg2": ">1000 a ≤3000 mg/l",
-          "SO4_soil": ">3000 a ≤12000 mg/kg"
-        }
-      },
-
-      "XA3": {
-        "description": "silně agresivní chemické prostředí",
-        "max_w_c": 0.45,
-        "min_strength": "C30/37",
-        "min_cement": 360,
-        "min_air_content": null,
-        "max_water_penetration": 20,
-        "special_requirements": "síranovzdorný cement",
-        "applications": [
-          "beton vystavený rostlé zemině a podzemní vodě podle tabulky 2 normy",
-          "průmyslové čistírny odpadních vod s chemicky agresivními vodami",
-          "základy staveb",
-          "sklady chemických rozmrazovacích látek a umělých hnojiv",
-          "silážní jámy a krmné žlaby v zemědělství",
-          "chladicí věže s odvodem kouřových plynů"
-        ],
-        "chemical_limits": {
-          "SO4_groundwater": ">3000 a ≤6000 mg/l",
-          "pH": "<4.5 a ≥4.5",
-          "CO2_aggressive": ">100 až do nasycení mg/l",
-          "NH4": ">60 a ≤100 mg/l",
-          "Mg2": ">3000 až do nasycení mg/l",
-          "SO4_soil": ">12000 a ≤24000 mg/kg"
-        },
-        "note": "Pokud jsou konkrétní hodnoty chemických charakteristik prostředí nepříznivější, než uvádí tabulka 2 ČSN EN 206+A2, musí se beton proti styku s agresivním prostředím navíc chránit sekundární ochranou"
-      },
-
-      "XM1": {
-        "description": "mírné nebo střední namáhání obrusem: minimální požadavky, včetně pojezdu vozidly opatřenými pneumatikami",
-        "max_w_c": 0.55,
-        "min_strength": "C30/37",
-        "min_cement": 300,
-        "applications": [
-          "nosné vyztužené nebo nevyztužené průmyslové podlahy pojížděné vozidly s pneumatikami",
-          "žlaby akvaduktů"
-        ]
-      },
-
-      "XM2": {
-        "description": "silné namáhání obrusem: provoz vysokozdvižných vozíků, obrus unášenými splaveninami vody při malé rychlosti vody",
-        "max_w_c": 0.55,
-        "min_strength": "C30/37",
-        "min_cement": 300,
-        "special_requirements": "speciální zpracování povrchu",
-        "applications": [
-          "nosné vyztužené nebo nevyztužené průmyslové podlahy pojížděné vozidly s pneumatikami nebo celogumovými koly vysokozdvižných vozíků",
-          "stěny a dna kanálů; jezové pilíře a tělesa jezů"
-        ]
-      },
-
-      "XM3": {
-        "description": "velmi silné namáhání obrusem: častý pojezd pásovými vozidly, otluk unášenými splaveninami vody při vysoké rychlosti vody",
-        "max_w_c": 0.45,
-        "min_strength": "C35/45",
-        "min_cement": 320,
-        "special_requirements": "úprava povrchu odolnými materiály",
-        "applications": [
-          "nosné vyztužené nebo nevyztužené průmyslové podlahy pojížděné vozidly s ocelovými nebo umělohmotnými koly vysokozdvižných vozíků",
-          "plochy pojížděné pásovými vozidly",
-          "vodní stavby vystavené intenzivnímu proudění vody, např. vývařiště"
-        ]
-      }
-    },
-
-    "chloride_content": {
-      "Cl_1.0": {
-        "max_content": 1.0,
-        "applications": [
-          "prostý beton nebo beton neobsahující jiné kovové vložky s výjimkou korozivzdorných závěsných prvků"
-        ]
-      },
-      "Cl_0.4": {
-        "max_content": 0.4,
-        "applications": [
-          "beton s ocelovou výztuží nebo jinými kovovými vložkami"
-        ]
-      },
-      "Cl_0.2": {
-        "max_content": 0.2,
-        "applications": [
-          "beton s ocelovou výztuží nebo jinými kovovými vložkami",
-          "beton s předpjatou ocelovou výztuží v přímém kontaktu s betonem"
-        ]
-      },
-      "Cl_0.1": {
-        "max_content": 0.1,
-        "applications": [
-          "beton s předpjatou ocelovou výztuží v přímém kontaktu s betonem"
-        ]
-      }
-    },
-
-    "consistency_classes": {
-      "slump_test": {
-        "S1": {"range": "10-40 mm", "description": "velmi tuhá"},
-        "S2": {"range": "50-90 mm", "description": "tuhá"},
-        "S3": {"range": "100-150 mm", "description": "plastická"},
-        "S4": {"range": "160-210 mm", "description": "velmi plastická"},
-        "S5": {"range": "≥220 mm", "description": "tekutá"}
-      },
-      "flow_test": {
-        "F1": {"range": "≤340 mm"},
-        "F2": {"range": "350-410 mm"},
-        "F3": {"range": "420-480 mm"},
-        "F4": {"range": "490-550 mm"},
-        "F5": {"range": "560-620 mm"},
-        "F6": {"range": "≥630 mm"}
-      },
-      "compactability": {
-        "C0": {"range": "≥1.46"},
-        "C1": {"range": "1.45-1.26"},
-        "C2": {"range": "1.25-1.11"},
-        "C3": {"range": "1.10-1.04"},
-        "C4": {"range": "<1.04", "note": "pouze pro lehký beton"}
-      },
-      "self_compacting": {
-        "SF1": {"range": "550-650 mm"},
-        "SF2": {"range": "660-750 mm"},
-        "SF3": {"range": "760-850 mm"}
-      }
-    },
-
-    "curing_requirements": {
-      "development_categories": {
-        "rychlý": {
-          "ratio": "fcm,2/fcm,28 ≥ 0.5",
-          "description": "rychlý vývoj pevnosti"
-        },
-        "střední": {
-          "ratio": "0.3 ≤ fcm,2/fcm,28 < 0.5",
-          "description": "střední vývoj pevnosti"
-        },
-        "pomalý": {
-          "ratio": "0.15 ≤ fcm,2/fcm,28 < 0.3",
-          "description": "pomalý vývoj pevnosti"
-        }
-      },
-      "curing_classes": {
-        "třída_1": {"min_surface_strength": "bez požadavku"},
-        "třída_2": {"min_surface_strength": "35% fck"},
-        "třída_3": {"min_surface_strength": "50% fck"},
-        "třída_4": {"min_surface_strength": "70% fck"}
-      },
-      "minimum_curing_time": {
-        "note": "Plus doba tuhnutí přesahující 5 h",
-        "temperature_note": "Pro teploty nižší než 5°C se může doba ošetřování prodloužit",
-        "critical_note": "Teplota betonu nesmí klesnout pod 0°C, pokud pevnost v tlaku povrchu betonu nedosáhne minimálně 5 MPa"
-      }
-    },
-
-    "aggregate_size": {
-      "dmax_selection": {
-        "8mm": {
-          "min_spacing": "≥20mm",
-          "max_rebar_diameter": "12mm"
-        },
-        "16mm": {
-          "min_spacing": "21-26mm (with 16mm rebar)",
-          "max_rebar_diameter": "16mm"
-        },
-        "22mm": {
-          "min_spacing": "27-36mm (with 16mm rebar)",
-          "max_rebar_diameter": "22mm"
-        },
-        "32mm": {
-          "min_spacing": "≥37mm",
-          "max_rebar_diameter": "32mm"
-        }
-      },
-      "requirements": {
-        "formula1": "Δ ≥ 1.2 x Ø",
-        "formula2": "Δ ≥ Dmax + 5 mm", 
-        "formula3": "Δ ≥ 20 mm",
-        "note": "Pro vzdálenost Δ prutů výztuže v konstrukci musí být použita největší z hodnot"
-      }
-    },
-
-    "additional_requirements": {
-      "special_cement": ["bílý portlandský cement", "síranovzdorný cement"],
-      "special_aggregate": "druh kameniva, frakce, požadovaná objemová hmotnost",
-      "fibers": {
-        "types": ["ocelová vlákna", "polymerová vlákna"],
-        "specification": "druh vláken, účel, dávka v kg/m³ betonu"
-      },
-      "air_content": "požadovaný obsah vzduchu v % včetně tolerancí",
-      "temperature": "požadovaná minimální nebo maximální hodnota v °C a povolené tolerance při přejímce",
-      "strength_development": "požadovaný nárůst",
-      "heat_development": "požadovaný nárůst - cement dle ČSN EN 197-1 LH",
-      "slow_setting": "požadovaná doba zaručené konzistence",
-      "water_resistance": "požadovaná max. hodnota průsaku v mm",
-      "abrasion_resistance": "požadovaná hodnota v %",
-      "tensile_strength": "požadovaná hodnota v MPa",
-      "shrinkage": "požadovaná hodnota max. smrštění v mm/m",
-      "elastic_modulus": "požadovaná garantovaná minimální nebo maximální hodnota v GPa"
-    },
-
-    "self_compacting_concrete": {
-      "viscosity_t500": {
-        "VS1": "<2s",
-        "VS2": "≥2s"
-      },
-      "viscosity_tv": {
-        "VF1": "<9s", 
-        "VF2": "9.0-25.0s"
-      },
-      "passing_ability_l_box": {
-        "PL1": "≥0.80 se dvěma pruty žebírkové výztuže",
-        "PL2": "≥0.80 se třemi pruty žebírkové výztuže"
-      },
-      "passing_ability_j_ring": {
-        "PJ1": "≤10 se 12 pruty žebírkové výztuže",
-        "PJ2": "≤10 se 16 pruty žebírkové výztuže"
-      },
-      "segregation_resistance": {
-        "SR1": "≤20%",
-        "SR2": "≤15%"
-      }
-    },
-
-    "practical_applications": {
-      "residential": {
-        "foundations": ["XC1", "XC2", "XF1", "XA1"],
-        "walls_interior": ["XC1"],
-        "walls_exterior": ["XC3", "XC4", "XF1"],
-        "floors": ["XC1", "XM1"],
-        "basement": ["XC2", "XA1"]
-      },
-      "infrastructure": {
-        "bridges": ["XC4", "XD3", "XF2", "XF4"],
-        "tunnels": ["XC2", "XA1", "XA2"],
-        "roads": ["XF2", "XF4", "XD1", "XD3"],
-        "parking": ["XD1", "XD2", "XF2"],
-        "sewage_treatment": ["XA1", "XA2", "XA3"]
-      },
-      "industrial": {
-        "floors_light": ["XM1"],
-        "floors_heavy": ["XM2", "XM3"],
-        "chemical_storage": ["XA2", "XA3"],
-        "agricultural": ["XA1", "XA2", "XF1"]
-      },
-      "marine_structures": {
-        "splash_zone": ["XF4", "XS1", "XS2"],
-        "submerged": ["XS1"],
-        "atmospheric": ["XS1"]
-      }
-    },
-
-    "quality_control": {
-      "fresh_concrete_tests": [
-        "Odběr vzorků a zkušební zařízení (ČSN EN 12350-1)",
-        "Zkouška sednutím (ČSN EN 12350-2)", 
-        "Zkouška Vebe (ČSN EN 12350-3)",
-        "Stupeň zhutnitelnosti (ČSN EN 12350-4)",
-        "Zkouška rozlitím (ČSN EN 12350-5)",
-        "Objemová hmotnost (ČSN EN 12350-6)",
-        "Obsah vzduchu - Tlakové metody (ČSN EN 12350-7)"
-      ],
-      "hardened_concrete_tests": [
-        "Pevnost v tlaku zkušebních těles (ČSN EN 12390-3)",
-        "Pevnost v tahu ohybem (ČSN EN 12390-5)",
-        "Pevnost v příčném tahu (ČSN EN 12390-6)",
-        "Objemová hmotnost ztvrdlého betonu (ČSN EN 12390-7)",
-        "Hloubka průsaku tlakovou vodou (ČSN EN 12390-8)",
-        "Odolnost proti karbonataci (ČSN EN 12390-10)",
-        "Odolnost proti chloridům (ČSN EN 12390-11)"
-      ],
-      "in_situ_tests": [
-        "Vývrty - Odběr, vyšetření a
+    "exposure_classes": {
+      "XC1": {"description": "Suchá nebo trvale mokrá", "conditions": ["interiér"]},
+      "XC2": {"description": "Mokrá, zřídka suchá", "conditions": ["základy"]},
+      "XC3": {"description": "Mírně mokrá", "conditions": ["exteriér chráněný"]},
+      "XC4": {"description": "Střídavě mokrá a suchá", "conditions": ["fasády"]},
+      "XD1": {"description": "Mírně mokrá s chloridy", "conditions": ["garáže"]},
+      "XD2": {"description": "Mokrá s chloridy", "conditions": ["bazény"]},
+      "XD3": {"description": "Střídavě s chloridy", "conditions": ["mosty"]},
+      "XF1": {"description": "Mírně mokrá s mrazem", "conditions": ["svislé plochy"]},
+      "XF2": {"description": "Mírně mokrá s solemi a mrazem", "conditions": ["silnice"]},
+      "XF3": {"description": "Velmi mokrá s mrazem", "conditions": ["vodorovné plochy"]},
+      "XF4": {"description": "Velmi mokrá s solemi a mrazem", "conditions": ["silniční konstrukce"]}
+    }
+  }
+}

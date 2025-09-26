@@ -96,36 +96,62 @@ def check_dependencies():
     
     return dependencies
 
-# === Безопасное подключение роутеров ===
+# === Автоматическая система роутеров ===
 def setup_routers():
-    """Безопасное подключение роутеров с обработкой ошибок"""
+    """Автоматическое подключение роутеров с улучшенной обработкой ошибок"""
     try:
-        from routers.analyze_concrete import router as concrete_router
-        app.include_router(concrete_router, prefix="/analyze", tags=["Concrete"])
-        logger.info("✅ Роутер analyze_concrete подключен")
+        from app.core.router_registry import router_registry
+        routers = router_registry.discover_routers("routers")  # Ищем в корневой папке routers
+        
+        logger.info(f"🔍 Найдено {len(routers)} роутеров для подключения")
+        
+        successful_routers = 0
+        for router_info in routers:
+            try:
+                app.include_router(
+                    router_info['router'],
+                    prefix=router_info.get('prefix', ''),
+                    tags=router_info.get('tags', [router_info['name']])
+                )
+                logger.info(f"✅ Роутер {router_info['name']} подключен")
+                successful_routers += 1
+            except Exception as e:
+                logger.error(f"❌ Ошибка подключения роутера {router_info['name']}: {e}")
+        
+        logger.info(f"📊 Успешно подключено {successful_routers}/{len(routers)} роутеров")
+        
+        # Fallback к ручному подключению
+        if successful_routers == 0:
+            logger.warning("⚠️ Автоматическое подключение не сработало, используем fallback")
+            setup_routers_fallback()
+            
     except Exception as e:
-        logger.error(f"❌ Ошибка подключения роутера analyze_concrete: {e}")
+        logger.error(f"❌ Ошибка автоматического подключения роутеров: {e}")
+        logger.info("🔄 Переключаемся на ручное подключение")
+        setup_routers_fallback()
+
+def setup_routers_fallback():
+    """Резервное ручное подключение роутеров"""
+    router_configs = [
+        ("routers.analyze_concrete", "concrete_router", "/analyze", ["Concrete"]),
+        ("routers.analyze_materials", "materials_router", "/analyze", ["Materials"]),
+        ("routers.version_diff", "diff_router", "/compare", ["Diff"]),
+        ("routers.upload", "upload_router", "/upload", ["Upload"]),
+        ("routers.tzd_router", "router", "/tzd", ["TZD"]),
+    ]
     
-    try:
-        from routers.analyze_materials import router as materials_router
-        app.include_router(materials_router, prefix="/analyze", tags=["Materials"])
-        logger.info("✅ Роутер analyze_materials подключен")
-    except Exception as e:
-        logger.error(f"❌ Ошибка подключения роутера analyze_materials: {e}")
+    successful = 0
+    for module_path, router_name, prefix, tags in router_configs:
+        try:
+            module = __import__(module_path, fromlist=[router_name])
+            router = getattr(module, router_name)
+            app.include_router(router, prefix=prefix, tags=tags)
+            logger.info(f"✅ Fallback: роутер {module_path} подключен")
+            successful += 1
+        except Exception as e:
+            logger.warning(f"⚠️ Fallback: не удалось подключить {module_path}: {e}")
     
-    try:
-        from routers.version_diff import router as diff_router
-        app.include_router(diff_router, prefix="/compare", tags=["Diff"])
-        logger.info("✅ Роутер version_diff подключен")
-    except Exception as e:
-        logger.error(f"❌ Ошибка подключения роутера version_diff: {e}")
-    
-    try:
-        from routers.upload import router as upload_router
-        app.include_router(upload_router, prefix="/upload", tags=["Upload"])
-        logger.info("✅ Роутер upload подключен")
-    except Exception as e:
-        logger.error(f"❌ Ошибка подключения роутера upload: {e}")
+    return successful
 
 # === Функции для настройки приложения ===
 

@@ -202,8 +202,21 @@ class KnowledgeBaseService:
     def _process_data(self):
         """Обрабатывает сырые данные в структурированные объекты"""
         
+        # Поддерживаем оба формата - новый и старый
+        concrete_grades_data = self._raw_data.get("concrete_grades", {})
+        if not concrete_grades_data and "concrete_knowledge_base" in self._raw_data:
+            # Новый формат JSON
+            kb_data = self._raw_data["concrete_knowledge_base"]
+            concrete_grades_data = kb_data.get("concrete_grades", {})
+            construction_elements_data = kb_data.get("construction_elements", {})
+            exposure_classes_data = kb_data.get("exposure_classes", {})
+        else:
+            # Старый формат
+            construction_elements_data = self._raw_data.get("construction_elements", {})
+            exposure_classes_data = self._raw_data.get("exposure_classes", {})
+        
         # Обрабатываем марки бетона
-        for grade_name, grade_data in self._raw_data.get("concrete_grades", {}).items():
+        for grade_name, grade_data in concrete_grades_data.items():
             self._concrete_grades[grade_name] = ConcreteGrade(
                 grade=grade_name,
                 strength_class=grade_data.get("strength_class", grade_name),
@@ -215,7 +228,7 @@ class KnowledgeBaseService:
             )
         
         # Обрабатываем конструктивные элементы
-        for element_name, element_data in self._raw_data.get("construction_elements", {}).items():
+        for element_name, element_data in construction_elements_data.items():
             self._construction_elements[element_name] = ConstructionElement(
                 name=element_name,
                 czech_names=element_data.get("czech", []),
@@ -230,7 +243,7 @@ class KnowledgeBaseService:
             self._context_keywords.update(element_data.get("keywords", []))
         
         # Обрабатываем классы воздействия
-        for class_code, class_data in self._raw_data.get("exposure_classes", {}).items():
+        for class_code, class_data in exposure_classes_data.items():
             self._exposure_classes[class_code] = ExposureClass(
                 code=class_code,
                 description=class_data.get("description", ""),
