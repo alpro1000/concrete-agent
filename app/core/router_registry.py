@@ -36,26 +36,32 @@ class RouterRegistry:
                 continue
                 
             router_name = router_file.stem
-            module_path = f"app.routers.{router_name}"
+            
+            # Определяем правильный путь импорта
+            if routers_dir.startswith("app/"):
+                module_path = f"{routers_dir.replace('/', '.')}.{router_name}"
+            else:
+                module_path = f"{routers_dir}.{router_name}"
             
             try:
                 # Импортируем модуль
                 module = importlib.import_module(module_path)
                 
-                # Ищем роутер в модуле
-                if hasattr(module, 'router'):
-                    router = getattr(module, 'router')
-                    
-                    if isinstance(router, APIRouter):
-                        # Получаем метаданные роутера
-                        metadata = self._extract_router_metadata(module, router, router_name)
-                        routers.append(metadata)
-                        self.registered_routers[router_name] = metadata
-                        logger.info(f"✅ Роутер {router_name} загружен успешно")
-                    else:
-                        logger.warning(f"⚠️ {router_name}: 'router' не является APIRouter")
+                # Ищем роутер в модуле (разные варианты имен)
+                router_attr = None
+                for attr_name in ['router', 'app_router', f'{router_name}_router']:
+                    if hasattr(module, attr_name):
+                        router_attr = getattr(module, attr_name)
+                        break
+                
+                if router_attr and isinstance(router_attr, APIRouter):
+                    # Получаем метаданные роутера
+                    metadata = self._extract_router_metadata(module, router_attr, router_name)
+                    routers.append(metadata)
+                    self.registered_routers[router_name] = metadata
+                    logger.info(f"✅ Роутер {router_name} загружен успешно")
                 else:
-                    logger.warning(f"⚠️ {router_name}: не найден объект 'router'")
+                    logger.warning(f"⚠️ {router_name}: не найден объект 'router' типа APIRouter")
                     
             except Exception as e:
                 logger.error(f"❌ Ошибка загрузки роутера {router_name}: {e}")
