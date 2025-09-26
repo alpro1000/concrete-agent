@@ -108,12 +108,34 @@ def setup_routers():
         successful_routers = 0
         for router_info in routers:
             try:
+                # Определяем префикс: используем собственный префикс роутера или добавляем стандартный
+                router_prefix = router_info.get('prefix', '')
+                router_name = router_info['name']
+                
+                # Если у роутера уже есть собственный префикс, используем его как есть
+                if router_prefix:
+                    final_prefix = ""  # Не добавляем дополнительный префикс
+                else:
+                    # Если у роутера нет собственного префикса, добавляем стандартный
+                    if router_name in ['analyze_concrete', 'analyze_materials']:
+                        final_prefix = '/analyze'
+                    elif router_name == 'version_diff':
+                        final_prefix = '/compare'
+                    elif router_name == 'upload':
+                        final_prefix = '/upload'
+                    else:
+                        final_prefix = ''
+                
+                # Определяем теги
+                tags = router_info.get('tags', [router_name.replace('_', ' ').title()])
+                
                 app.include_router(
                     router_info['router'],
-                    prefix=router_info.get('prefix', ''),
-                    tags=router_info.get('tags', [router_info['name']])
+                    prefix=final_prefix,
+                    tags=tags
                 )
-                logger.info(f"✅ Роутер {router_info['name']} подключен")
+                display_prefix = router_prefix if router_prefix else final_prefix  
+                logger.info(f"✅ Роутер {router_name} подключен с префиксом '{display_prefix}'")
                 successful_routers += 1
             except Exception as e:
                 logger.error(f"❌ Ошибка подключения роутера {router_info['name']}: {e}")
