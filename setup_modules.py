@@ -59,7 +59,7 @@ class ConcreteAgentSetup:
             ("concrete_agent/agent.py", "ConcreteGradeExtractor"),
             ("volume_agent/agent.py", "VolumeAnalysisAgent"),
             ("material_agent/agent.py", "MaterialAnalysisAgent"),
-            ("tzd_reader_secure.py", "SecureAIAnalyzer"),
+            ("tzd_reader/agent.py", "SecureAIAnalyzer"),
             ("smetny_inzenyr/agent.py", "SmetnyInzenyr"),
             ("dwg_agent/agent.py", "DwgAnalysisAgent")
         ]
