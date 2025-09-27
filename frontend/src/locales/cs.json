@@ -1,0 +1,120 @@
+{
+  "app": {
+    "title": "ConcreteAgent - Analýza stavebních konstrukcí",
+    "subtitle": "Multi-agentní systém pro analýzu betonu, materiálů a objemů"
+  },
+  "upload": {
+    "dragAndDrop": "Přetáhněte soubory sem nebo klikněte pro výběr",
+    "selectFiles": "Vybrat soubory",
+    "documents": "Hlavní dokumenty (PDF, DOCX, TXT)",
+    "smeta": "Smeta nebo výkaz výměr (XLSX, CSV, PDF)",
+    "supportedFormats": "Podporované formáty: PDF, DOCX, TXT, XLSX, CSV",
+    "maxSize": "Maximální velikost souboru: 10MB",
+    "filesSelected": "Vybrané soubory",
+    "removeFile": "Odebrat soubor"
+  },
+  "form": {
+    "materialQuery": "Dotaz na materiál",
+    "materialQueryPlaceholder": "např. výztuž, okna, izolace, výztužné vložky...",
+    "useClaude": "Použít Claude AI pro analýzu",
+    "claudeMode": "Režim Claude",
+    "language": "Jazyk reportů",
+    "includeDrawings": "Zahrnout analýzu výkresů (beta)",
+    "analyze": "Spustit analýzu",
+    "analyzing": "Probíhá analýza...",
+    "cancel": "Zrušit"
+  },
+  "languages": {
+    "cs": "Čeština",
+    "en": "Angličtina", 
+    "ru": "Ruština"
+  },
+  "claudeModes": {
+    "enhancement": "Vylepšení (doporučeno)",
+    "primary": "Primární analýza"
+  },
+  "results": {
+    "title": "Výsledky analýzy",
+    "download": "Stáhnout report",
+    "copy": "Kopírovat JSON",
+    "addFiles": "Přidat další soubory",
+    "noResults": "Žádné výsledky k zobrazení",
+    "error": "Chyba při analýze"
+  },
+  "agents": {
+    "concrete": {
+      "title": "Marky betonu (ConcreteAgent)",
+      "grade": "Marky",
+      "location": "Místo použití", 
+      "context": "Kontext",
+      "source": "Zdroj",
+      "confidence": "Jistota",
+      "exposureClasses": "Třídy prostředí",
+      "totalGrades": "Celkem marky: {{count}}",
+      "noGrades": "Nebyly nalezeny žádné marky betonu"
+    },
+    "volume": {
+      "title": "Objemy (VolumeAgent)",
+      "grade": "Marky",
+      "element": "Element",
+      "volume": "Objem (m³)",
+      "area": "Plocha (m²)",
+      "cost": "Náklady",
+      "source": "Zdroj",
+      "confidence": "Jistota",
+      "totalCost": "Celkové náklady: {{cost}} Kč",
+      "totalVolume": "Celkový objem: {{volume}} m³",
+      "noVolumes": "Nebyly nalezeny žádné objemy"
+    },
+    "material": {
+      "title": "Materiály (MaterialAgent)",
+      "type": "Typ",
+      "name": "Název",
+      "specification": "Specifikace",
+      "quantity": "Množství",
+      "unit": "Jednotka",
+      "context": "Kontext",
+      "source": "Zdroj",
+      "confidence": "Jistota",
+      "categories": "Kategorie",
+      "totalMaterials": "Celkem materiály: {{count}}",
+      "noMaterials": "Nebyly nalezeny žádné materiály"
+    },
+    "drawing": {
+      "title": "Geometrie z výkresů (DrawingVolumeAgent)",
+      "element": "Element",
+      "geometry": "Geometrie",
+      "volume": "Objem/Plocha",
+      "source": "Zdroj",
+      "totalElements": "Celkem prvky: {{count}}",
+      "noElements": "Nebyly nalezeny žádné geometrické prvky"
+    }
+  },
+  "status": {
+    "analyzing": "Probíhá analýza...",
+    "success": "Analýza dokončena",
+    "error": "Chyba při analýze",
+    "warning": "Varování",
+    "partial": "Částečné výsledky"
+  },
+  "errors": {
+    "networkError": "Chyba sítě - zkontrolujte připojení",
+    "serverError": "Chyba serveru - zkuste to později",
+    "validationError": "Chyba validace - zkontrolujte vstupní data",
+    "fileTooBig": "Soubor je příliš velký",
+    "unsupportedFormat": "Nepodporovaný formát souboru",
+    "noFilesSelected": "Nebyl vybrán žádný soubor",
+    "unknown": "Neznámá chyba"
+  },
+  "common": {
+    "loading": "Načítání...",
+    "retry": "Zkusit znovu",
+    "close": "Zavřít",
+    "expand": "Rozbalit",
+    "collapse": "Sbalit",
+    "show": "Zobrazit",
+    "hide": "Skrýt",
+    "yes": "Ano",
+    "no": "Ne"
+  }
+}

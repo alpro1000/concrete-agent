@@ -1,0 +1,120 @@
+{
+  "app": {
+    "title": "ConcreteAgent - Анализ строительных конструкций",
+    "subtitle": "Мульти-агентная система для анализа бетона, материалов и объёмов"
+  },
+  "upload": {
+    "dragAndDrop": "Перетащите файлы сюда или нажмите для выбора",
+    "selectFiles": "Выбрать файлы",
+    "documents": "Основные документы (PDF, DOCX, TXT)",
+    "smeta": "Смета или ведомость объёмов (XLSX, CSV, PDF)",
+    "supportedFormats": "Поддерживаемые форматы: PDF, DOCX, TXT, XLSX, CSV",
+    "maxSize": "Максимальный размер файла: 10МБ",
+    "filesSelected": "Выбранные файлы",
+    "removeFile": "Удалить файл"
+  },
+  "form": {
+    "materialQuery": "Запрос материала",
+    "materialQueryPlaceholder": "например: арматура, окна, изоляция, арматурные стержни...",
+    "useClaude": "Использовать Claude AI для анализа",
+    "claudeMode": "Режим Claude",
+    "language": "Язык отчётов",
+    "includeDrawings": "Включить анализ чертежей (бета)",
+    "analyze": "Запустить анализ",
+    "analyzing": "Анализируется...",
+    "cancel": "Отмена"
+  },
+  "languages": {
+    "cs": "Чешский",
+    "en": "Английский", 
+    "ru": "Русский"
+  },
+  "claudeModes": {
+    "enhancement": "Улучшение (рекомендуется)",
+    "primary": "Первичный анализ"
+  },
+  "results": {
+    "title": "Результаты анализа",
+    "download": "Скачать отчёт",
+    "copy": "Копировать JSON",
+    "addFiles": "Добавить ещё файлы",
+    "noResults": "Нет результатов для отображения",
+    "error": "Ошибка анализа"
+  },
+  "agents": {
+    "concrete": {
+      "title": "Марки бетона (ConcreteAgent)",
+      "grade": "Марка",
+      "location": "Место применения", 
+      "context": "Контекст",
+      "source": "Источник",
+      "confidence": "Уверенность",
+      "exposureClasses": "Классы воздействия",
+      "totalGrades": "Всего марок: {{count}}",
+      "noGrades": "Марки бетона не найдены"
+    },
+    "volume": {
+      "title": "Объёмы (VolumeAgent)",
+      "grade": "Марка",
+      "element": "Элемент",
+      "volume": "Объём (м³)",
+      "area": "Площадь (м²)",
+      "cost": "Стоимость",
+      "source": "Источник",
+      "confidence": "Уверенность",
+      "totalCost": "Общая стоимость: {{cost}} крон",
+      "totalVolume": "Общий объём: {{volume}} м³",
+      "noVolumes": "Объёмы не найдены"
+    },
+    "material": {
+      "title": "Материалы (MaterialAgent)",
+      "type": "Тип",
+      "name": "Название",
+      "specification": "Спецификация",
+      "quantity": "Количество",
+      "unit": "Единица",
+      "context": "Контекст",
+      "source": "Источник",
+      "confidence": "Уверенность",
+      "categories": "Категории",
+      "totalMaterials": "Всего материалов: {{count}}",
+      "noMaterials": "Материалы не найдены"
+    },
+    "drawing": {
+      "title": "Геометрия из чертежей (DrawingVolumeAgent)",
+      "element": "Элемент",
+      "geometry": "Геометрия",
+      "volume": "Объём/Площадь",
+      "source": "Источник",
+      "totalElements": "Всего элементов: {{count}}",
+      "noElements": "Геометрические элементы не найдены"
+    }
+  },
+  "status": {
+    "analyzing": "Анализируется...",
+    "success": "Анализ завершён",
+    "error": "Ошибка анализа",
+    "warning": "Предупреждение",
+    "partial": "Частичные результаты"
+  },
+  "errors": {
+    "networkError": "Ошибка сети - проверьте подключение",
+    "serverError": "Ошибка сервера - попробуйте позже",
+    "validationError": "Ошибка валидации - проверьте входные данные",
+    "fileTooBig": "Файл слишком большой",
+    "unsupportedFormat": "Неподдерживаемый формат файла",
+    "noFilesSelected": "Файлы не выбраны",
+    "unknown": "Неизвестная ошибка"
+  },
+  "common": {
+    "loading": "Загрузка...",
+    "retry": "Повторить",
+    "close": "Закрыть",
+    "expand": "Развернуть",
+    "collapse": "Свернуть",
+    "show": "Показать",
+    "hide": "Скрыть",
+    "yes": "Да",
+    "no": "Нет"
+  }
+}
