@@ -1,0 +1,120 @@
+{
+  "app": {
+    "title": "ConcreteAgent - Construction Analysis",
+    "subtitle": "Multi-agent system for concrete, materials and volume analysis"
+  },
+  "upload": {
+    "dragAndDrop": "Drag and drop files here or click to select",
+    "selectFiles": "Select files",
+    "documents": "Main documents (PDF, DOCX, TXT)",
+    "smeta": "Budget or bill of quantities (XLSX, CSV, PDF)",
+    "supportedFormats": "Supported formats: PDF, DOCX, TXT, XLSX, CSV",
+    "maxSize": "Maximum file size: 10MB",
+    "filesSelected": "Selected files",
+    "removeFile": "Remove file"
+  },
+  "form": {
+    "materialQuery": "Material query",
+    "materialQueryPlaceholder": "e.g. reinforcement, windows, insulation, rebar...",
+    "useClaude": "Use Claude AI for analysis",
+    "claudeMode": "Claude mode",
+    "language": "Report language",
+    "includeDrawings": "Include drawing analysis (beta)",
+    "analyze": "Start analysis",
+    "analyzing": "Analyzing...",
+    "cancel": "Cancel"
+  },
+  "languages": {
+    "cs": "Czech",
+    "en": "English", 
+    "ru": "Russian"
+  },
+  "claudeModes": {
+    "enhancement": "Enhancement (recommended)",
+    "primary": "Primary analysis"
+  },
+  "results": {
+    "title": "Analysis results",
+    "download": "Download report",
+    "copy": "Copy JSON",
+    "addFiles": "Add more files",
+    "noResults": "No results to display",
+    "error": "Analysis error"
+  },
+  "agents": {
+    "concrete": {
+      "title": "Concrete grades (ConcreteAgent)",
+      "grade": "Grade",
+      "location": "Location", 
+      "context": "Context",
+      "source": "Source",
+      "confidence": "Confidence",
+      "exposureClasses": "Exposure classes",
+      "totalGrades": "Total grades: {{count}}",
+      "noGrades": "No concrete grades found"
+    },
+    "volume": {
+      "title": "Volumes (VolumeAgent)",
+      "grade": "Grade",
+      "element": "Element",
+      "volume": "Volume (m³)",
+      "area": "Area (m²)",
+      "cost": "Cost",
+      "source": "Source",
+      "confidence": "Confidence",
+      "totalCost": "Total cost: {{cost}} CZK",
+      "totalVolume": "Total volume: {{volume}} m³",
+      "noVolumes": "No volumes found"
+    },
+    "material": {
+      "title": "Materials (MaterialAgent)",
+      "type": "Type",
+      "name": "Name",
+      "specification": "Specification",
+      "quantity": "Quantity",
+      "unit": "Unit",
+      "context": "Context",
+      "source": "Source",
+      "confidence": "Confidence",
+      "categories": "Categories",
+      "totalMaterials": "Total materials: {{count}}",
+      "noMaterials": "No materials found"
+    },
+    "drawing": {
+      "title": "Drawing geometry (DrawingVolumeAgent)",
+      "element": "Element",
+      "geometry": "Geometry",
+      "volume": "Volume/Area",
+      "source": "Source",
+      "totalElements": "Total elements: {{count}}",
+      "noElements": "No geometric elements found"
+    }
+  },
+  "status": {
+    "analyzing": "Analyzing...",
+    "success": "Analysis completed",
+    "error": "Analysis error",
+    "warning": "Warning",
+    "partial": "Partial results"
+  },
+  "errors": {
+    "networkError": "Network error - check your connection",
+    "serverError": "Server error - try again later",
+    "validationError": "Validation error - check input data",
+    "fileTooBig": "File is too large",
+    "unsupportedFormat": "Unsupported file format",
+    "noFilesSelected": "No files selected",
+    "unknown": "Unknown error"
+  },
+  "common": {
+    "loading": "Loading...",
+    "retry": "Retry",
+    "close": "Close",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "show": "Show",
+    "hide": "Hide",
+    "yes": "Yes",
+    "no": "No"
+  }
+}
