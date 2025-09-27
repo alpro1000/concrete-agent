@@ -1,34 +1,19 @@
 {
-  "concrete_summary": [
-    {
-      "grade": "C25/30",
-      "location": "výztuž (reinforcement)",
-      "context": "Projektová dokumentace\nPoužitý beton: C25/30 XC2 XF1\nPoužitá výztuž: Fe500 - 2500 kg\nOkna PVC - 15 ks\nTepelná izolace XPS 100mm - 85.5 m2\nOcelový nosník IPE200 - 450 kg\nStřešní krytina - tašky k",
-      "confidence": 0.95,
-      "method": "regex_enhanced_czech"
-    },
-    {
-      "grade": "C30/37",
-      "location": "základ (foundation)",
-      "context": "olace XPS 100mm - 85.5 m2\nOcelový nosník IPE200 - 450 kg\nStřešní krytina - tašky keramické - 125 m2\nTěsnění EPDM - 45 m\n\nMOSTNÍ OPĚRA ZE ŽELEZOBETONU C30/37\nObjem betonu: 125.5 m3\nCena: 3500 Kč za m3\n",
-      "confidence": 0.95,
-      "method": "regex_enhanced_czech"
-    }
-  ],
+  "concrete_summary": [],
   "analysis_method": "local_enhanced_czech",
-  "total_matches": 2,
+  "total_matches": 0,
   "success": true,
   "allowed_grades_count": 7,
   "czech_preprocessing": {
-    "diacritic_fixes": 2,
-    "original_length": 379,
-    "fixed_length": 379
+    "diacritic_fixes": 0,
+    "original_length": 32,
+    "fixed_length": 32
   },
   "processed_documents": [
     {
-      "file": "test_document.txt",
+      "file": "test.txt",
       "type": "Document",
-      "text_length": 378
+      "text_length": 31
     }
   ],
   "smeta_items": 0,

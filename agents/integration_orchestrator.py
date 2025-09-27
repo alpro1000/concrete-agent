@@ -19,6 +19,7 @@ from pathlib import Path
 from agents.concrete_agent import analyze_concrete, get_hybrid_agent
 from agents.volume_agent.agent import get_volume_analysis_agent
 from agents.material_agent.agent import get_material_analysis_agent
+from agents.drawing_volume_agent import get_drawing_volume_agent
 from utils.czech_preprocessor import get_czech_preprocessor
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,13 @@ class IntegrationOrchestrator:
         except Exception as e:
             logger.error(f"❌ Ошибка инициализации MaterialAgent: {e}")
             self.material_agent = None
+        
+        try:
+            self.drawing_agent = get_drawing_volume_agent()
+            logger.info("✅ DrawingVolumeAgent инициализирован")
+        except Exception as e:
+            logger.error(f"❌ Ошибка инициализации DrawingVolumeAgent: {e}")
+            self.drawing_agent = None
         
         self.czech_preprocessor = get_czech_preprocessor()
         logger.info("🚀 IntegrationOrchestrator инициализирован")
@@ -287,22 +295,45 @@ class IntegrationOrchestrator:
         # Нормализуем запрос с помощью чешского препроцессора
         normalized_query = self.czech_preprocessor.normalize_text(query.lower())
         
-        # Словарь синонимов
+        # Словарь синонимов (расширенный)
         query_synonyms = {
-            "арматура": ["výztuž", "armatura", "железо", "арматурн"],
-            "окна": ["okna", "окон", "zasklení", "остеклен"],
-            "двери": ["dveře", "dvere", "дверн", "vchod"],
+            "арматура": ["výztuž", "armatura", "железо", "арматурн", "fe500", "fe400", "r10", "r12", "r16", "r20"],
+            "výztuž": ["арматура", "armatura", "железо", "арматурн", "fe500", "fe400", "r10", "r12", "r16", "r20"],
+            "armatura": ["арматура", "výztuž", "железо", "арматурн", "fe500", "fe400"],
+            "окна": ["okna", "окон", "zasklení", "остеклен", "pvc", "dřevo", "hliník"],
+            "okna": ["окна", "окон", "zasklení", "остеклен", "pvc", "dřevo", "hliník"],
+            "двери": ["dveře", "dvere", "дверн", "vchod", "vchodov"],
+            "dveře": ["двери", "dvere", "дверн", "vchod", "vchodov"],
             "плитка": ["dlažba", "obklad", "keramick", "плитк"],
-            "изоляция": ["izolace", "утеплен", "теплоизол", "isolation"],
-            "бетон": ["beton", "concrete", "цемент"],
-            "сталь": ["ocel", "steel", "металл", "железо"]
+            "dlažba": ["плитка", "obklad", "keramick", "плитк"],
+            "изоляция": ["izolace", "утеплен", "теплоизол", "isolation", "xps", "eps"],
+            "izolace": ["изоляция", "утеплен", "теплоизол", "isolation", "xps", "eps"],
+            "бетон": ["beton", "concrete", "цемент", "c25", "c30", "c35"],
+            "beton": ["бетон", "concrete", "цемент", "c25", "c30", "c35"],
+            "сталь": ["ocel", "steel", "металл", "железо", "ipe", "hea", "heb"],
+            "ocel": ["сталь", "steel", "металл", "железо", "ipe", "hea", "heb"],
+            "střešní": ["кровельн", "roof", "крыша", "tašk", "plechov"],
+            "roof": ["střešní", "кровельн", "крыша", "tašk", "plechov"],
+            "těsnění": ["уплотнен", "sealing", "герметик", "epdm", "pryž"],
+            "sealing": ["těsnění", "уплотнен", "герметик", "epdm", "pryž"]
         }
         
         # Расширяем поиск синонимами
         search_terms = [normalized_query]
+        
+        # Добавляем прямые синонимы
+        if normalized_query in query_synonyms:
+            search_terms.extend([term.lower() for term in query_synonyms[normalized_query]])
+        
+        # Проверяем частичные совпадения для ключевых слов
         for key, synonyms in query_synonyms.items():
             if key in normalized_query or normalized_query in key:
-                search_terms.extend(synonyms)
+                search_terms.extend([term.lower() for term in synonyms])
+        
+        # Убираем дубликаты
+        search_terms = list(set(search_terms))
+        
+        logger.info(f"🔍 Поисковые термины для '{query}': {search_terms[:5]}...")  # показываем первые 5
         
         filtered_materials = []
         for material in materials:
@@ -310,23 +341,77 @@ class IntegrationOrchestrator:
             material_text = f"{material.material_name} {material.material_type} {material.specification}".lower()
             material_text = self.czech_preprocessor.normalize_text(material_text)
             
+            # Проверяем точные совпадения
             if any(term in material_text for term in search_terms):
+                filtered_materials.append(material)
+                continue
+            
+            # Проверяем в контексте
+            context_text = material.context.lower()
+            context_text = self.czech_preprocessor.normalize_text(context_text)
+            if any(term in context_text for term in search_terms):
                 filtered_materials.append(material)
         
         return filtered_materials
     
     async def _analyze_drawings(self, request: IntegratedAnalysisRequest, status: Dict[str, str]) -> Dict[str, Any]:
-        """Анализ чертежей (заглушка для будущего DrawingVolumeAgent)"""
-        # Пока это заглушка - в будущем здесь будет реальный анализ чертежей
-        status["drawing_analysis"] = "not implemented - feature planned"
+        """Анализ чертежей с использованием DrawingVolumeAgent"""
+        if not self.drawing_agent:
+            status["drawing_analysis"] = "unavailable - agent not initialized"
+            return {
+                "success": False,
+                "error": "DrawingVolumeAgent недоступен",
+                "message": "Анализ чертежей запланирован в следующих версиях",
+                "total_drawings": 0,
+                "total_volume_m3": 0.0,
+                "drawings": []
+            }
         
-        return {
-            "success": False,
-            "message": "Анализ чертежей запланирован в следующих версиях",
-            "note": "DrawingVolumeAgent будет использовать MinerU и DocStrange для анализа геометрии",
-            "pdf_drawings_found": len([p for p in request.doc_paths if p.lower().endswith('.pdf')]),
-            "drawings": []
-        }
+        try:
+            # Фильтруем PDF файлы, которые могут быть чертежами
+            drawing_paths = [path for path in request.doc_paths if path.lower().endswith('.pdf')]
+            
+            if not drawing_paths:
+                status["drawing_analysis"] = "skipped - no PDF drawings found"
+                return {
+                    "success": True,
+                    "message": "PDF чертежи не найдены",
+                    "total_drawings": 0,
+                    "total_volume_m3": 0.0,
+                    "drawings": []
+                }
+            
+            # Анализируем чертежи
+            results = await self.drawing_agent.analyze_drawing_volumes(drawing_paths)
+            summary = self.drawing_agent.create_drawing_summary(results)
+            
+            if summary["successful_analyses"] > 0:
+                status["drawing_analysis"] = f"completed - {summary['successful_analyses']}/{summary['total_drawings']} successful"
+            else:
+                status["drawing_analysis"] = "completed - no successful analyses (external services unavailable)"
+            
+            return {
+                "success": True,
+                "total_drawings": summary["total_drawings"],
+                "successful_analyses": summary["successful_analyses"],
+                "total_volume_m3": summary["total_volume_m3"],
+                "total_area_m2": summary["total_area_m2"],
+                "analysis_methods": summary["analysis_methods"],
+                "external_services": summary["external_services_status"],
+                "drawings": summary["drawings"],
+                "note": "Полный анализ чертежей требует подключения MinerU и DocStrange"
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка анализа чертежей: {e}")
+            status["drawing_analysis"] = f"error - {str(e)}"
+            return {
+                "success": False,
+                "error": str(e),
+                "total_drawings": 0,
+                "total_volume_m3": 0.0,
+                "drawings": []
+            }
 
 # Singleton instance
 _integration_orchestrator = None
