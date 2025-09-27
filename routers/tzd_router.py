@@ -220,17 +220,48 @@ async def get_analysis(analysis_id: str):
 @router.get("/capabilities")
 async def get_capabilities():
     """🔍 Возможности TZD системы"""
+    
+    # Check MinerU availability
+    mineru_enabled = os.getenv("MINERU_ENABLED", "false").lower() == "true"
+    try:
+        import mineru
+        mineru_available = True
+    except ImportError:
+        mineru_available = False
+    
     return {
         "document_analysis": {
             "formats": ["PDF", "DOCX", "TXT"],
             "max_file_size": "10MB",
             "max_files": 10,
-            "languages": ["Czech", "English"]
+            "languages": ["Czech", "English"],
+            "mineru_integration": {
+                "available": mineru_available,
+                "enabled": mineru_enabled,
+                "description": "Enhanced PDF text/structure extraction"
+            }
         },
         "ai_analysis": {
             "engines": ["gpt-4", "claude-3.5"],
             "depths": ["basic", "standard", "detailed", "expert"],
             "focus_areas": ["concrete", "materials", "norms", "costs", "safety"]
+        },
+        "response_fields": {
+            "standard_fields": [
+                "project_name", "project_scope", "materials",
+                "concrete_requirements", "norms", "functional_requirements",
+                "risks_and_constraints", "estimated_complexity", "key_technologies"
+            ],
+            "enhanced_fields": {
+                "project_summary": {
+                    "description": "Structured project summary by sections",
+                    "sections": ["overview", "scope", "concrete", "materials", "norms", "risks", "schedule", "costs", "deliverables"]
+                },
+                "processing_metadata": {
+                    "description": "Processing statistics and configuration",
+                    "includes": ["processed_files", "processing_time", "ai_engine", "mineru_used"]
+                }
+            }
         },
         "czech_standards": {
             "concrete": "ČSN EN 206+A2",
