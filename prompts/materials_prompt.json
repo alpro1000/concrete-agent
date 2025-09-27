@@ -1,0 +1,38 @@
+{
+  "version": "1.0",
+  "description": "Шаблоны для поиска строительных материалов",
+  "patterns": {
+    "reinforcement": {
+      "regex": "\\b(výztuž|Fe\\s?\\d{3}|R\\d{2,3}|ocel|арматура|Fe500|B500B)\\b",
+      "description": "Арматура и стальные элементы"
+    },
+    "windows": {
+      "regex": "\\b(okno|okna|PVC|dřevo|sklo|окно|окна|стекло)\\b",
+      "description": "Окна и остекление"
+    },
+    "seals": {
+      "regex": "\\b(těsnění|těsnicí|pryž|guma|EPDM|уплотнение|герметик)\\b",
+      "description": "Уплотнительные материалы"
+    },
+    "metal_structures": {
+      "regex": "\\b(konstrukce z oceli|kovová konstrukce|ocelový rám|nosník|металлоконструкции)\\b",
+      "description": "Металлические конструкции"
+    },
+    "concrete": {
+      "regex": "\\b(beton|C\\d{1,2}/\\d{1,2}|LC\\d{1,2}/\\d{1,2}|бетон)\\b",
+      "description": "Бетон и бетонные смеси"
+    },
+    "insulation": {
+      "regex": "\\b(izolace|tepelná izolace|polystyren|пенопласт|утеплитель)\\b",
+      "description": "Изоляционные материалы"
+    }
+  },
+  "categories": [
+    "reinforcement",
+    "windows", 
+    "seals",
+    "metal_structures",
+    "concrete",
+    "insulation"
+  ]
+}

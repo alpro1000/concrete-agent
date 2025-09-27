@@ -5,6 +5,7 @@ import uuid
 import logging
 
 router = APIRouter()
+upload_router = router  # Alias for main.py compatibility
 logger = logging.getLogger(__name__)
 
 
