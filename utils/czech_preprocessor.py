@@ -251,6 +251,14 @@ class CzechTextPreprocessor:
             })
         
         return concrete_info
+    
+    def normalize_text(self, text: str) -> str:
+        """
+        Нормализация текста (алиас для fix_czech_diacritics для совместимости)
+        """
+        if not text:
+            return text
+        return self.fix_czech_diacritics(text)
 
 
 # Singleton instance
