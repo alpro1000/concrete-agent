@@ -13,7 +13,14 @@ def check_imports():
     """
     try:
         from utils.claude_client import get_claude_client
-        from agents.concrete_agent import analyze_concrete
+        # Import from the main concrete_agent.py file (not the package)
+        import importlib.util
+        import os
+        spec = importlib.util.spec_from_file_location("concrete_agent_main", 
+                os.path.join(os.path.dirname(os.path.dirname(__file__)), 'agents', 'concrete_agent.py'))
+        concrete_agent_main = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(concrete_agent_main)
+        analyze_concrete = concrete_agent_main.analyze_concrete
         from config.claude_config import claude_config
         return True
     except ImportError as e:
@@ -28,7 +35,14 @@ async def test_hybrid_analysis():
     """
     Проверяет работу агента Concrete через Claude API.
     """
-    from agents.concrete_agent import analyze_concrete
+    # Import from the main concrete_agent.py file (not the package)
+    import importlib.util
+    import os
+    spec = importlib.util.spec_from_file_location("concrete_agent_main", 
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), 'agents', 'concrete_agent.py'))
+    concrete_agent_main = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(concrete_agent_main)
+    analyze_concrete = concrete_agent_main.analyze_concrete
 
     try:
         result = await analyze_concrete(["test_doc.pdf"], None, use_claude=False)

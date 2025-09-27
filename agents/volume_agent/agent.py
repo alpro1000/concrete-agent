@@ -18,7 +18,7 @@ from parsers.doc_parser import DocParser
 from parsers.smeta_parser import SmetaParser
 from utils.knowledge_base_service import get_knowledge_service
 from utils.czech_preprocessor import get_czech_preprocessor
-from agents.concrete_agent import get_concrete_grade_extractor
+from agents.concrete_agent.agent import get_concrete_grade_extractor
 
 logger = logging.getLogger(__name__)
 
