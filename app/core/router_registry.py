@@ -73,7 +73,8 @@ class RouterRegistry:
         """Извлекает метаданные роутера"""
         
         # Попытка получить информацию из модуля
-        description = getattr(module, '__doc__', '').strip() if hasattr(module, '__doc__') else f"Router {name}"
+        module_doc = getattr(module, '__doc__', None)
+        description = module_doc.strip() if module_doc else f"Router {name}"
         
         # Информация из самого роутера
         prefix = getattr(router, 'prefix', '')
@@ -399,44 +400,3 @@ def setup_core_endpoints(app: FastAPI):
             "auto_discovery": True,
             "routers": registry_status
         }
-
-
-# app/main.py - НОВЫЙ УПРОЩЕННЫЙ MAIN.PY
-"""
-Главный файл приложения - теперь очень простой!
-Все роутеры подключаются автоматически
-"""
-
-from app.core.app_factory import create_app
-import logging
-
-# Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-
-# Создаем приложение
-app = create_app()
-
-# Все роутеры подключатся автоматически!
-# Больше не нужно их импортировать и регистрировать вручную
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0", 
-        port=8000,
-        reload=True,
-        reload_dirs=["app", "agents"]
-    )
-
-
-# app/routers/__init__.py - Для корректного импорта
-"""
-Роутеры автоматически регистрируются системой
-Просто поместите новый роутер в эту папку с объектом 'router'
-"""
-
-# Этот файл может быть пустым - система найдет роутеры автоматически

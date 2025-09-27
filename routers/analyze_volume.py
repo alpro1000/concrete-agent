@@ -30,7 +30,7 @@ async def analyze_volume_endpoint(docs: list[UploadFile] = File(...)):
 
         # Используем агент анализа объемов
         volume_agent = get_volume_analysis_agent()
-        result = await volume_agent.analyze_documents(doc_paths)
+        result = await volume_agent.analyze_volumes(doc_paths)
         
         return {
             "status": "success",
