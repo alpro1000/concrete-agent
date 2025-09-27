@@ -27,7 +27,7 @@ agents/
 ├── concrete_agent/agent.py          ✅ ConcreteGradeExtractor
 ├── volume_agent/agent.py            ✅ VolumeAnalysisAgent  
 ├── material_agent/agent.py          ✅ MaterialAnalysisAgent
-├── tzd_reader_secure.py             ✅ SecureAIAnalyzer
+├── tzd_reader/agent.py              ✅ SecureAIAnalyzer + TZD Reader
 ├── smetny_inzenyr/agent.py          ✅ SmetnyInzenyr
 └── dwg_agent/agent.py               ✅ DwgAnalysisAgent
 ```
@@ -92,8 +92,12 @@ pip install -r requirements.txt
 - `POST /smeta` - Сравнение смет
 
 ### Техническое задание (TZD):
-- `POST /api/v1/tzd/api/v1/tzd/analyze` - Анализ ТЗД
-- `GET /api/v1/tzd/api/v1/tzd/health` - Статус TZD Reader
+- `POST /api/v1/tzd/analyze` - Анализ ТЗД (с поддержкой project_summary)
+- `GET /api/v1/tzd/health` - Статус TZD Reader
+- `GET /api/v1/tzd/capabilities` - Возможности TZD (включая MinerU статус)
+
+### CLI интерфейсы:
+- `python scripts/tzd_reader_cli.py` - TZD Reader CLI
 
 ### Утилиты:
 - `POST /files` - Загрузка файлов
@@ -181,6 +185,93 @@ RUN python setup_modules.py
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
+
+## CLI интерфейсы
+
+### TZD Reader CLI
+
+Новый интерфейс командной строки для анализа технических заданий:
+
+```bash
+# Базовое использование
+python scripts/tzd_reader_cli.py --files document.pdf --engine gpt
+
+# Анализ с Claude AI
+python scripts/tzd_reader_cli.py --files task.pdf spec.docx --engine claude
+
+# С ограничением безопасности базовой директории
+python scripts/tzd_reader_cli.py --files *.pdf --engine gpt --base-dir ./projects
+
+# Сохранение в файл с подробными логами
+python scripts/tzd_reader_cli.py --files document.pdf --output result.json --verbose
+```
+
+### Примеры вывода CLI
+
+```json
+{
+  "project_name": "Реконструкция жилого дома",
+  "project_scope": "Капитальный ремонт фасада и кровли",
+  "materials": ["Кирпич керамический", "Утеплитель минеральный"],
+  "concrete_requirements": ["C25/30", "XC1"],
+  "norms": ["ČSN EN 206+A2", "ČSN 73 0540"],
+  "project_summary": {
+    "overview": "Проект реконструкции включает работы по фасаду...",
+    "scope": "Капитальный ремонт фасада и кровли",
+    "concrete": ["C25/30", "XC1"],
+    "materials": ["Кирпич керамический", "Утеплитель минеральный"],
+    "norms": ["ČSN EN 206+A2"],
+    "risks": ["Погодные условия", "Доступность материалов"]
+  },
+  "processing_metadata": {
+    "processed_files": 1,
+    "processing_time_seconds": 12.34,
+    "ai_engine": "gpt",
+    "mineru_used": false
+  }
+}
+```
+
+## Опционально: MinerU для улучшенной обработки PDF
+
+MinerU (@opendatalab/MinerU) предоставляет улучшенное извлечение текста и структуры из PDF документов.
+
+### Что дает MinerU:
+- Более точное извлечение текста из сложных PDF
+- Сохранение структуры документа
+- Лучшая обработка таблиц и схем
+- Поддержка сложных макетов
+
+### Установка MinerU (опционально):
+
+```bash
+# Установка зависимостей MinerU (может потребовать дополнительные системные пакеты)
+pip install mineru
+
+# Включение MinerU через переменную окружения
+export MINERU_ENABLED=true
+```
+
+### Использование MinerU:
+
+```bash
+# Через переменную окружения
+MINERU_ENABLED=true python scripts/tzd_reader_cli.py --files complex_document.pdf
+
+# MinerU будет автоматически использован для PDF файлов
+# При недоступности - автоматический fallback на DocParser
+```
+
+### Статус MinerU в API:
+
+```bash
+# Проверка статуса MinerU через API
+curl http://localhost:8000/api/v1/tzd/capabilities
+
+# Ответ покажет: "mineru_available": true/false
+```
+
+**Примечание:** MinerU является опциональной зависимостью. Система полностью функциональна без неё, используя встроенный DocParser.
 
 ## Диагностика проблем
 

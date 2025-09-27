@@ -22,7 +22,7 @@ except ImportError:
     CONCRETE_AGENT_AVAILABLE = False
 
 try:
-    from agents.tzd_reader_secure import tzd_reader
+    from agents.tzd_reader.agent import tzd_reader
     TZD_AVAILABLE = True
 except ImportError:
     TZD_AVAILABLE = False
@@ -54,6 +54,7 @@ class TZDAnalysisResponse(BaseModel):
     estimated_complexity: str
     key_technologies: List[str]
     processing_metadata: Dict[str, Any]
+    project_summary: Dict[str, Any] = Field(default_factory=dict)
     error_message: Optional[str] = None
 
 # Кеш результатов
@@ -108,12 +109,13 @@ async def analyze_documents(
             materials=[],
             concrete_requirements=[],
             norms=["ČSN EN 206+A2", "ČSN EN 10025", "ČSN 73 0540"],
-            functional_requirements=["Установите модуль tzd_reader_secure"],
+            functional_requirements=["Установите модуль tzd_reader"],
             risks_and_constraints=["Система работает в демо режиме"],
             estimated_complexity="demo",
             key_technologies=["FastAPI", "Auto Router Discovery"],
             processing_metadata={"demo_mode": True},
-            error_message="TZD Reader не установлен. Установите модуль agents/tzd_reader_secure.py"
+            project_summary={},
+            error_message="TZD Reader не установлен. Установите модуль agents/tzd_reader/agent.py"
         )
     
     global analysis_counter
@@ -183,7 +185,8 @@ async def analyze_documents(
             risks_and_constraints=result.get('risks_and_constraints', []),
             estimated_complexity=result.get('estimated_complexity', 'неопределена'),
             key_technologies=result.get('key_technologies', []),
-            processing_metadata=result.get('processing_metadata', {})
+            processing_metadata=result.get('processing_metadata', {}),
+            project_summary=result.get('project_summary', {})
         )
         
     except Exception as e:
