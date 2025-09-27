@@ -1,0 +1,60 @@
+{
+  "timestamp": "2025-09-27T15:00:00Z",
+  "project_root": "/home/runner/work/concrete-agent/concrete-agent",
+  "summary": {
+    "agents_ok": 6,
+    "agents_total": 6,
+    "routers_ok": 6,
+    "routers_total": 6,
+    "services_ok": 5,
+    "services_total": 5,
+    "dependencies_ok": 7,
+    "dependencies_total": 8,
+    "endpoints_count": 8
+  },
+  "detailed_results": {
+    "agents": {
+      "concrete_agent/agent.py": true,
+      "volume_agent/agent.py": true,
+      "material_agent/agent.py": true,
+      "tzd_reader_secure.py": true,
+      "smetny_inzenyr/agent.py": true,
+      "dwg_agent/agent.py": true
+    },
+    "routers": {
+      "analyze_concrete.py": true,
+      "analyze_materials.py": true,
+      "analyze_volume.py": true,
+      "version_diff.py": true,
+      "upload.py": true,
+      "tzd_router.py": true
+    },
+    "services": {
+      "utils/knowledge_base_service.py": true,
+      "utils/report_generator.py": true,
+      "utils/czech_preprocessor.py": true,
+      "parsers/doc_parser.py": true,
+      "parsers/smeta_parser.py": true
+    },
+    "dependencies": {
+      "fastapi": true,
+      "uvicorn": true,
+      "pdfplumber": true,
+      "python-docx": false,
+      "openpyxl": true,
+      "anthropic": true,
+      "pandas": true,
+      "numpy": true
+    },
+    "endpoints": [
+      "GET /openapi.json",
+      "GET /docs",
+      "GET /docs/oauth2-redirect",
+      "GET /redoc",
+      "GET /",
+      "GET /health",
+      "GET /status",
+      "POST /test/echo"
+    ]
+  }
+}
