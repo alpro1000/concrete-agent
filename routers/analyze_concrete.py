@@ -8,6 +8,7 @@ import asyncio
 import logging
 
 router = APIRouter()
+concrete_router = router  # Alias for main.py compatibility
 logger = logging.getLogger(__name__)
 
 @router.post("/concrete")

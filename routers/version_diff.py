@@ -7,6 +7,7 @@ import shutil
 import logging
 
 router = APIRouter()
+diff_router = router  # Alias for main.py compatibility
 logger = logging.getLogger(__name__)
 
 

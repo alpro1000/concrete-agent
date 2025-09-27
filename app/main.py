@@ -100,7 +100,8 @@ def check_dependencies():
 def setup_routers():
     """Автоматическое подключение роутеров с улучшенной обработкой ошибок"""
     try:
-        from app.core.router_registry import router_registry
+        from app.core.router_registry import RouterRegistry
+        router_registry = RouterRegistry()
         routers = router_registry.discover_routers("routers")  # Ищем в корневой папке routers
         
         logger.info(f"🔍 Найдено {len(routers)} роутеров для подключения")
@@ -135,6 +136,7 @@ def setup_routers_fallback():
     router_configs = [
         ("routers.analyze_concrete", "concrete_router", "/analyze", ["Concrete"]),
         ("routers.analyze_materials", "materials_router", "/analyze", ["Materials"]),
+        ("routers.analyze_volume", "volume_router", "/analyze", ["Volume"]),
         ("routers.version_diff", "diff_router", "/compare", ["Diff"]),
         ("routers.upload", "upload_router", "/upload", ["Upload"]),
         ("routers.tzd_router", "router", "/tzd", ["TZD"]),
