@@ -1,0 +1,122 @@
+{
+  "common": {
+    "language": "Language",
+    "upload": "Upload",
+    "download": "Download",
+    "analyze": "Analyze",
+    "results": "Results",
+    "error": "Error",
+    "success": "Success",
+    "loading": "Loading...",
+    "cancel": "Cancel",
+    "close": "Close",
+    "back": "Back",
+    "next": "Next",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "view": "View",
+    "search": "Search",
+    "filter": "Filter",
+    "export": "Export",
+    "import": "Import"
+  },
+  "nav": {
+    "home": "Home",
+    "analysis": "Analysis",
+    "reports": "Reports",
+    "compare": "Compare",
+    "upload": "Upload Files"
+  },
+  "home": {
+    "title": "Construction Materials Analysis",
+    "subtitle": "Advanced analysis of concrete, materials and documents",
+    "fileUpload": {
+      "title": "Upload Documents",
+      "description": "Drag files here or click to select",
+      "supportedFormats": "Supported formats: PDF, DOCX, XLSX, CSV",
+      "maxSize": "Maximum size: 10MB",
+      "multiple": "You can upload multiple files at once"
+    },
+    "materialQuery": {
+      "title": "Material Query",
+      "placeholder": "Enter material type (e.g. reinforcement, windows, doors, tiles)",
+      "examples": "Examples: concrete C25/30, steel B500B, bricks, insulation"
+    },
+    "options": {
+      "title": "Analysis Options",
+      "useClaude": "Use Claude AI",
+      "claudeMode": "Claude Mode",
+      "includeDrawings": "Include Drawing Analysis",
+      "language": "Report Language"
+    },
+    "startAnalysis": "Start Analysis"
+  },
+  "analysis": {
+    "title": "Analysis Results",
+    "concrete": {
+      "title": "Concrete Analysis",
+      "grades": "Concrete Grades",
+      "elements": "Structural Elements",
+      "confidence": "Confidence",
+      "location": "Location",
+      "context": "Context"
+    },
+    "materials": {
+      "title": "Materials Analysis",
+      "found": "Found Materials",
+      "quantity": "Quantity",
+      "unit": "Unit",
+      "type": "Type"
+    },
+    "volumes": {
+      "title": "Volume Analysis",
+      "items": "Items",
+      "total": "Total",
+      "category": "Category"
+    },
+    "comparison": {
+      "title": "Document Comparison",
+      "changes": "Changes",
+      "added": "Added",
+      "removed": "Removed",
+      "modified": "Modified",
+      "summary": "Summary"
+    },
+    "logs": {
+      "title": "Logs and Warnings",
+      "warnings": "Warnings",
+      "errors": "Errors",
+      "info": "Information"
+    },
+    "export": {
+      "json": "Export JSON",
+      "excel": "Export Excel",
+      "pdf": "Export PDF"
+    }
+  },
+  "reports": {
+    "title": "Reports",
+    "recent": "Recent Analyses",
+    "saved": "Saved Reports",
+    "date": "Date",
+    "type": "Type",
+    "status": "Status",
+    "actions": "Actions"
+  },
+  "errors": {
+    "uploadFailed": "Upload failed",
+    "analysisFailed": "Analysis failed",
+    "networkError": "Network error",
+    "fileTooBig": "File is too large",
+    "invalidFormat": "Invalid file format",
+    "serverError": "Server error",
+    "unknownError": "Unknown error"
+  },
+  "validation": {
+    "required": "This field is required",
+    "fileRequired": "At least one file is required",
+    "maxFiles": "Maximum {{max}} files",
+    "invalidEmail": "Invalid email address"
+  }
+}

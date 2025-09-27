@@ -1,0 +1,122 @@
+{
+  "common": {
+    "language": "Jazyk",
+    "upload": "Nahrát",
+    "download": "Stáhnout",
+    "analyze": "Analyzovat",
+    "results": "Výsledky",
+    "error": "Chyba",
+    "success": "Úspěch",
+    "loading": "Načítání...",
+    "cancel": "Zrušit",
+    "close": "Zavřít",
+    "back": "Zpět",
+    "next": "Další",
+    "save": "Uložit",
+    "delete": "Smazat",
+    "edit": "Upravit",
+    "view": "Zobrazit",
+    "search": "Hledat",
+    "filter": "Filtrovat",
+    "export": "Exportovat",
+    "import": "Importovat"
+  },
+  "nav": {
+    "home": "Domů",
+    "analysis": "Analýza",
+    "reports": "Zprávy",
+    "compare": "Porovnat",
+    "upload": "Nahrát soubory"
+  },
+  "home": {
+    "title": "Analýza stavebních materiálů",
+    "subtitle": "Pokročilá analýza betonu, materiálů a dokumentů",
+    "fileUpload": {
+      "title": "Nahrát dokumenty",
+      "description": "Přetáhněte soubory sem nebo klikněte pro výběr",
+      "supportedFormats": "Podporované formáty: PDF, DOCX, XLSX, CSV",
+      "maxSize": "Maximální velikost: 10MB",
+      "multiple": "Můžete nahrát více souborů najednou"
+    },
+    "materialQuery": {
+      "title": "Dotaz na materiál",
+      "placeholder": "Zadejte typ materiálu (např. armatury, okna, dveře, dlaždice)",
+      "examples": "Příklady: beton C25/30, ocel B500B, cihly, izolace"
+    },
+    "options": {
+      "title": "Možnosti analýzy",
+      "useClaude": "Použít Claude AI",
+      "claudeMode": "Režim Claude",
+      "includeDrawings": "Zahrnout analýzu výkresů",
+      "language": "Jazyk zprávy"
+    },
+    "startAnalysis": "Spustit analýzu"
+  },
+  "analysis": {
+    "title": "Výsledky analýzy",
+    "concrete": {
+      "title": "Analýza betonu",
+      "grades": "Třídy betonu",
+      "elements": "Konstrukční prvky",
+      "confidence": "Spolehlivost",
+      "location": "Umístění",
+      "context": "Kontext"
+    },
+    "materials": {
+      "title": "Analýza materiálů",
+      "found": "Nalezené materiály",
+      "quantity": "Množství",
+      "unit": "Jednotka",
+      "type": "Typ"
+    },
+    "volumes": {
+      "title": "Analýza objemů",
+      "items": "Položky",
+      "total": "Celkem",
+      "category": "Kategorie"
+    },
+    "comparison": {
+      "title": "Porovnání dokumentů",
+      "changes": "Změny",
+      "added": "Přidáno",
+      "removed": "Odstraněno",
+      "modified": "Změněno",
+      "summary": "Shrnutí"
+    },
+    "logs": {
+      "title": "Logy a varování",
+      "warnings": "Varování",
+      "errors": "Chyby",
+      "info": "Informace"
+    },
+    "export": {
+      "json": "Exportovat JSON",
+      "excel": "Exportovat Excel",
+      "pdf": "Exportovat PDF"
+    }
+  },
+  "reports": {
+    "title": "Zprávy",
+    "recent": "Nedávné analýzy",
+    "saved": "Uložené zprávy",
+    "date": "Datum",
+    "type": "Typ",
+    "status": "Stav",
+    "actions": "Akce"
+  },
+  "errors": {
+    "uploadFailed": "Nahrávání selhalo",
+    "analysisFailed": "Analýza selhala",
+    "networkError": "Chyba sítě",
+    "fileTooBig": "Soubor je příliš velký",
+    "invalidFormat": "Neplatný formát souboru",
+    "serverError": "Chyba serveru",
+    "unknownError": "Neznámá chyba"
+  },
+  "validation": {
+    "required": "Toto pole je povinné",
+    "fileRequired": "Alespoň jeden soubor je vyžadován",
+    "maxFiles": "Maximálně {{max}} souborů",
+    "invalidEmail": "Neplatná e-mailová adresa"
+  }
+}
