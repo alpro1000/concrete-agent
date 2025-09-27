@@ -1,5 +1,16 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
-from agents.concrete_agent import analyze_concrete
+import sys
+import os
+
+# Import from the main concrete_agent.py file (not the package)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import importlib.util
+spec = importlib.util.spec_from_file_location("concrete_agent_main", 
+        os.path.join(os.path.dirname(__file__), '..', 'agents', 'concrete_agent.py'))
+concrete_agent_main = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(concrete_agent_main)
+analyze_concrete = concrete_agent_main.analyze_concrete
+
 from config.settings import settings
 import tempfile
 import os

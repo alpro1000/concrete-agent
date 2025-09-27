@@ -12,11 +12,21 @@ agents/integration_orchestrator.py
 """
 
 import logging
+import sys
+import os
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-from agents.concrete_agent import analyze_concrete, get_hybrid_agent
+# Import from the main concrete_agent.py file (not the package)
+import importlib.util
+spec = importlib.util.spec_from_file_location("concrete_agent_main", 
+        os.path.join(os.path.dirname(__file__), 'concrete_agent.py'))
+concrete_agent_main = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(concrete_agent_main)
+analyze_concrete = concrete_agent_main.analyze_concrete
+get_hybrid_agent = concrete_agent_main.get_hybrid_agent
+
 from agents.volume_agent.agent import get_volume_analysis_agent
 from agents.material_agent.agent import get_material_analysis_agent
 from agents.drawing_volume_agent import get_drawing_volume_agent

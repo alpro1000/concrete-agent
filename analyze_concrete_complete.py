@@ -214,8 +214,14 @@ async def main():
     logger.info(f"   Claude AI: {'выключен' if args.no_claude else 'включен'}")
     
     try:
-        # Импортируем функцию анализа
-        from agents.concrete_agent import analyze_concrete_with_volumes
+        # Импортируем функцию анализа из главного модуля
+        import importlib.util
+        import os
+        spec = importlib.util.spec_from_file_location("concrete_agent_main", 
+                os.path.join(os.path.dirname(__file__), 'agents', 'concrete_agent.py'))
+        concrete_agent_main = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(concrete_agent_main)
+        analyze_concrete_with_volumes = concrete_agent_main.analyze_concrete_with_volumes
         
         # Запускаем анализ
         result = await analyze_concrete_with_volumes(
