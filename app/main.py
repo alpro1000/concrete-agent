@@ -172,6 +172,10 @@ def setup_legacy_routers():
         ("routers.version_diff", "router", "/compare", ["Diff"]),
         ("routers.upload", "router", "/upload", ["Upload"]),
         ("routers.tzd_router", "router", "/tzd", ["TZD"]),
+        # New specialized upload routers
+        ("routers.upload_docs", "router", "/upload", ["Upload Docs"]),
+        ("routers.upload_smeta", "router", "/upload", ["Upload Estimates"]),
+        ("routers.upload_drawings", "router", "/upload", ["Upload Drawings"]),
     ]
     
     successful = 0
@@ -213,6 +217,10 @@ async def root():
             "projects": "/api/projects",
             "upload": "/api/projects/{id}/upload",
             "compare": "/api/projects/{id}/compare",
+            # New specialized upload endpoints
+            "upload_docs": "/upload/docs",
+            "upload_estimates": "/upload/smeta", 
+            "upload_drawings": "/upload/drawings",
             # Legacy endpoints
             "analyze_concrete": "/analyze/concrete",
             "analyze_materials": "/analyze/materials",
@@ -321,6 +329,7 @@ async def not_found_handler(request, exc):
             "available_endpoints": [
                 "/", "/docs", "/health", "/status",
                 "/api/projects", "/api/projects/{id}/upload",
+                "/upload/docs", "/upload/smeta", "/upload/drawings",
                 "/analyze/concrete", "/analyze/materials",
                 "/compare/docs", "/compare/smeta", "/upload/files"
             ]

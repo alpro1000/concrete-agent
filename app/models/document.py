@@ -11,12 +11,22 @@ from .base import BaseModel
 
 class FileType(enum.Enum):
     """Supported file types"""
+    # Project Documents
     PDF = "pdf"
     DOCX = "docx"
+    TXT = "txt"
+    
+    # Estimates/BOQ
     XLSX = "xlsx"
     XML = "xml"
-    TXT = "txt"
+    CSV = "csv"
+    XC4 = "xc4"
+    
+    # Drawings
     DWG = "dwg"
+    DXF = "dxf"
+    BIM_IFC = "ifc"
+    
     OTHER = "other"
 
 
