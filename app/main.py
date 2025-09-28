@@ -144,7 +144,8 @@ def setup_routers():
             extractions_router,
             corrections_router,
             compare_router,
-            upload_router
+            upload_router,
+            project_router
         )
         
         app.include_router(projects_router, prefix="/api", tags=["Projects"])
@@ -153,6 +154,7 @@ def setup_routers():
         app.include_router(corrections_router, prefix="/api", tags=["Corrections"])
         app.include_router(compare_router, prefix="/api", tags=["Compare"])
         app.include_router(upload_router, prefix="/api", tags=["Upload"])
+        app.include_router(project_router, prefix="/analyze", tags=["Project Analysis"])
         
         logger.info("✅ Новые роутеры подключены")
         

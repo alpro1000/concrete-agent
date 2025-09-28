@@ -17,7 +17,9 @@ Pillow==11.0.0
 
 # === AI Integration ===
 anthropic==0.35.0
+openai==1.10.0
 tenacity==8.2.3
+httpx==0.25.0
 
 # === Utilities ===
 requests==2.31.0
