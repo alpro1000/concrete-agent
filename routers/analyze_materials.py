@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 @router.post("/materials")
 async def analyze_materials_integrated_endpoint(
     docs: List[UploadFile] = File(..., description="Основные документы (PDF, DOCX, TXT)"),
-    smeta: Optional[UploadFile] = File(None, description="Смета или выказ вымер (XLSX, CSV, PDF)"),
+    smeta: UploadFile = File(..., description="Смета или выказ вымер (XLSX, CSV, PDF). Если нет файла сметы, загрузите пустой файл."),
     material_query: Optional[str] = Form(None, description="Запрос материала (арматура, окна, двери, плитка)"),
     use_claude: bool = Form(True, description="Использовать Claude AI для анализа"),
     claude_mode: str = Form("enhancement", description="Режим Claude: enhancement или primary"),
@@ -51,9 +51,9 @@ async def analyze_materials_integrated_endpoint(
             doc_paths.append(path)
             logger.info(f"📄 Загружен документ: {file.filename}")
 
-        # Обрабатываем смету, если она есть
+        # Обрабатываем смету, если она есть и не пустая
         smeta_path = None
-        if smeta:
+        if smeta and smeta.filename and smeta.size > 0:
             if not any(smeta.filename.endswith(ext) for ext in settings.ALLOWED_EXTENSIONS):
                 raise HTTPException(
                     status_code=400, 
@@ -63,6 +63,8 @@ async def analyze_materials_integrated_endpoint(
             with open(smeta_path, "wb") as f:
                 f.write(await smeta.read())
             logger.info(f"📑 Загружена смета: {smeta.filename}")
+        else:
+            logger.info("📑 Смета не предоставлена или файл пустой")
 
         # Создаем запрос для интегрированного анализа
         request = IntegratedAnalysisRequest(
