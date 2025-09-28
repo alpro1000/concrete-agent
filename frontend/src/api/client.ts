@@ -95,6 +95,78 @@ class ApiClient {
     return response.data;
   }
 
+  // Specialized upload endpoints
+  async uploadDocs(
+    files: File[],
+    options?: {
+      project_name?: string;
+      auto_analyze?: boolean;
+      language?: Language;
+    }
+  ): Promise<ApiResponse<any>> {
+    const formData = this.createFormData({
+      files,
+      project_name: options?.project_name ?? 'Untitled Project',
+      auto_analyze: options?.auto_analyze ?? true,
+      language: options?.language ?? 'cz',
+    });
+    
+    const response: AxiosResponse<ApiResponse<any>> = 
+      await this.client.post('/upload/docs', formData);
+    
+    return response.data;
+  }
+
+  async uploadSmeta(
+    files: File[],
+    options?: {
+      project_name?: string;
+      estimate_type?: string;
+      auto_analyze?: boolean;
+      language?: Language;
+    }
+  ): Promise<ApiResponse<any>> {
+    const formData = this.createFormData({
+      files,
+      project_name: options?.project_name ?? 'Untitled Project',
+      estimate_type: options?.estimate_type ?? 'general',
+      auto_analyze: options?.auto_analyze ?? true,
+      language: options?.language ?? 'cz',
+    });
+    
+    const response: AxiosResponse<ApiResponse<any>> = 
+      await this.client.post('/upload/smeta', formData);
+    
+    return response.data;
+  }
+
+  async uploadDrawings(
+    files: File[],
+    options?: {
+      project_name?: string;
+      drawing_type?: string;
+      scale?: string;
+      auto_analyze?: boolean;
+      extract_volumes?: boolean;
+      language?: Language;
+    }
+  ): Promise<ApiResponse<any>> {
+    const formData = this.createFormData({
+      files,
+      project_name: options?.project_name ?? 'Untitled Project',
+      drawing_type: options?.drawing_type ?? 'general',
+      scale: options?.scale,
+      auto_analyze: options?.auto_analyze ?? true,
+      extract_volumes: options?.extract_volumes ?? true,
+      language: options?.language ?? 'cz',
+    });
+    
+    const response: AxiosResponse<ApiResponse<any>> = 
+      await this.client.post('/upload/drawings', formData);
+    
+    return response.data;
+  }
+
   // Analysis endpoints
   async analyzeConcrete(
     docs: File[],
@@ -142,6 +214,35 @@ class ApiClient {
 
     const response: AxiosResponse<MaterialAnalysisResult> = 
       await this.client.post('/analyze/materials', formData);
+    
+    return response.data;
+  }
+
+  async analyzeTOV(
+    docs: File[],
+    options?: {
+      smeta?: File;
+      project_name?: string;
+      project_duration_days?: number;
+      use_claude?: boolean;
+      claude_mode?: string;
+      language?: Language;
+      export_format?: string;
+    }
+  ): Promise<any> {
+    const formData = this.createFormData({
+      docs,
+      smeta: options?.smeta,
+      project_name: options?.project_name ?? 'TOV Analysis Project',
+      project_duration_days: options?.project_duration_days,
+      use_claude: options?.use_claude ?? true,
+      claude_mode: options?.claude_mode ?? 'enhancement',
+      language: options?.language ?? 'cz',
+      export_format: options?.export_format ?? 'json',
+    });
+
+    const response: AxiosResponse<any> = 
+      await this.client.post('/analyze/tov', formData);
     
     return response.data;
   }
