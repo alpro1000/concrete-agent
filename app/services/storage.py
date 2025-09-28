@@ -129,15 +129,19 @@ class StorageService:
                         document_id = self._generate_document_id()
                         relative_path = extracted_file.relative_to(temp_path)
                         
+                        # Use just the filename for simpler storage
+                        filename = extracted_file.name
+                        
                         file_data = await self.save_file(
-                            project_id, document_id, str(relative_path), file_content
+                            project_id, document_id, filename, file_content
                         )
                         
                         extracted_files.append({
                             "document_id": document_id,
-                            "filename": str(relative_path),
+                            "filename": filename,
                             "status": "extracted",
                             "parent_zip": zip_filename,
+                            "original_path": str(relative_path),
                             **file_data
                         })
                 

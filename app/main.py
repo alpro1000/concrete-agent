@@ -30,11 +30,14 @@ async def lifespan(app: FastAPI):
     
     # Инициализация базы данных
     try:
+        import sys
+        sys.path.append('/home/runner/work/concrete-agent/concrete-agent')
         from app.database import init_database
         await init_database()
         logger.info("✅ База данных инициализирована")
     except Exception as e:
         logger.error(f"❌ Ошибка инициализации базы данных: {e}")
+        # Continue without database for now
     
     # Проверяем зависимости
     deps = check_dependencies()
@@ -50,6 +53,8 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("🛑 Construction Analysis API останавливается")
     try:
+        import sys
+        sys.path.append('/home/runner/work/concrete-agent/concrete-agent')
         from app.database import close_database
         await close_database()
         logger.info("🔌 База данных отключена")
@@ -129,6 +134,9 @@ def check_dependencies():
 def setup_routers():
     """Подключение всех роутеров"""
     try:
+        import sys
+        sys.path.append('/home/runner/work/concrete-agent/concrete-agent')
+        
         # Новые роутеры с поддержкой базы данных
         from app.routers import (
             projects_router,
@@ -219,9 +227,12 @@ async def health_check():
     """Проверка работоспособности сервиса"""
     try:
         # Проверяем подключение к базе данных
+        import sys
+        sys.path.append('/home/runner/work/concrete-agent/concrete-agent')
         from app.database import AsyncSessionLocal
+        from sqlalchemy import text
         async with AsyncSessionLocal() as session:
-            await session.execute("SELECT 1")
+            await session.execute(text("SELECT 1"))
         
         db_status = "connected"
     except Exception as e:
@@ -242,9 +253,12 @@ async def detailed_status():
         
         # Проверяем базу данных
         try:
+            import sys
+            sys.path.append('/home/runner/work/concrete-agent/concrete-agent')
             from app.database import AsyncSessionLocal
+            from sqlalchemy import text
             async with AsyncSessionLocal() as session:
-                await session.execute("SELECT 1")
+                await session.execute(text("SELECT 1"))
             db_status = "operational"
         except Exception as e:
             db_status = f"error: {str(e)}"
