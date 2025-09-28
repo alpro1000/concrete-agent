@@ -38,6 +38,26 @@
       "maxSize": "Maximum size: 10MB",
       "multiple": "You can upload multiple files at once"
     },
+    "upload": {
+      "docs": {
+        "title": "📄 Project Documents",
+        "description": "Technical specifications, geology, GOST, project documentation"
+      },
+      "smeta": {
+        "title": "📊 Estimates & BOQ",
+        "description": "Excel estimates, XML, CSV, local and summary estimates"
+      },
+      "drawings": {
+        "title": "📐 Drawings & BIM",
+        "description": "DWG, DXF, PDF drawings, IFC models, 3D files"
+      }
+    },
+    "project": {
+      "name": "Project Name",
+      "namePlaceholder": "Enter project name",
+      "duration": "Project Duration (days)",
+      "durationPlaceholder": "Expected duration in days"
+    },
     "materialQuery": {
       "title": "Material Query",
       "placeholder": "Enter material type (e.g. reinforcement, windows, doors, tiles)",
@@ -78,6 +98,20 @@
     "comparison": {
       "title": "Document Comparison",
       "changes": "Changes",
+      "additions": "Additions",
+      "deletions": "Deletions"
+    },
+    "tov": {
+      "title": "TOV Resource Planning",
+      "workZones": "Work Zones",
+      "resources": "Resources",
+      "schedule": "Schedule",
+      "gantt": "Gantt Chart"
+    },
+    "integrated": {
+      "title": "Integrated Analysis",
+      "summary": "Project Summary",
+      "allResults": "All Analysis Results",
       "added": "Added",
       "removed": "Removed",
       "modified": "Modified",
@@ -116,7 +150,13 @@
   "validation": {
     "required": "This field is required",
     "fileRequired": "At least one file is required",
+    "atLeastOneFileRequired": "At least one file (documents, estimates, or drawings) is required",
     "maxFiles": "Maximum {{max}} files",
     "invalidEmail": "Invalid email address"
+  },
+  "errors": {
+    "unknownError": "An unknown error occurred",
+    "networkError": "Network connection error",
+    "fileUploadError": "File upload failed"
   }
 }

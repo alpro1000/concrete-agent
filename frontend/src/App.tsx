@@ -25,13 +25,16 @@ const { Header, Content, Footer } = Layout;
 
 interface AnalysisData {
   docs: File[];
-  smeta?: File;
+  smeta: File[];
+  drawings: File[];
   material_query?: string;
   use_claude: boolean;
   claude_mode: string;
   language: 'cs' | 'en' | 'ru';
   include_drawing_analysis: boolean;
-  analysis_type: 'concrete' | 'materials' | 'comparison';
+  analysis_type: 'concrete' | 'materials' | 'comparison' | 'tov' | 'integrated';
+  project_name?: string;
+  project_duration_days?: number;
 }
 
 function App() {
