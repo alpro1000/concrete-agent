@@ -8,6 +8,12 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
+# Import pandas with error handling
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
+
 logger = logging.getLogger(__name__)
 
 class SmetaParser:
@@ -101,9 +107,11 @@ class SmetaParser:
 
     def _parse_excel_smeta(self, file_path: str) -> List[Dict[str, Any]]:
         """Парсинг Excel сметы"""
-        try:
-            import pandas as pd
+        if pd is None:
+            logger.error("❌ pandas не установлен. Установите: pip install pandas openpyxl")
+            return []
             
+        try:
             # Читаем Excel файл
             df = pd.read_excel(file_path, sheet_name=0, header=0)
             
@@ -271,7 +279,7 @@ class SmetaParser:
             return ""
         
         value = row[column]
-        if pd.isna(value):
+        if pd is not None and pd.isna(value):
             return ""
         
         return str(value).strip()
@@ -282,9 +290,8 @@ class SmetaParser:
             return 0.0
         
         try:
-            import pandas as pd
             value = row[column]
-            if pd.isna(value):
+            if pd is not None and pd.isna(value):
                 return 0.0
             
             # Конвертируем строку в число
