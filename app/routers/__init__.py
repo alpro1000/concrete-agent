@@ -5,6 +5,7 @@ from .extractions import router as extractions_router
 from .corrections import router as corrections_router
 from .compare import router as compare_router
 from .upload import router as upload_router
+from .project import router as project_router
 
 __all__ = [
     "projects_router",
@@ -12,5 +13,6 @@ __all__ = [
     "extractions_router",
     "corrections_router",
     "compare_router",
-    "upload_router"
+    "upload_router",
+    "project_router"
 ]
