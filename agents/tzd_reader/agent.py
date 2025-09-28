@@ -27,16 +27,46 @@ MAX_TOTAL_TEXT_LENGTH = 500_000
 
 
 class SecureAIAnalyzer:
-    """Secure AI analyzer using centralized client management"""
+    """Secure AI analyzer using centralized LLM service"""
     
     def __init__(self):
-        self.openai_client = get_openai_client()
-        self.anthropic_client = get_anthropic_client()
+        # Import new LLM service
+        import sys
+        sys.path.append('/home/runner/work/concrete-agent/concrete-agent')
+        
+        try:
+            from app.core.llm_service import get_llm_service
+            from app.core.prompt_loader import get_prompt_loader
+            self.llm_service = get_llm_service()
+            self.prompt_loader = get_prompt_loader()
+            self.use_new_service = True
+            logger.info("Using new centralized LLM service")
+        except Exception as e:
+            logger.warning(f"Failed to load new LLM service, falling back to legacy: {e}")
+            self.use_new_service = False
+            
+        # Always initialize legacy clients as fallback
+        try:
+            self.openai_client = get_openai_client()
+            self.anthropic_client = get_anthropic_client()
+        except Exception as e:
+            logger.warning(f"Failed to initialize legacy clients: {e}")
+            self.openai_client = None
+            self.anthropic_client = None
+            
         self.openai_model = os.getenv('OPENAI_MODEL', DEFAULT_OPENAI_MODEL)
         self.claude_model = os.getenv('CLAUDE_MODEL', DEFAULT_CLAUDE_MODEL)
     
     def get_analysis_prompt(self) -> str:
         """Prompt for technical assignment analysis"""
+        if self.use_new_service:
+            try:
+                # Use new prompt system
+                return self.prompt_loader.get_system_prompt("tzd")
+            except Exception as e:
+                logger.warning(f"Failed to load new prompt, using fallback: {e}")
+        
+        # Fallback to hardcoded prompt
         return """Проанализируй техническое задание и верни результат СТРОГО в формате JSON.
 
 Требуемые поля JSON:
@@ -94,6 +124,59 @@ class SecureAIAnalyzer:
             "key_technologies": [],
             "processing_error": True
         }
+    
+    async def analyze_with_new_llm_service(self, text: str) -> Dict[str, Any]:
+        """Analysis using new centralized LLM service"""
+        if not self.use_new_service:
+            raise ValueError("New LLM service not available")
+        
+        try:
+            # Get prompt configuration
+            prompt_config = self.prompt_loader.get_prompt_config("tzd")
+            provider = prompt_config.get("provider", "gpt")
+            model = prompt_config.get("model", "gpt-4o-mini")
+            
+            # Truncate text if too long
+            max_tokens_input = 100000
+            if len(text) > max_tokens_input:
+                text = text[:max_tokens_input] + "\n\n[ТЕКСТ ОБРЕЗАН ПО ЛИМИТУ]"
+                logger.warning("Text truncated for API")
+            
+            system_prompt = self.get_analysis_prompt()
+            
+            response = await self.llm_service.run_prompt(
+                provider=provider,
+                prompt=text,
+                system_prompt=system_prompt,
+                model=model,
+                max_tokens=4000
+            )
+            
+            if not response.get("success"):
+                raise ValueError(f"LLM service error: {response.get('error', 'Unknown error')}")
+            
+            result_text = response.get("content", "")
+            if not result_text:
+                raise ValueError("Empty response from LLM service")
+            
+            # Extract and parse JSON
+            json_text = self._extract_json_from_response(result_text)
+            result = json.loads(json_text)
+            
+            # Add metadata
+            result['ai_model'] = response.get("model", model)
+            result['provider'] = provider
+            result['processing_time'] = response.get("usage", {}).get("output_tokens", None)
+            result['analysis_method'] = 'new_llm_service'
+            
+            return result
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON from new LLM service: {e}")
+            return self._get_empty_result()
+        except Exception as e:
+            logger.error(f"New LLM service analysis failed: {e}")
+            return self._get_empty_result()
     
     def analyze_with_gpt(self, text: str) -> Dict[str, Any]:
         """Analysis using OpenAI GPT"""
@@ -309,7 +392,7 @@ def tzd_reader(files: List[str], engine: str = "gpt", base_dir: Optional[str] = 
     
     Args:
         files: List of file paths
-        engine: AI engine ("gpt" or "claude")
+        engine: AI engine ("gpt", "claude", or "auto" for new service)
         base_dir: Base directory for file access restriction
         
     Returns:
@@ -322,8 +405,8 @@ def tzd_reader(files: List[str], engine: str = "gpt", base_dir: Optional[str] = 
     if not files:
         raise ValueError("File list cannot be empty")
     
-    if engine.lower() not in ['gpt', 'claude']:
-        raise ValueError(f"Unsupported AI engine: {engine}. Use 'gpt' or 'claude'")
+    if engine.lower() not in ['gpt', 'claude', 'auto']:
+        raise ValueError(f"Unsupported AI engine: {engine}. Use 'gpt', 'claude', or 'auto'")
     
     start_time = time.time()
     
@@ -334,7 +417,17 @@ def tzd_reader(files: List[str], engine: str = "gpt", base_dir: Optional[str] = 
         # AI analysis
         analyzer = SecureAIAnalyzer()
         
-        if engine.lower() == "gpt":
+        # Try new LLM service first if available and auto mode
+        if engine.lower() == "auto" and analyzer.use_new_service:
+            try:
+                import asyncio
+                result = asyncio.run(analyzer.analyze_with_new_llm_service(combined_text))
+                logger.info("Used new centralized LLM service")
+            except Exception as e:
+                logger.warning(f"New LLM service failed, falling back to legacy: {e}")
+                # Fallback to GPT
+                result = analyzer.analyze_with_gpt(combined_text)
+        elif engine.lower() == "gpt":
             result = analyzer.analyze_with_gpt(combined_text)
         else:  # claude
             result = analyzer.analyze_with_claude(combined_text)
