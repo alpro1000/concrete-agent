@@ -20,12 +20,21 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    logger.info("🚀 Construction Analysis API запускается...")
+    logger.info("🚀 Construction Analysis API с базой данных запускается...")
     
     # Создаем необходимые директории
     os.makedirs("uploads", exist_ok=True)
     os.makedirs("logs", exist_ok=True)
     os.makedirs("outputs", exist_ok=True)
+    os.makedirs("storage", exist_ok=True)
+    
+    # Инициализация базы данных
+    try:
+        from app.database import init_database
+        await init_database()
+        logger.info("✅ База данных инициализирована")
+    except Exception as e:
+        logger.error(f"❌ Ошибка инициализации базы данных: {e}")
     
     # Проверяем зависимости
     deps = check_dependencies()
@@ -40,12 +49,18 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("🛑 Construction Analysis API останавливается")
+    try:
+        from app.database import close_database
+        await close_database()
+        logger.info("🔌 База данных отключена")
+    except Exception as e:
+        logger.error(f"❌ Ошибка отключения базы данных: {e}")
 
 # Создание приложения FastAPI
 app = FastAPI(
     title="Construction Analysis API",
-    description="Агент для анализа бетона, материалов и версий документов",
-    version="1.0.0",
+    description="Агент для анализа бетона, материалов и версий документов с поддержкой базы данных",
+    version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan
@@ -67,7 +82,9 @@ def check_dependencies():
         "anthropic": False,
         "pdfplumber": False,
         "docx": False,
-        "openpyxl": False
+        "openpyxl": False,
+        "sqlalchemy": False,
+        "asyncpg": False
     }
     
     try:
@@ -93,52 +110,59 @@ def check_dependencies():
         dependencies["openpyxl"] = True
     except ImportError:
         logger.warning("⚠️ openpyxl не установлен")
+        
+    try:
+        import sqlalchemy
+        dependencies["sqlalchemy"] = True
+    except ImportError:
+        logger.warning("⚠️ sqlalchemy не установлен")
+        
+    try:
+        import asyncpg
+        dependencies["asyncpg"] = True
+    except ImportError:
+        logger.warning("⚠️ asyncpg не установлен")
     
     return dependencies
 
-# === Автоматическая система роутеров ===
+# === Настройка роутеров ===
 def setup_routers():
-    """Автоматическое подключение роутеров с улучшенной обработкой ошибок"""
+    """Подключение всех роутеров"""
     try:
-        from app.core.router_registry import RouterRegistry
-        router_registry = RouterRegistry()
-        routers = router_registry.discover_routers("routers")  # Ищем в корневой папке routers
+        # Новые роутеры с поддержкой базы данных
+        from app.routers import (
+            projects_router,
+            documents_router,
+            extractions_router,
+            corrections_router,
+            compare_router,
+            upload_router
+        )
         
-        logger.info(f"🔍 Найдено {len(routers)} роутеров для подключения")
+        app.include_router(projects_router, prefix="/api", tags=["Projects"])
+        app.include_router(documents_router, prefix="/api", tags=["Documents"])
+        app.include_router(extractions_router, prefix="/api", tags=["Extractions"])
+        app.include_router(corrections_router, prefix="/api", tags=["Corrections"])
+        app.include_router(compare_router, prefix="/api", tags=["Compare"])
+        app.include_router(upload_router, prefix="/api", tags=["Upload"])
         
-        successful_routers = 0
-        for router_info in routers:
-            try:
-                app.include_router(
-                    router_info['router'],
-                    prefix=router_info.get('prefix', ''),
-                    tags=router_info.get('tags', [router_info['name']])
-                )
-                logger.info(f"✅ Роутер {router_info['name']} подключен")
-                successful_routers += 1
-            except Exception as e:
-                logger.error(f"❌ Ошибка подключения роутера {router_info['name']}: {e}")
+        logger.info("✅ Новые роутеры подключены")
         
-        logger.info(f"📊 Успешно подключено {successful_routers}/{len(routers)} роутеров")
+        # Подключение старых роутеров для обратной совместимости
+        setup_legacy_routers()
         
-        # Fallback к ручному подключению
-        if successful_routers == 0:
-            logger.warning("⚠️ Автоматическое подключение не сработало, используем fallback")
-            setup_routers_fallback()
-            
     except Exception as e:
-        logger.error(f"❌ Ошибка автоматического подключения роутеров: {e}")
-        logger.info("🔄 Переключаемся на ручное подключение")
-        setup_routers_fallback()
+        logger.error(f"❌ Ошибка подключения роутеров: {e}")
+        setup_legacy_routers()
 
-def setup_routers_fallback():
-    """Резервное ручное подключение роутеров"""
+def setup_legacy_routers():
+    """Резервное подключение старых роутеров для обратной совместимости"""
     router_configs = [
-        ("routers.analyze_concrete", "concrete_router", "/analyze", ["Concrete"]),
-        ("routers.analyze_materials", "materials_router", "/analyze", ["Materials"]),
-        ("routers.analyze_volume", "volume_router", "/analyze", ["Volume"]),
-        ("routers.version_diff", "diff_router", "/compare", ["Diff"]),
-        ("routers.upload", "upload_router", "/upload", ["Upload"]),
+        ("routers.analyze_concrete", "router", "/analyze", ["Concrete"]),
+        ("routers.analyze_materials", "router", "/analyze", ["Materials"]),
+        ("routers.analyze_volume", "router", "/analyze", ["Volume"]),
+        ("routers.version_diff", "router", "/compare", ["Diff"]),
+        ("routers.upload", "router", "/upload", ["Upload"]),
         ("routers.tzd_router", "router", "/tzd", ["TZD"]),
     ]
     
@@ -148,14 +172,13 @@ def setup_routers_fallback():
             module = __import__(module_path, fromlist=[router_name])
             router = getattr(module, router_name)
             app.include_router(router, prefix=prefix, tags=tags)
-            logger.info(f"✅ Fallback: роутер {module_path} подключен")
+            logger.info(f"✅ Legacy: роутер {module_path} подключен")
             successful += 1
         except Exception as e:
-            logger.warning(f"⚠️ Fallback: не удалось подключить {module_path}: {e}")
+            logger.warning(f"⚠️ Legacy: не удалось подключить {module_path}: {e}")
     
+    logger.info(f"📊 Legacy роутеров подключено: {successful}")
     return successful
-
-# === Функции для настройки приложения ===
 
 # === Основные эндпоинты ===
 @app.get("/")
@@ -165,17 +188,27 @@ async def root():
     
     return {
         "service": "Construction Analysis API",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "status": "running",
+        "features": {
+            "database_storage": True,
+            "multi_file_upload": True,
+            "zip_support": True,
+            "self_learning": True,
+            "backward_compatibility": True
+        },
         "claude_status": claude_status,
         "environment": os.getenv("ENVIRONMENT", "development"),
         "endpoints": {
             "docs": "/docs",
             "health": "/health",
+            "projects": "/api/projects",
+            "upload": "/api/projects/{id}/upload",
+            "compare": "/api/projects/{id}/compare",
+            # Legacy endpoints
             "analyze_concrete": "/analyze/concrete",
             "analyze_materials": "/analyze/materials",
             "compare_docs": "/compare/docs",
-            "compare_smeta": "/compare/smeta",
             "upload_files": "/upload/files"
         },
         "dependencies": check_dependencies()
@@ -184,9 +217,20 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Проверка работоспособности сервиса"""
+    try:
+        # Проверяем подключение к базе данных
+        from app.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            await session.execute("SELECT 1")
+        
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+    
     return {
         "status": "healthy",
-        "timestamp": "2025-09-24T12:00:00Z",
+        "timestamp": "2025-09-28T12:00:00Z",
+        "database": db_status,
         "uptime": "running"
     }
 
@@ -195,20 +239,33 @@ async def detailed_status():
     """Подробный статус сервиса"""
     try:
         deps = check_dependencies()
+        
+        # Проверяем базу данных
+        try:
+            from app.database import AsyncSessionLocal
+            async with AsyncSessionLocal() as session:
+                await session.execute("SELECT 1")
+            db_status = "operational"
+        except Exception as e:
+            db_status = f"error: {str(e)}"
+        
         return {
             "api_status": "operational",
+            "database_status": db_status,
             "dependencies": deps,
             "claude_available": bool(os.getenv("ANTHROPIC_API_KEY")),
             "directories": {
                 "uploads": os.path.exists("uploads"),
                 "logs": os.path.exists("logs"),
-                "outputs": os.path.exists("outputs")
+                "outputs": os.path.exists("outputs"),
+                "storage": os.path.exists("storage")
             },
             "python_path": sys.path[:3],  # Первые 3 пути
             "environment_vars": {
                 "USE_CLAUDE": os.getenv("USE_CLAUDE", "not_set"),
                 "MAX_FILE_SIZE": os.getenv("MAX_FILE_SIZE", "not_set"),
-                "PORT": os.getenv("PORT", "not_set")
+                "PORT": os.getenv("PORT", "not_set"),
+                "DATABASE_URL": "configured" if os.getenv("DATABASE_URL") else "default"
             }
         }
     except Exception as e:
@@ -224,7 +281,7 @@ async def test_echo(data: dict = None):
     return {
         "received": data or {},
         "message": "Echo test successful",
-        "timestamp": "2025-09-24T12:00:00Z"
+        "timestamp": "2025-09-28T12:00:00Z"
     }
 
 # === Обработчики ошибок ===
@@ -249,6 +306,7 @@ async def not_found_handler(request, exc):
             "message": f"Эндпоинт {request.url.path} не найден",
             "available_endpoints": [
                 "/", "/docs", "/health", "/status",
+                "/api/projects", "/api/projects/{id}/upload",
                 "/analyze/concrete", "/analyze/materials",
                 "/compare/docs", "/compare/smeta", "/upload/files"
             ]
