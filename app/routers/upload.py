@@ -144,12 +144,22 @@ async def _get_or_create_default_folder(db: AsyncSession, project_id: str) -> Fo
 def _get_file_type_enum(file_type_str: str) -> FileType:
     """Convert string file type to enum"""
     type_mapping = {
+        # Project Documents
         "pdf": FileType.PDF,
         "docx": FileType.DOCX,
+        "txt": FileType.TXT,
+        
+        # Estimates/BOQ
         "xlsx": FileType.XLSX,
         "xml": FileType.XML,
-        "txt": FileType.TXT,
+        "csv": FileType.CSV,
+        "xc4": FileType.XC4,
+        
+        # Drawings
         "dwg": FileType.DWG,
+        "dxf": FileType.DXF,
+        "ifc": FileType.BIM_IFC,
+        
         "other": FileType.OTHER
     }
     
