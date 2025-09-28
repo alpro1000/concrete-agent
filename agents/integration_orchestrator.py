@@ -30,6 +30,7 @@ get_hybrid_agent = concrete_agent_main.get_hybrid_agent
 from agents.volume_agent.agent import get_volume_analysis_agent
 from agents.material_agent.agent import get_material_analysis_agent
 from agents.drawing_volume_agent import get_drawing_volume_agent
+from agents.tov_agent import get_tov_agent
 from utils.czech_preprocessor import get_czech_preprocessor
 
 logger = logging.getLogger(__name__)

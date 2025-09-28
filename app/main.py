@@ -169,6 +169,7 @@ def setup_legacy_routers():
         ("routers.analyze_concrete", "router", "/analyze", ["Concrete"]),
         ("routers.analyze_materials", "router", "/analyze", ["Materials"]),
         ("routers.analyze_volume", "router", "/analyze", ["Volume"]),
+        ("routers.analyze_tov", "router", "/analyze", ["TOV"]),
         ("routers.version_diff", "router", "/compare", ["Diff"]),
         ("routers.upload", "router", "/upload", ["Upload"]),
         ("routers.tzd_router", "router", "/tzd", ["TZD"]),
@@ -224,6 +225,8 @@ async def root():
             # Legacy endpoints
             "analyze_concrete": "/analyze/concrete",
             "analyze_materials": "/analyze/materials",
+            "analyze_volume": "/analyze/volume",
+            "analyze_tov": "/analyze/tov",
             "compare_docs": "/compare/docs",
             "upload_files": "/upload/files"
         },
