@@ -19,6 +19,7 @@ from pathlib import Path
 
 from parsers.doc_parser import DocParser
 from parsers.smeta_parser import SmetaParser
+from services.doc_parser import parse_document  # New unified parser
 from utils.knowledge_base_service import get_knowledge_service
 from utils.czech_preprocessor import get_czech_preprocessor
 
@@ -183,12 +184,34 @@ class MaterialAnalysisAgent:
     async def _extract_materials_from_document(self, doc_path: str) -> List[MaterialItem]:
         """Извлекает материалы из документа"""
         try:
-            text = self.doc_parser.parse(doc_path)
-            if not text:
+            # Use unified parser with MinerU integration
+            result = parse_document(doc_path)
+            if not result["success"] or not result["results"]:
+                return []
+            
+            # Extract text from parse results
+            text = ""
+            for parse_result in result["results"]:
+                content = parse_result.content
+                if isinstance(content, str):
+                    text += content + "\n"
+                elif isinstance(content, dict):
+                    # Handle structured content from MinerU
+                    text += content.get("text", str(content)) + "\n"
+                else:
+                    text += str(content) + "\n"
+            
+            if not text.strip():
                 return []
             
             text = self.czech_preprocessor.normalize_text(text)
-            return self._extract_materials_from_text(text, doc_path)
+            materials = self._extract_materials_from_text(text, doc_path)
+            
+            # Log which parser was used
+            if result["results"]:
+                logger.info(f"📊 Материалы извлечены из {Path(doc_path).name}: {len(materials)} (parser: {result['results'][0].parser_used})")
+                
+            return materials
             
         except Exception as e:
             logger.error(f"❌ Ошибка обработки документа {doc_path}: {e}")
@@ -197,7 +220,25 @@ class MaterialAnalysisAgent:
     async def _extract_materials_from_smeta(self, smeta_path: str) -> List[MaterialItem]:
         """Извлекает материалы из сметы"""
         try:
-            smeta_data = self.smeta_parser.parse(smeta_path)
+            # Use unified parser for smeta
+            result = parse_document(smeta_path)
+            if not result["success"] or not result["results"]:
+                return []
+            
+            # Extract structured smeta data
+            smeta_data = []
+            for parse_result in result["results"]:
+                content = parse_result.content
+                if isinstance(content, list):
+                    # Structured smeta data from parser
+                    smeta_data.extend(content)
+                elif isinstance(content, dict) and "items" in content:
+                    # Legacy format with items key
+                    smeta_data.extend(content["items"])
+                elif isinstance(content, dict):
+                    # Single structured item
+                    smeta_data.append(content)
+            
             if not smeta_data:
                 return []
             
@@ -208,6 +249,10 @@ class MaterialAnalysisAgent:
                         row, smeta_path, row_num
                     )
                     materials.extend(material_items)
+            
+            # Log which parser was used
+            if result["results"]:
+                logger.info(f"📊 Материалы из сметы {Path(smeta_path).name}: {len(materials)} (parser: {result['results'][0].parser_used})")
             
             return materials
             

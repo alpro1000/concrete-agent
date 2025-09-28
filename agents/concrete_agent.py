@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 from parsers.doc_parser import DocParser
 from parsers.smeta_parser import SmetaParser
+from services.doc_parser import parse_document  # New unified parser
 from utils.claude_client import get_claude_client
 from config.settings import settings
 from outputs.save_report import save_merged_report
@@ -328,25 +329,52 @@ class ConcreteAgentHybrid:
         # Анализируем основные документы
         for doc_path in doc_paths:
             try:
-                text = self.doc_parser.parse(doc_path)
-                if text:
-                    volumes = self.volume_analyzer.analyze_volumes_from_text(
-                        text, Path(doc_path).name
-                    )
-                    all_volumes.extend(volumes)
-                    logger.info(f"📊 Найдено объемов в {Path(doc_path).name}: {len(volumes)}")
+                # Use unified parser with MinerU integration
+                result = parse_document(doc_path)
+                if result["success"] and result["results"]:
+                    # Extract text content from parse results
+                    text = ""
+                    for parse_result in result["results"]:
+                        content = parse_result.content
+                        if isinstance(content, str):
+                            text += content + "\n"
+                        elif isinstance(content, dict):
+                            # Handle structured content from MinerU
+                            text += content.get("text", str(content)) + "\n"
+                        else:
+                            text += str(content) + "\n"
+                    
+                    if text.strip():
+                        volumes = self.volume_analyzer.analyze_volumes_from_text(
+                            text, Path(doc_path).name
+                        )
+                        all_volumes.extend(volumes)
+                        logger.info(f"📊 Найдено объемов в {Path(doc_path).name}: {len(volumes)} (parser: {result['results'][0].parser_used if result['results'] else 'unknown'})")
             except Exception as e:
                 logger.error(f"❌ Ошибка анализа объемов в {doc_path}: {e}")
         
         # Анализируем смету, если есть
         if smeta_path and os.path.exists(smeta_path):
             try:
-                smeta_text = self.doc_parser.parse(smeta_path)
-                if smeta_text:
-                    smeta_volumes = self.volume_analyzer.analyze_volumes_from_text(
-                        smeta_text, Path(smeta_path).name
-                    )
-                    all_volumes.extend(smeta_volumes)
+                # Use unified parser for smeta as well
+                result = parse_document(smeta_path)
+                if result["success"] and result["results"]:
+                    smeta_text = ""
+                    for parse_result in result["results"]:
+                        content = parse_result.content
+                        if isinstance(content, str):
+                            smeta_text += content + "\n"
+                        elif isinstance(content, (list, dict)):
+                            # Handle structured smeta data
+                            smeta_text += str(content) + "\n"
+                        else:
+                            smeta_text += str(content) + "\n"
+                    
+                    if smeta_text.strip():
+                        smeta_volumes = self.volume_analyzer.analyze_volumes_from_text(
+                            smeta_text, Path(smeta_path).name
+                        )
+                        all_volumes.extend(smeta_volumes)
                     logger.info(f"📊 Найдено объемов в смете: {len(smeta_volumes)}")
             except Exception as e:
                 logger.error(f"❌ Ошибка анализа сметы {smeta_path}: {e}")
@@ -503,14 +531,33 @@ class ConcreteAgentHybrid:
         # Обрабатываем каждый документ
         for doc_path in doc_paths:
             try:
-                text = self.doc_parser.parse(doc_path)
-                all_text += text + "\n"
-                
-                processed_docs.append({
-                    'file': Path(doc_path).name,
-                    'type': 'Document',
-                    'text_length': len(text)
-                })
+                # Use unified parser with MinerU integration
+                result = parse_document(doc_path)
+                if result["success"] and result["results"]:
+                    text = ""
+                    for parse_result in result["results"]:
+                        content = parse_result.content
+                        if isinstance(content, str):
+                            text += content + "\n"
+                        elif isinstance(content, dict):
+                            # Handle structured content from MinerU
+                            text += content.get("text", str(content)) + "\n"
+                        else:
+                            text += str(content) + "\n"
+                    
+                    all_text += text + "\n"
+                    
+                    processed_docs.append({
+                        'file': Path(doc_path).name,
+                        'type': 'Document',
+                        'text_length': len(text),
+                        'parser_used': result["results"][0].parser_used if result["results"] else "unknown"
+                    })
+                else:
+                    processed_docs.append({
+                        'file': Path(doc_path).name, 
+                        'error': result.get("error", "Unknown parsing error")
+                    })
                 
             except Exception as e:
                 logger.error(f"❌ Ошибка обработки {doc_path}: {e}")
@@ -520,9 +567,24 @@ class ConcreteAgentHybrid:
         smeta_data = []
         if smeta_path:
             try:
-                smeta_result = self.smeta_parser.parse(smeta_path)
-                smeta_data = smeta_result.get('items', [])
-                logger.info(f"📊 Смета обработана: {len(smeta_data)} позиций")
+                # Use unified parser for smeta
+                result = parse_document(smeta_path)
+                if result["success"] and result["results"]:
+                    for parse_result in result["results"]:
+                        content = parse_result.content
+                        if isinstance(content, list):
+                            # Structured smeta data from parser
+                            smeta_data.extend(content)
+                        elif isinstance(content, dict) and "items" in content:
+                            # Legacy format with items key
+                            smeta_data.extend(content["items"])
+                        elif isinstance(content, dict):
+                            # Single structured item
+                            smeta_data.append(content)
+                    
+                    logger.info(f"📊 Смета обработана: {len(smeta_data)} позиций (parser: {result['results'][0].parser_used if result['results'] else 'unknown'})")
+                else:
+                    logger.error(f"❌ Ошибка обработки сметы: {result.get('error', 'Unknown error')}")
             except Exception as e:
                 logger.error(f"❌ Ошибка обработки сметы: {e}")
         

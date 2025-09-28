@@ -16,6 +16,7 @@ from dataclasses import dataclass, asdict
 
 from parsers.doc_parser import DocParser
 from parsers.smeta_parser import SmetaParser
+from services.doc_parser import parse_document  # New unified parser
 from utils.knowledge_base_service import get_knowledge_service
 from utils.czech_preprocessor import get_czech_preprocessor
 from agents.concrete_agent.agent import get_concrete_grade_extractor
@@ -128,12 +129,34 @@ class VolumeAnalysisAgent:
     async def _extract_volumes_from_document(self, doc_path: str, grades: List) -> List[VolumeEntry]:
         """Извлекает объемы из документа"""
         try:
-            text = self.doc_parser.parse(doc_path)
-            if not text:
+            # Use unified parser with MinerU integration
+            result = parse_document(doc_path)
+            if not result["success"] or not result["results"]:
+                return []
+            
+            # Extract text from parse results
+            text = ""
+            for parse_result in result["results"]:
+                content = parse_result.content
+                if isinstance(content, str):
+                    text += content + "\n"
+                elif isinstance(content, dict):
+                    # Handle structured content from MinerU
+                    text += content.get("text", str(content)) + "\n"
+                else:
+                    text += str(content) + "\n"
+            
+            if not text.strip():
                 return []
             
             text = self.czech_preprocessor.normalize_text(text)
-            return self._extract_volumes_from_text(text, doc_path, grades)
+            volumes = self._extract_volumes_from_text(text, doc_path, grades)
+            
+            # Log which parser was used
+            if result["results"]:
+                logger.info(f"📊 Объемы из документа {Path(doc_path).name}: {len(volumes)} (parser: {result['results'][0].parser_used})")
+                
+            return volumes
             
         except Exception as e:
             logger.error(f"❌ Ошибка обработки документа {doc_path}: {e}")
@@ -142,7 +165,25 @@ class VolumeAnalysisAgent:
     async def _extract_volumes_from_smeta(self, smeta_path: str, grades: List) -> List[VolumeEntry]:
         """Извлекает объемы из сметы"""
         try:
-            smeta_data = self.smeta_parser.parse(smeta_path)
+            # Use unified parser for smeta
+            result = parse_document(smeta_path)
+            if not result["success"] or not result["results"]:
+                return []
+            
+            # Extract structured smeta data
+            smeta_data = []
+            for parse_result in result["results"]:
+                content = parse_result.content
+                if isinstance(content, list):
+                    # Structured smeta data from parser
+                    smeta_data.extend(content)
+                elif isinstance(content, dict) and "items" in content:
+                    # Legacy format with items key
+                    smeta_data.extend(content["items"])
+                elif isinstance(content, dict):
+                    # Single structured item
+                    smeta_data.append(content)
+            
             if not smeta_data:
                 return []
             
@@ -154,6 +195,10 @@ class VolumeAnalysisAgent:
                     )
                     if volume_entry:
                         volumes.append(volume_entry)
+            
+            # Log which parser was used
+            if result["results"]:
+                logger.info(f"📊 Объемы из сметы {Path(smeta_path).name}: {len(volumes)} (parser: {result['results'][0].parser_used})")
             
             return volumes
             
