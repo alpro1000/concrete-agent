@@ -157,7 +157,17 @@ class OrchestratorAgent:
                 
             elif file_type == 'technical_document':
                 tzd_reader = await self._get_tzd_reader()
-                result = await tzd_reader([file_path]) if callable(tzd_reader) else tzd_reader([file_path])
+                
+                # Handle both sync and async functions
+                if callable(tzd_reader):
+                    try:
+                        # Try calling as sync function first
+                        result = tzd_reader([file_path], engine="auto")
+                    except Exception as e:
+                        logger.error(f"TZD analysis failed: {e}")
+                        result = {"error": str(e), "method": "tzd_fallback"}
+                else:
+                    result = {"error": "TZD reader not available"}
                 
                 return FileAnalysis(
                     file_path=file_path,
@@ -165,7 +175,7 @@ class OrchestratorAgent:
                     detected_type=file_type,
                     agent_used="TZDReader",
                     result=result,
-                    success=True
+                    success="error" not in result
                 )
                 
             elif file_type == 'drawing':
@@ -187,8 +197,24 @@ class OrchestratorAgent:
                 concrete_agent = await self._get_concrete_agent()
                 material_agent = await self._get_material_agent()
                 
-                concrete_result = await concrete_agent([file_path]) if callable(concrete_agent) else concrete_agent([file_path])
-                material_result = await material_agent([file_path]) if callable(material_agent) else material_agent([file_path])
+                # Handle sync functions properly
+                try:
+                    if callable(concrete_agent):
+                        concrete_result = concrete_agent([file_path])
+                    else:
+                        concrete_result = {"error": "ConcreteAgent not available"}
+                except Exception as e:
+                    logger.error(f"Concrete analysis failed: {e}")
+                    concrete_result = {"error": str(e)}
+                
+                try:
+                    if callable(material_agent):
+                        material_result = material_agent([file_path])
+                    else:
+                        material_result = {"error": "MaterialAgent not available"}
+                except Exception as e:
+                    logger.error(f"Material analysis failed: {e}")
+                    material_result = {"error": str(e)}
                 
                 combined_result = {
                     "concrete_analysis": concrete_result,
