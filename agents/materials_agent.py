@@ -64,8 +64,8 @@ class MaterialsAgent:
         Enhanced analysis using LLM service
         """
         try:
-            system_prompt = self.prompt_loader.get_system_prompt("material")
-            prompt_config = self.prompt_loader.get_prompt_config("material")
+            system_prompt = self.prompt_loader.get_system_prompt("materials")
+            prompt_config = self.prompt_loader.get_prompt_config("materials")
             
             provider = prompt_config.get("provider", "claude")
             model = prompt_config.get("model")
