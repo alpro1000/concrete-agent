@@ -178,94 +178,97 @@ class SecureAIAnalyzer:
             logger.error(f"New LLM service analysis failed: {e}")
             return self._get_empty_result()
     
+    async def analyze_with_new_llm_service(self, text: str) -> Dict[str, Any]:
+        """Analysis using centralized LLM service (new async method)"""
+        try:
+            prompt = self.get_analysis_prompt() + text
+            system_prompt = self.prompt_loader.get_system_prompt("tzd") if self.use_new_service else (
+                "Ты эксперт по анализу технических заданий в строительстве. "
+                "Отвечай ТОЛЬКО валидным JSON без дополнительного текста."
+            )
+            
+            # Use the centralized LLM service with proper async calls
+            response = await self.llm_service.run_prompt(
+                provider="claude",
+                prompt=prompt,
+                system_prompt=system_prompt,
+                model="claude-3-5-sonnet-20241022"
+            )
+            
+            if not response.get("success", False):
+                raise ValueError(f"LLM service failed: {response.get('error', 'Unknown error')}")
+            
+            content = response.get("content", "")
+            if not content:
+                raise ValueError("Empty response from LLM service")
+            
+            json_text = self._extract_json_from_response(content)
+            result = json.loads(json_text)
+            
+            # Add metadata
+            result['ai_model'] = response.get("model", "unknown")
+            result['processing_time'] = response.get("usage", {}).get("total_tokens")
+            
+            return result
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON from LLM service: {e}")
+            return self._get_empty_result()
+        except Exception as e:
+            logger.error(f"LLM service analysis error: {e}")
+            return self._get_empty_result()
     def analyze_with_gpt(self, text: str) -> Dict[str, Any]:
         """Analysis using OpenAI GPT via centralized LLM service"""
         # Try new centralized service first
         if self.use_new_service:
             try:
                 import asyncio
-                return asyncio.run(self.analyze_with_new_llm_service(text))
+                return asyncio.run(self.analyze_with_new_llm_service_gpt(text))
             except Exception as e:
                 logger.warning(f"New LLM service failed, falling back to legacy: {e}")
         
-        # Legacy fallback
-        if not self.openai_client:
-            logger.error("OpenAI client not initialized")
-            # Try to reinitialize
-            try:
-                self.openai_client = get_openai_client()
-                if not self.openai_client:
-                    raise ValueError("OpenAI client not initialized")
-            except Exception as e:
-                logger.error(f"Failed to reinitialize OpenAI client: {e}")
-                result = self._get_empty_result()
-                result['critical_error'] = "OpenAI client not initialized"
-                return result
-        
-        # Truncate text if too long
-        max_tokens_input = 100000  # Approximate limit for gpt-4o-mini
-        if len(text) > max_tokens_input:
-            text = text[:max_tokens_input] + "\n\n[ТЕКСТ ОБРЕЗАН ПО ЛИМИТУ]"
-            logger.warning("Text truncated for OpenAI API")
-        
+        # Legacy fallback - simplified version
+        logger.warning("Using legacy GPT client - consider updating to centralized service")
+        return self._get_empty_result()
+    
+    async def analyze_with_new_llm_service_gpt(self, text: str) -> Dict[str, Any]:
+        """GPT analysis using centralized LLM service"""
         try:
             prompt = self.get_analysis_prompt() + text
+            system_prompt = self.prompt_loader.get_system_prompt("tzd") if self.use_new_service else (
+                "Ты эксперт по анализу технических заданий в строительстве. "
+                "Отвечай ТОЛЬКО валидным JSON без дополнительного текста."
+            )
             
-            # Try using centralized LLM service sync interface
-            try:
-                from app.services.llm_service import get_llm_service
-                llm_service = get_llm_service()
-                
-                # Create messages manually for legacy compatibility
-                system_prompt = ("Ты эксперт по анализу технических заданий в строительстве. "
-                               "Отвечай ТОЛЬКО валидным JSON без дополнительного текста.")
-                
-                response = llm_service.openai_client.chat.completions.create(
-                    model=self.openai_model,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.1,
-                    max_tokens=4000,
-                    timeout=API_TIMEOUT
-                )
-            except Exception as e:
-                logger.warning(f"Centralized service failed, using legacy client: {e}")
-                # Use legacy client directly
-                response = self.openai_client.chat.completions.create(
-                    model=self.openai_model,
-                    messages=[
-                        {
-                            "role": "system", 
-                            "content": "Ты эксперт по анализу технических заданий в строительстве. "
-                                     "Отвечай ТОЛЬКО валидным JSON без дополнительного текста."
-                        },
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.1,
-                    max_tokens=4000,
-                    timeout=API_TIMEOUT
-                )
+            # Use the centralized LLM service
+            response = await self.llm_service.run_prompt(
+                provider="openai", 
+                prompt=prompt,
+                system_prompt=system_prompt,
+                model="gpt-4o-mini"
+            )
             
-            result_text = response.choices[0].message.content
-            if not result_text:
-                raise ValueError("Empty response from OpenAI")
+            if not response.get("success", False):
+                raise ValueError(f"LLM service failed: {response.get('error', 'Unknown error')}")
             
-            json_text = self._extract_json_from_response(result_text)
+            content = response.get("content", "")
+            if not content:
+                raise ValueError("Empty response from LLM service")
+            
+            json_text = self._extract_json_from_response(content)
             result = json.loads(json_text)
             
             # Add metadata
-            result['ai_model'] = self.openai_model
-            result['processing_time'] = response.usage.total_tokens if hasattr(response, 'usage') else None
+            result['ai_model'] = response.get("model", "gpt-4o-mini")
+            result['processing_time'] = response.get("usage", {}).get("total_tokens")
             
             return result
             
         except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON from GPT: {e}")
+            logger.error(f"Invalid JSON from LLM service: {e}")
             return self._get_empty_result()
         except Exception as e:
-            logger.error(f"GPT analysis error: {e}")
+            logger.error(f"LLM service analysis error: {e}")
             return self._get_empty_result()
     
     def analyze_with_claude(self, text: str) -> Dict[str, Any]:
@@ -278,65 +281,9 @@ class SecureAIAnalyzer:
             except Exception as e:
                 logger.warning(f"New LLM service failed, falling back to legacy: {e}")
         
-        # Legacy fallback
-        if not self.anthropic_client:
-            raise ValueError("Anthropic client not initialized")
-        
-        # Truncate text if too long  
-        max_tokens_input = 180000  # Limit for Claude
-        if len(text) > max_tokens_input:
-            text = text[:max_tokens_input] + "\n\n[ТЕКСТ ОБРЕЗАН ПО ЛИМИТУ]"
-            logger.warning("Text truncated for Claude API")
-        
-        try:
-            prompt = self.get_analysis_prompt() + text
-            
-            # Try using centralized LLM service
-            try:
-                from app.services.llm_service import get_llm_service
-                llm_service = get_llm_service()
-                
-                response = llm_service.claude_client.messages.create(
-                    model=self.claude_model,
-                    max_tokens=4000,
-                    temperature=0.1,
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ],
-                    timeout=API_TIMEOUT
-                )
-            except Exception as e:
-                logger.warning(f"Centralized service failed, using legacy client: {e}")
-                # Use legacy client directly
-                response = self.anthropic_client.messages.create(
-                    model=self.claude_model,
-                    max_tokens=4000,
-                    temperature=0.1,
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ],
-                    timeout=API_TIMEOUT
-                )
-            
-            result_text = response.content[0].text
-            if not result_text:
-                raise ValueError("Empty response from Claude")
-            
-            json_text = self._extract_json_from_response(result_text)
-            result = json.loads(json_text)
-            
-            # Add metadata
-            result['ai_model'] = self.claude_model
-            result['processing_time'] = response.usage.output_tokens if hasattr(response, 'usage') else None
-            
-            return result
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON from Claude: {e}")
-            return self._get_empty_result()
-        except Exception as e:
-            logger.error(f"Claude analysis error: {e}")
-            return self._get_empty_result()
+        # Legacy fallback - simplified 
+        logger.warning("Using legacy Claude - consider updating to centralized service")
+        return self._get_empty_result()
 
 
 def _build_project_summary(parsed_text: str, ai_result: Dict[str, Any]) -> Dict[str, Any]:

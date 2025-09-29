@@ -11,7 +11,13 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 
-from parsers.doc_parser import DocParser
+try:
+    from services.doc_parser import DocParser
+except ImportError:
+    # Fallback to old location with warning
+    import warnings
+    warnings.warn("parsers.doc_parser is deprecated. Use services.doc_parser instead.", DeprecationWarning)
+    from parsers.doc_parser import DocParser
 from parsers.smeta_parser import SmetaParser
 from services.doc_parser import parse_document  # New unified parser
 from utils.claude_client import get_claude_client
