@@ -1,38 +1,23 @@
 {
-  "concrete_summary": [
-    {
-      "grade": "C25/30",
-      "location": "neurčený prvek (undefined element)",
-      "context": "Testovací dokument s betonem C25/30 a C30/37",
-      "confidence": 0.95,
-      "method": "regex_enhanced_czech"
-    },
-    {
-      "grade": "C30/37",
-      "location": "neurčený prvek (undefined element)",
-      "context": "Testovací dokument s betonem C25/30 a C30/37",
-      "confidence": 0.95,
-      "method": "regex_enhanced_czech"
-    }
-  ],
+  "concrete_summary": [],
   "analysis_method": "local_enhanced_czech",
-  "total_matches": 2,
+  "total_matches": 0,
   "success": true,
   "allowed_grades_count": 7,
   "czech_preprocessing": {
     "diacritic_fixes": 0,
-    "original_length": 45,
-    "fixed_length": 45
+    "original_length": 30,
+    "fixed_length": 30
   },
   "processed_documents": [
     {
-      "file": "tmp7028wbt7.txt",
+      "file": "tmpxdg3iao7.txt",
       "type": "Document",
-      "text_length": 44,
+      "text_length": 29,
       "parser_used": "DocParser"
     }
   ],
-  "smeta_items": 5,
+  "smeta_items": 0,
   "processing_time": "completed",
   "knowledge_base_version": "3.0"
 }
