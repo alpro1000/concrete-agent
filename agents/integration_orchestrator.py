@@ -14,6 +14,7 @@ agents/integration_orchestrator.py
 import logging
 import sys
 import os
+import time
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -422,6 +423,47 @@ class IntegrationOrchestrator:
                 "total_drawings": 0,
                 "total_volume_m3": 0.0,
                 "drawings": []
+            }
+    
+    async def run_integrated_analysis(self, request: IntegratedAnalysisRequest) -> Dict[str, Any]:
+        """
+        Backward compatibility method that wraps analyze_materials_integrated
+        Returns dict instead of IntegratedAnalysisResult dataclass
+        """
+        try:
+            # Call the main analysis method
+            result = await self.analyze_materials_integrated(request)
+            
+            # Convert dataclass result to dict for backward compatibility
+            return {
+                "success": result.success,
+                "summary": {
+                    "concrete_grades": result.concrete_summary.get("total_grades", 0),
+                    "total_volume_m3": result.volume_summary.get("total_volume_m3", 0),
+                    "materials_found": result.material_summary.get("total_materials", 0),
+                    "sources_processed": len(result.sources) if result.sources else 0
+                },
+                "concrete_analysis": result.concrete_summary,
+                "volume_analysis": result.volume_summary,
+                "materials_analysis": result.material_summary,
+                "tzd_analysis": result.drawing_summary,  # For TZD/technical specification analysis
+                "status": result.analysis_status,
+                "timestamp": time.time(),
+                "error_message": result.error_message
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка интегрированного анализа: {e}")
+            return {
+                "success": False,
+                "error_message": str(e),
+                "summary": {},
+                "concrete_analysis": {},
+                "volume_analysis": {},
+                "materials_analysis": {},
+                "tzd_analysis": {},
+                "status": {"error": str(e)},
+                "timestamp": time.time()
             }
 
 # Singleton instance
