@@ -58,35 +58,37 @@ class SecureAIAnalyzer:
         self.claude_model = os.getenv('CLAUDE_MODEL', DEFAULT_CLAUDE_MODEL)
     
     def get_analysis_prompt(self) -> str:
-        """Prompt for technical assignment analysis"""
+        """Get system prompt for technical assignment analysis"""
         if self.use_new_service:
             try:
                 # Use new prompt system
-                return self.prompt_loader.get_system_prompt("tzd")
+                system_prompt = self.prompt_loader.get_system_prompt("tzd")
+                if system_prompt:
+                    return system_prompt
+                logger.warning("Empty system prompt from new service, using fallback")
             except Exception as e:
                 logger.warning(f"Failed to load new prompt, using fallback: {e}")
         
-        # Fallback to hardcoded prompt
-        return """Проанализируй техническое задание и верни результат СТРОГО в формате JSON.
+        # Fallback to hardcoded prompt - updated to match new format
+        return """Ты — инженер-эксперт по строительным ТЗ и техническим заданиям. Извлеки из текста ключевые требования проекта и верни структурированный JSON.
 
-Требуемые поля JSON:
+Возвращай результат СТРОГО в JSON формате:
 {
-  "project_name": "название проекта (строка)",
-  "project_scope": "описание объёма работ (строка)", 
-  "materials": ["список материалов"],
-  "concrete_requirements": ["марки бетона и требования"],
-  "norms": ["нормативные документы"],
-  "functional_requirements": ["функциональные требования"],
-  "risks_and_constraints": ["риски и ограничения"],
-  "estimated_complexity": "низкая|средняя|высокая",
-  "key_technologies": ["ключевые технологии"]
+  "project_object": "объект строительства (строка)",
+  "requirements": ["основные требования к проекту"],
+  "norms": ["нормативные документы: СНиП, ГОСТ, ČSN EN и др."],
+  "constraints": ["ограничения: бюджетные, временные, технические"],
+  "environment": "условия окружающей среды и эксплуатации",
+  "functions": ["целевое назначение и основные функции объекта"]
 }
 
-Если информация отсутствует - используй пустые строки или массивы.
-Отвечай ТОЛЬКО валидным JSON без комментариев.
+Специфические требования:
+- Материалы: Выделяй конкретные марки бетона, стали, других материалов в requirements
+- Стандарты: Обращай особое внимание на чешские стандарты ČSN EN
+- Безопасность: Включай требования пожарной и конструкционной безопасности
 
-Текст технического задания:
-"""
+Если информация отсутствует - используй пустые строки или массивы.
+Отвечай ТОЛЬКО валидным JSON без комментариев."""
     
     def _extract_json_from_response(self, response_text: str) -> str:
         """Extract JSON from AI model response"""
@@ -111,17 +113,14 @@ class SecureAIAnalyzer:
         return text
     
     def _get_empty_result(self) -> Dict[str, Any]:
-        """Base result for errors"""
+        """Base result for errors - updated to match new format"""
         return {
-            "project_name": "",
-            "project_scope": "",
-            "materials": [],
-            "concrete_requirements": [],
+            "project_object": "",
+            "requirements": [],
             "norms": [],
-            "functional_requirements": [],
-            "risks_and_constraints": [],
-            "estimated_complexity": "неопределена",
-            "key_technologies": [],
+            "constraints": [],
+            "environment": "",
+            "functions": [],
             "processing_error": True
         }
     

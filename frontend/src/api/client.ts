@@ -10,6 +10,8 @@ import type {
   DetailedStatus,
   FileUpload,
   Language,
+  TZDAnalysisResult,
+  TZDHealthStatus,
 } from '../types/api';
 
 class ApiClient {

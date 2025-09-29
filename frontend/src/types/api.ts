@@ -131,3 +131,45 @@ export interface LanguageOption {
   name: string;
   flag: string;
 }
+
+// TZD Reader types
+export interface TZDAnalysisRequest {
+  files: File[];
+  ai_engine?: 'gpt' | 'claude' | 'auto';
+  project_context?: string;
+}
+
+export interface TZDAnalysisResult {
+  success: boolean;
+  analysis_id: string;
+  timestamp: string;
+  project_object: string;
+  requirements: string[];
+  norms: string[];
+  constraints: string[];
+  environment: string;
+  functions: string[];
+  processing_metadata: {
+    processed_files?: number;
+    processing_time?: number;
+    ai_engine?: string;
+    llm_orchestrator_used?: boolean;
+  };
+  error_message?: string;
+}
+
+export interface TZDHealthStatus {
+  service: string;
+  status: 'healthy' | 'limited';
+  tzd_reader_available: boolean;
+  cached_analyses: number;
+  timestamp: string;
+  security: {
+    max_file_size: string;
+    allowed_extensions: string[];
+    path_traversal_protection: boolean;
+  };
+  supported_formats: string[];
+  ai_engines: string[];
+  orchestrator_integration: boolean;
+}
