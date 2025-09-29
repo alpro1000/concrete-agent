@@ -181,7 +181,17 @@ class SecureAIAnalyzer:
     def analyze_with_gpt(self, text: str) -> Dict[str, Any]:
         """Analysis using OpenAI GPT"""
         if not self.openai_client:
-            raise ValueError("OpenAI client not initialized")
+            logger.error("OpenAI client not initialized")
+            # Try to reinitialize
+            try:
+                self.openai_client = get_openai_client()
+                if not self.openai_client:
+                    raise ValueError("OpenAI client not initialized")
+            except Exception as e:
+                logger.error(f"Failed to reinitialize OpenAI client: {e}")
+                result = self._get_empty_result()
+                result['critical_error'] = "OpenAI client not initialized"
+                return result
         
         # Truncate text if too long
         max_tokens_input = 100000  # Approximate limit for gpt-4o-mini
