@@ -492,6 +492,7 @@ class UnifiedConcreteAgent:
         """Анализ через централизованный LLM сервис"""
         try:
             system_prompt = self.prompt_loader.get_system_prompt("concrete")
+            prompt_config = self.prompt_loader.get_prompt_config("concrete")
             
             # Формируем промпт
             user_prompt = f"""
@@ -508,10 +509,10 @@ class UnifiedConcreteAgent:
             """
             
             response = await self.llm_service.run_prompt(
-                provider='claude',
+                provider=prompt_config.get('provider', 'claude'),
                 prompt=user_prompt,
                 system_prompt=system_prompt,
-                model='sonnet'
+                model=prompt_config.get('model')
             )
             
             return response

@@ -178,6 +178,39 @@ class TestLLMService:
                 assert result["success"] is True
                 mock_call.assert_called_once()
     
+    @pytest.mark.asyncio
+    async def test_run_prompt_model_mapping(self):
+        """Test that run_prompt correctly maps model aliases to full model names"""
+        with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'test-key'}):
+            service = LLMService()
+            
+            # Mock the async call_claude method to capture the model parameter
+            async def mock_call_claude(prompt, model, max_tokens, system_prompt):
+                return {
+                    "provider": "claude",
+                    "model": model,  # Return the actual model that was passed
+                    "content": "Test response", 
+                    "success": True
+                }
+            
+            with patch.object(service, 'call_claude', side_effect=mock_call_claude):
+                # Test 1: 'sonnet' alias should map to full model name
+                result = await service.run_prompt("claude", "Test prompt", model="sonnet")
+                assert result["model"] == claude_models["sonnet"]
+                
+                # Test 2: 'opus' alias should map to full model name
+                result = await service.run_prompt("claude", "Test prompt", model="opus")
+                assert result["model"] == claude_models["opus"]
+                
+                # Test 3: Full model name should pass through unchanged
+                full_model = "claude-3-haiku-20240307"
+                result = await service.run_prompt("claude", "Test prompt", model=full_model)
+                assert result["model"] == full_model
+                
+                # Test 4: No model should use default
+                result = await service.run_prompt("claude", "Test prompt")
+                assert result["model"] == "claude-3-sonnet-20240229"
+    
     def test_get_status(self):
         """Test service status method"""
         with patch.dict(os.environ, {
