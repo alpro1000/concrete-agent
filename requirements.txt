@@ -4,16 +4,10 @@ uvicorn[standard]==0.24.0
 python-multipart==0.0.6
 aiofiles==23.2.1
 
-# === Document Processing (БЕЗ textract!) ===
+# === Document Processing ===
 python-docx==1.1.0
 openpyxl==3.1.2
-xlrd==2.0.1
-lxml==4.9.4
 pdfplumber==0.11.0
-PyPDF2==3.0.1
-pytesseract==0.3.10
-Pillow==11.0.0
-
 
 # === AI Integration ===
 anthropic==0.35.0
@@ -24,17 +18,13 @@ httpx==0.25.0
 # === Utilities ===
 requests==2.31.0
 python-dotenv==1.0.0
-python-json-logger==2.0.7
 
-# ⚡ Исправлено: совместимые версии numpy + pandas
-numpy==1.26.4
+# === Data Processing ===
 pandas==2.2.2
-pathlib2==2.3.7
 
-# === Testing (опционально) ===
+# === Testing ===
 pytest==7.4.0
 pytest-asyncio==0.21.0
-httpx==0.25.0
 
 # === Database ===
 sqlalchemy==2.0.23
@@ -44,11 +34,3 @@ asyncpg==0.29.0
 
 # === Production ===
 gunicorn==21.2.0
-# Для улучшенной работы с CSV файлами (если понадобится)
-chardet==5.2.0
-
-# Для работы с различными кодировками Excel
-charset-normalizer==3.3.0
-
-# === Additional utilities ===
-zipfile39==0.0.1

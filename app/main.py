@@ -167,18 +167,19 @@ def setup_routers():
 
 def setup_legacy_routers():
     """Резервное подключение старых роутеров для обратной совместимости"""
+    # Use /legacy prefix to avoid conflicts with new API
     router_configs = [
-        ("routers.analyze_concrete", "router", "/analyze", ["Concrete"]),
-        ("routers.analyze_materials", "router", "/analyze", ["Materials"]),
-        ("routers.analyze_volume", "router", "/analyze", ["Volume"]),
-        ("routers.analyze_tov", "router", "/analyze", ["TOV"]),
-        ("routers.version_diff", "router", "/compare", ["Diff"]),
-        ("routers.upload", "router", "/upload", ["Upload"]),
-        ("routers.tzd_router", "router", "/tzd", ["TZD"]),
-        # New specialized upload routers
-        ("routers.upload_docs", "router", "/upload", ["Upload Docs"]),
-        ("routers.upload_smeta", "router", "/upload", ["Upload Estimates"]),
-        ("routers.upload_drawings", "router", "/upload", ["Upload Drawings"]),
+        ("routers.analyze_concrete", "router", "/legacy/analyze", ["Legacy Concrete"]),
+        ("routers.analyze_materials", "router", "/legacy/analyze", ["Legacy Materials"]),
+        ("routers.analyze_volume", "router", "/legacy/analyze", ["Legacy Volume"]),
+        ("routers.analyze_tov", "router", "/legacy/analyze", ["Legacy TOV"]),
+        ("routers.version_diff", "router", "/legacy/compare", ["Legacy Diff"]),
+        ("routers.upload", "router", "/legacy/upload", ["Legacy Upload"]),
+        ("routers.tzd_router", "router", "/legacy/tzd", ["Legacy TZD"]),
+        # Specialized upload routers
+        ("routers.upload_docs", "router", "/legacy/upload", ["Legacy Upload Docs"]),
+        ("routers.upload_smeta", "router", "/legacy/upload", ["Legacy Upload Estimates"]),
+        ("routers.upload_drawings", "router", "/legacy/upload", ["Legacy Upload Drawings"]),
     ]
     
     successful = 0
@@ -217,20 +218,18 @@ async def root():
         "endpoints": {
             "docs": "/docs",
             "health": "/health",
-            "projects": "/api/projects",
+            # New API endpoints (database-driven)
+            "projects": "/api/projects", 
             "upload": "/api/projects/{id}/upload",
             "compare": "/api/projects/{id}/compare",
-            # New specialized upload endpoints
-            "upload_docs": "/upload/docs",
-            "upload_estimates": "/upload/smeta", 
-            "upload_drawings": "/upload/drawings",
-            # Legacy endpoints
-            "analyze_concrete": "/analyze/concrete",
-            "analyze_materials": "/analyze/materials",
-            "analyze_volume": "/analyze/volume",
-            "analyze_tov": "/analyze/tov",
-            "compare_docs": "/compare/docs",
-            "upload_files": "/upload/files"
+            "project_analysis": "/analyze/project",
+            # Legacy API endpoints (file-based, for backward compatibility)
+            "legacy_concrete": "/legacy/analyze/concrete",
+            "legacy_materials": "/legacy/analyze/materials", 
+            "legacy_volume": "/legacy/analyze/volume",
+            "legacy_tov": "/legacy/analyze/tov",
+            "legacy_compare": "/legacy/compare/docs",
+            "legacy_upload": "/legacy/upload/files"
         },
         "dependencies": check_dependencies()
     }
