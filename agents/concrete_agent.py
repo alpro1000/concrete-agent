@@ -572,7 +572,7 @@ class ConcreteAgentHybrid:
             
             # Prepare context with smeta data
             smeta_context = ""
-            if smeta_data:
+            if smeta_data and isinstance(smeta_data, list):
                 smeta_context = "\n\n=== СМЕТА ДАННЫЕ ===\n"
                 for item in smeta_data[:10]:  # Limit to avoid token overflow
                     if isinstance(item, dict):
@@ -585,7 +585,7 @@ class ConcreteAgentHybrid:
             Анализируй данный документ на предмет марок бетона и конструктивных элементов.
             
             Документ:
-            {text[:10000]}  # Limit text length
+            {text[:10000] if isinstance(text, str) and text else "Нет текста для анализа"}  # Limit text length
             
             {smeta_context}
             
