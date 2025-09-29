@@ -3,7 +3,8 @@ import { Layout, Menu, ConfigProvider, theme } from 'antd';
 import { 
   HomeOutlined, 
   BarChartOutlined, 
-  FileTextOutlined
+  FileTextOutlined,
+  ProjectOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
@@ -11,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import Home from './pages/Home';
 import Analysis from './pages/Analysis';
 import Reports from './pages/Reports';
+import TZDAnalysis from './pages/TZDAnalysis';
 
 // Import components
 import LanguageSelector from './components/LanguageSelector';
@@ -39,7 +41,7 @@ interface AnalysisData {
 
 function App() {
   const { t } = useTranslation();
-  const [currentPage, setCurrentPage] = useState<'home' | 'analysis' | 'reports'>('home');
+  const [currentPage, setCurrentPage] = useState<'home' | 'analysis' | 'reports' | 'tzd'>('home');
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
 
   const handleAnalysisStart = (data: AnalysisData) => {
@@ -59,6 +61,11 @@ function App() {
       label: t('nav.home'),
     },
     {
+      key: 'tzd',
+      icon: <ProjectOutlined />,
+      label: 'TZD Reader',
+    },
+    {
       key: 'reports',
       icon: <FileTextOutlined />,
       label: t('nav.reports'),
@@ -75,6 +82,8 @@ function App() {
         ) : (
           <Home onAnalysisStart={handleAnalysisStart} />
         );
+      case 'tzd':
+        return <TZDAnalysis />;
       case 'reports':
         return <Reports />;
       default:

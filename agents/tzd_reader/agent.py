@@ -11,7 +11,12 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from parsers.doc_parser import DocParser
+try:
+    from services.doc_parser import DocParser
+except ImportError:
+    # Fallback to old import for backward compatibility
+    from parsers.doc_parser import DocParser
+    
 from utils.ai_clients import get_openai_client, get_anthropic_client
 from utils.mineru_client import extract_with_mineru_if_available
 from .security import FileSecurityValidator, SecurityError
@@ -460,6 +465,9 @@ def tzd_reader(files: List[str], engine: str = "gpt", base_dir: Optional[str] = 
         
         return result
         
+    except (ValueError, SecurityError) as e:
+        # Re-raise validation and security errors
+        raise e
     except Exception as e:
         logger.error(f"Critical error in tzd_reader: {e}")
         error_result = SecureAIAnalyzer()._get_empty_result()
