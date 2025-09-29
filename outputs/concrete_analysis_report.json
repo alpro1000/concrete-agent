@@ -1,23 +1,17 @@
 {
-  "concrete_summary": [],
-  "analysis_method": "local_enhanced_czech",
-  "total_matches": 0,
   "success": true,
-  "allowed_grades_count": 7,
-  "czech_preprocessing": {
-    "diacritic_fixes": 0,
-    "original_length": 30,
-    "fixed_length": 30
-  },
-  "processed_documents": [
-    {
-      "file": "tmpxdg3iao7.txt",
-      "type": "Document",
-      "text_length": 29,
-      "parser_used": "DocParser"
-    }
-  ],
+  "concrete_summary": [],
+  "total_grades_found": 0,
+  "unique_grades": [],
+  "processed_documents": [],
+  "analysis_method": "local_enhanced",
   "smeta_items": 0,
-  "processing_time": "completed",
-  "knowledge_base_version": "3.0"
+  "volumes": [],
+  "volume_summary": {
+    "total_grades_found": 0,
+    "total_volume_m3": 0.0,
+    "total_cost": 0.0,
+    "grades_summary": {},
+    "elements_summary": {}
+  }
 }

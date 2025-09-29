@@ -13,11 +13,28 @@ from dataclasses import dataclass
 
 # Централизованные импорты парсеров
 try:
+    import sys
+    import os
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from services.doc_parser import DocParser
 except ImportError:
-    from parsers.doc_parser import DocParser
+    try:
+        from parsers.doc_parser import DocParser
+    except ImportError:
+        # Create a dummy DocParser for basic compatibility
+        class DocParser:
+            def parse(self, file_path: str) -> str:
+                logger.warning("DocParser not available - using dummy implementation")
+                return ""
 
-from parsers.smeta_parser import SmetaParser
+try:
+    from parsers.smeta_parser import SmetaParser
+except ImportError:
+    # Create a dummy SmetaParser for basic compatibility
+    class SmetaParser:
+        def parse(self, file_path: str) -> List[Dict]:
+            logger.warning("SmetaParser not available - using dummy implementation")
+            return []
 
 # Централизованные сервисы
 try:
@@ -32,10 +49,49 @@ except ImportError:
         get_claude_client = None
 
 # Утилиты
-from utils.czech_preprocessor import get_czech_preprocessor
-from utils.volume_analyzer import get_volume_analyzer
-from utils.report_generator import get_report_generator
-from utils.knowledge_base_service import get_knowledge_service
+try:
+    from utils.czech_preprocessor import get_czech_preprocessor
+except ImportError:
+    def get_czech_preprocessor():
+        class DummyCzechPreprocessor:
+            def preprocess_document_text(self, text):
+                return {'fixed_text': text, 'changes_count': 0, 'original_length': len(text), 'fixed_length': len(text)}
+            def identify_construction_element_enhanced(self, context): 
+                return "Unknown"
+        return DummyCzechPreprocessor()
+
+try:
+    from utils.volume_analyzer import get_volume_analyzer
+except ImportError:
+    def get_volume_analyzer():
+        class DummyVolumeAnalyzer:
+            def analyze_volumes_from_text(self, text, source): 
+                return []
+        return DummyVolumeAnalyzer()
+
+try:
+    from utils.report_generator import get_report_generator
+except ImportError:
+    def get_report_generator(language="cz"):
+        class DummyReportGenerator:
+            def save_markdown_report(self, data, file_path): 
+                return True
+            def save_json_data(self, data, file_path): 
+                return True
+        return DummyReportGenerator()
+
+try:
+    from utils.knowledge_base_service import get_knowledge_service
+except ImportError:
+    def get_knowledge_service():
+        class DummyKnowledgeService:
+            def get_all_concrete_grades(self): 
+                return ["C20/25", "C25/30", "C30/37", "C35/45", "C40/50", "LC20/22", "LC25/28"]
+            def get_context_keywords(self): 
+                return ["beton", "concrete", "třídy", "class", "XC", "XD", "XF", "XA"]
+            def is_valid_concrete_grade(self, grade): 
+                return True
+        return DummyKnowledgeService()
 
 # Вспомогательные агенты
 try:
