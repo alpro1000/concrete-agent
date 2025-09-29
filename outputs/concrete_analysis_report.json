@@ -6,14 +6,15 @@
   "allowed_grades_count": 7,
   "czech_preprocessing": {
     "diacritic_fixes": 0,
-    "original_length": 32,
-    "fixed_length": 32
+    "original_length": 128,
+    "fixed_length": 128
   },
   "processed_documents": [
     {
-      "file": "test.txt",
+      "file": "test_doc.txt",
       "type": "Document",
-      "text_length": 31
+      "text_length": 127,
+      "parser_used": "doc_parser"
     }
   ],
   "smeta_items": 0,
