@@ -19,7 +19,7 @@ from parsers.smeta_parser import SmetaParser
 from services.doc_parser import parse_document  # New unified parser
 from utils.knowledge_base_service import get_knowledge_service
 from utils.czech_preprocessor import get_czech_preprocessor
-from agents.concrete_agent.agent import get_concrete_grade_extractor
+from agents.concrete_grade_extractor.agent import get_concrete_grade_extractor
 
 logger = logging.getLogger(__name__)
 
