@@ -95,7 +95,15 @@ class LLMService:
             Dict with response data
         """
         if not self.claude_client:
-            raise ValueError("Claude client not initialized. Check ANTHROPIC_API_KEY.")
+            logger.warning("Claude client not available - API key missing")
+            return {
+                "provider": "claude",
+                "model": model,
+                "content": "",
+                "error": "Claude API недоступен - проверьте ANTHROPIC_API_KEY",
+                "success": False,
+                "error_type": "api_unavailable"
+            }
             
         try:
             messages = [{"role": "user", "content": prompt}]
@@ -158,7 +166,15 @@ class LLMService:
             Dict with response data
         """
         if not self.openai_client:
-            raise ValueError("OpenAI client not initialized. Check OPENAI_API_KEY.")
+            logger.warning("OpenAI client not available - API key missing")
+            return {
+                "provider": "gpt",
+                "model": model,
+                "content": "",
+                "error": "OpenAI API недоступен - проверьте OPENAI_API_KEY",
+                "success": False,
+                "error_type": "api_unavailable"
+            }
             
         try:
             messages = []

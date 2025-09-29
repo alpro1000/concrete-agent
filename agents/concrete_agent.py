@@ -70,7 +70,7 @@ class ConcreteAgentHybrid:
 
         self.doc_parser = DocParser()
         self.smeta_parser = SmetaParser()
-        self.claude_client = get_claude_client() if settings.is_claude_enabled() else None
+        self.claude_client = get_claude_client()  # Always try to get Claude client, let it handle unavailability gracefully
 
         # Строгий паттерн для поиска марок бетона (только стандартные форматы)
         self.concrete_pattern = r'\b(?:LC|C)\d{1,3}/\d{1,3}\b'
@@ -500,8 +500,13 @@ class ConcreteAgentHybrid:
 
     async def _claude_concrete_analysis(self, text: str, smeta_data: List[Dict]) -> Dict[str, Any]:
         """Анализ через Claude с расширенным контекстом"""
-        if not self.claude_client:
-            return {"success": False, "error": "Claude client not available"}
+        if not self.claude_client or not self.claude_client.is_available:
+            logger.info("Claude API недоступен - пропускаем анализ с Claude")
+            return {
+                "success": False, 
+                "error": "Claude API недоступен - проверьте ANTHROPIC_API_KEY",
+                "error_type": "api_unavailable"
+            }
         
         try:
             result = await self.claude_client.analyze_concrete_with_claude(text, smeta_data)
@@ -594,7 +599,7 @@ class ConcreteAgentHybrid:
         # Интеграция с Claude
         final_result = local_result.copy()
         
-        if use_claude and self.claude_client:
+        if use_claude and self.claude_client and self.claude_client.is_available:
             claude_result = await self._claude_concrete_analysis(all_text, smeta_data)
             
             if claude_mode == "primary" and claude_result.get("success"):
@@ -605,6 +610,13 @@ class ConcreteAgentHybrid:
                     'analysis_method': 'hybrid_enhanced_czech',
                     'total_tokens_used': claude_result.get('tokens_used', 0)
                 })
+        elif use_claude:
+            # Claude was requested but is not available
+            logger.warning("Claude анализ запрошен, но Claude API недоступен")
+            final_result.update({
+                'claude_unavailable': True,
+                'claude_error': 'Claude API недоступен - проверьте ANTHROPIC_API_KEY'
+            })
         
         # Добавляем метаданные
         final_result.update({
