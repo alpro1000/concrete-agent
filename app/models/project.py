@@ -17,6 +17,7 @@ class Project(BaseModel):
     
     # Relationships
     folders = relationship("Folder", back_populates="project", cascade="all, delete-orphan")
+    tov_plans = relationship("TOVPlan", back_populates="project", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Project(id={self.id}, name='{self.name}')>"
