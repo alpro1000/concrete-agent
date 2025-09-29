@@ -19,7 +19,7 @@ except ImportError:
     warnings.warn("parsers.doc_parser is deprecated. Use services.doc_parser instead.", DeprecationWarning)
     from parsers.doc_parser import DocParser
 from parsers.smeta_parser import SmetaParser
-from services.doc_parser import parse_document  # New unified parser
+# Note: parse_document will be handled through doc_parser.parse() method
 
 # Import centralized services  
 try:
@@ -356,7 +356,7 @@ class ConcreteAgentHybrid:
         for doc_path in doc_paths:
             try:
                 # Use unified parser with MinerU integration
-                result = parse_document(doc_path)
+                text = self.doc_parser.parse(doc_path)
                 if result["success"] and result["results"]:
                     # Extract text content from parse results
                     text = ""
@@ -663,32 +663,24 @@ class ConcreteAgentHybrid:
         # Обрабатываем каждый документ
         for doc_path in doc_paths:
             try:
-                # Use unified parser with MinerU integration
-                result = parse_document(doc_path)
-                if result["success"] and result["results"]:
-                    text = ""
-                    for parse_result in result["results"]:
-                        content = parse_result.content
-                        if isinstance(content, str):
-                            text += content + "\n"
-                        elif isinstance(content, dict):
-                            # Handle structured content from MinerU
-                            text += content.get("text", str(content)) + "\n"
-                        else:
-                            text += str(content) + "\n"
-                    
+                # Use doc parser
+                text = self.doc_parser.parse(doc_path)
+                if text.strip():
                     all_text += text + "\n"
                     
                     processed_docs.append({
                         'file': Path(doc_path).name,
                         'type': 'Document',
                         'text_length': len(text),
-                        'parser_used': result["results"][0].parser_used if result["results"] else "unknown"
+                        'parser_used': "DocParser"
                     })
                 else:
                     processed_docs.append({
-                        'file': Path(doc_path).name, 
-                        'error': result.get("error", "Unknown parsing error")
+                        'file': Path(doc_path).name,
+                        'type': 'Document',
+                        'text_length': 0,
+                        'parser_used': "DocParser",
+                        'error': 'Empty or failed parsing'
                     })
                 
             except Exception as e:
@@ -699,24 +691,18 @@ class ConcreteAgentHybrid:
         smeta_data = []
         if smeta_path:
             try:
-                # Use unified parser for smeta
-                result = parse_document(smeta_path)
-                if result["success"] and result["results"]:
-                    for parse_result in result["results"]:
-                        content = parse_result.content
-                        if isinstance(content, list):
-                            # Structured smeta data from parser
-                            smeta_data.extend(content)
-                        elif isinstance(content, dict) and "items" in content:
-                            # Legacy format with items key
-                            smeta_data.extend(content["items"])
-                        elif isinstance(content, dict):
-                            # Single structured item
-                            smeta_data.append(content)
-                    
-                    logger.info(f"📊 Смета обработана: {len(smeta_data)} позиций (parser: {result['results'][0].parser_used if result['results'] else 'unknown'})")
+                # Use smeta parser for structured data
+                smeta_data = self.smeta_parser.parse(smeta_path)
+                if smeta_data:
+                    logger.info(f"📊 Смета обработана: {len(smeta_data)} позиций")
                 else:
-                    logger.error(f"❌ Ошибка обработки сметы: {result.get('error', 'Unknown error')}")
+                    # Fallback to text parsing
+                    smeta_text = self.doc_parser.parse(smeta_path)
+                    if smeta_text.strip():
+                        # Simple text-based smeta processing
+                        smeta_data = [{"description": smeta_text, "source": "text_parsing"}]
+                        logger.info(f"📊 Смета обработана как текст")
+                    
             except Exception as e:
                 logger.error(f"❌ Ошибка обработки сметы: {e}")
         
