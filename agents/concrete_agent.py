@@ -20,7 +20,17 @@ except ImportError:
     from parsers.doc_parser import DocParser
 from parsers.smeta_parser import SmetaParser
 from services.doc_parser import parse_document  # New unified parser
-from utils.claude_client import get_claude_client
+
+# Import centralized services  
+try:
+    from app.core.llm_service import get_llm_service
+    from app.core.prompt_loader import get_prompt_loader
+    CENTRALIZED_LLM_AVAILABLE = True
+except ImportError:
+    CENTRALIZED_LLM_AVAILABLE = False
+    # Fallback to old client
+    from utils.claude_client import get_claude_client
+
 from config.settings import settings
 from outputs.save_report import save_merged_report
 from utils.czech_preprocessor import get_czech_preprocessor
@@ -76,7 +86,17 @@ class ConcreteAgentHybrid:
 
         self.doc_parser = DocParser()
         self.smeta_parser = SmetaParser()
-        self.claude_client = get_claude_client()  # Always try to get Claude client, let it handle unavailability gracefully
+        
+        # Initialize LLM services
+        if CENTRALIZED_LLM_AVAILABLE:
+            self.llm_service = get_llm_service()
+            self.prompt_loader = get_prompt_loader()
+            self.use_centralized_llm = True
+            logger.info("✅ Using centralized LLM service")
+        else:
+            self.claude_client = get_claude_client()  # Fallback to old client
+            self.use_centralized_llm = False
+            logger.warning("⚠️ Using legacy Claude client - update recommended")
 
         # Строгий паттерн для поиска марок бетона (только стандартные форматы)
         self.concrete_pattern = r'\b(?:LC|C)\d{1,3}/\d{1,3}\b'
@@ -503,30 +523,131 @@ class ConcreteAgentHybrid:
         
         logger.info(f"💾 Сохранено {len(saved_files)} файлов отчетов")
         return saved_files
+    
+    def _is_llm_available(self) -> bool:
+        """Check if LLM service is available (centralized or legacy)"""
+        if self.use_centralized_llm:
+            return self.llm_service is not None
+        else:
+            return self.claude_client and self.claude_client.is_available
 
     async def _claude_concrete_analysis(self, text: str, smeta_data: List[Dict]) -> Dict[str, Any]:
         """Анализ через Claude с расширенным контекстом"""
-        if not self.claude_client or not self.claude_client.is_available:
-            logger.info("Claude API недоступен - пропускаем анализ с Claude")
-            return {
-                "success": False, 
-                "error": "Claude API недоступен - проверьте ANTHROPIC_API_KEY",
-                "error_type": "api_unavailable"
-            }
-        
+        if self.use_centralized_llm:
+            return await self._centralized_llm_analysis(text, smeta_data)
+        else:
+            # Legacy fallback
+            if not self.claude_client or not self.claude_client.is_available:
+                logger.info("Claude API недоступен - пропускаем анализ с Claude")
+                return {
+                    "success": False, 
+                    "error": "Claude API недоступен - проверьте ANTHROPIC_API_KEY",
+                    "error_type": "api_unavailable"
+                }
+            
+            try:
+                result = await self.claude_client.analyze_concrete_with_claude(text, smeta_data)
+                
+                return {
+                    'concrete_summary': result.get('claude_analysis', {}).get('concrete_grades', []),
+                    'analysis_method': 'claude_enhanced',
+                    'success': True,
+                    'tokens_used': result.get('tokens_used', 0),
+                    'raw_response': result.get('raw_response', '')
+                }
+                
+            except Exception as e:
+                logger.error(f"❌ Ошибка Claude анализа: {e}")
+                return {"success": False, "error": str(e)}
+    
+    async def _centralized_llm_analysis(self, text: str, smeta_data: List[Dict]) -> Dict[str, Any]:
+        """Analysis using centralized LLM service"""
         try:
-            result = await self.claude_client.analyze_concrete_with_claude(text, smeta_data)
+            # Get system prompt from centralized prompt loader
+            system_prompt = self.prompt_loader.get_system_prompt("concrete")
+            prompt_config = self.prompt_loader.get_prompt_config("concrete")
             
-            return {
-                'concrete_summary': result.get('claude_analysis', {}).get('concrete_grades', []),
-                'analysis_method': 'claude_enhanced',
-                'success': True,
-                'tokens_used': result.get('tokens_used', 0),
-                'raw_response': result.get('raw_response', '')
-            }
+            provider = prompt_config.get("provider", "claude")
+            model = prompt_config.get("model")
             
+            # Prepare context with smeta data
+            smeta_context = ""
+            if smeta_data:
+                smeta_context = "\n\n=== СМЕТА ДАННЫЕ ===\n"
+                for item in smeta_data[:10]:  # Limit to avoid token overflow
+                    if isinstance(item, dict):
+                        desc = item.get('description', '')
+                        qty = item.get('quantity', item.get('qty', ''))
+                        unit = item.get('unit', '')
+                        smeta_context += f"- {desc} ({qty} {unit})\n"
+            
+            user_prompt = f"""
+            Анализируй данный документ на предмет марок бетона и конструктивных элементов.
+            
+            Документ:
+            {text[:10000]}  # Limit text length
+            
+            {smeta_context}
+            
+            Найди все марки бетона в формате C25/30, C30/37 и т.д., с указанием:
+            - Классы воздействия (XC1, XF1, и т.д.)
+            - Конструктивные элементы (стены, фундамент, перекрытия)
+            - Объемы (если указаны)
+            
+            Верни результат в JSON формате.
+            """
+            
+            response = await self.llm_service.run_prompt(
+                provider=provider,
+                prompt=user_prompt,
+                system_prompt=system_prompt,
+                model=model
+            )
+            
+            if response.get("success"):
+                content = response.get("content", "")
+                
+                # Try to parse JSON from response
+                try:
+                    import json
+                    if content.strip().startswith('{'):
+                        analysis_data = json.loads(content)
+                    else:
+                        # Extract JSON if wrapped in text
+                        import re
+                        json_match = re.search(r'\{.*\}', content, re.DOTALL)
+                        if json_match:
+                            analysis_data = json.loads(json_match.group())
+                        else:
+                            analysis_data = {"raw_text": content}
+                    
+                    return {
+                        'concrete_summary': analysis_data.get('concrete_grades', []),
+                        'analysis_method': 'centralized_llm_enhanced',
+                        'success': True,
+                        'tokens_used': response.get('usage', {}).get('total_tokens', 0),
+                        'raw_response': content,
+                        'provider': provider,
+                        'model': model
+                    }
+                    
+                except json.JSONDecodeError:
+                    # Return raw response if JSON parsing fails
+                    return {
+                        'concrete_summary': [],
+                        'analysis_method': 'centralized_llm_text',
+                        'success': True,
+                        'tokens_used': response.get('usage', {}).get('total_tokens', 0),
+                        'raw_response': content,
+                        'provider': provider,
+                        'model': model
+                    }
+            else:
+                logger.error(f"❌ LLM service failed: {response.get('error')}")
+                return {"success": False, "error": response.get('error', 'Unknown error')}
+                
         except Exception as e:
-            logger.error(f"❌ Ошибка Claude анализа: {e}")
+            logger.error(f"❌ Centralized LLM analysis error: {e}")
             return {"success": False, "error": str(e)}
 
     async def analyze(self, doc_paths: List[str], smeta_path: Optional[str] = None,
@@ -605,7 +726,7 @@ class ConcreteAgentHybrid:
         # Интеграция с Claude
         final_result = local_result.copy()
         
-        if use_claude and self.claude_client and self.claude_client.is_available:
+        if use_claude and self._is_llm_available():
             claude_result = await self._claude_concrete_analysis(all_text, smeta_data)
             
             if claude_mode == "primary" and claude_result.get("success"):
@@ -618,10 +739,10 @@ class ConcreteAgentHybrid:
                 })
         elif use_claude:
             # Claude was requested but is not available
-            logger.warning("Claude анализ запрошен, но Claude API недоступен")
+            logger.warning("Claude анализ запрошен, но LLM сервис недоступен")
             final_result.update({
                 'claude_unavailable': True,
-                'claude_error': 'Claude API недоступен - проверьте ANTHROPIC_API_KEY'
+                'claude_error': 'LLM сервис недоступен - проверьте API ключи'
             })
         
         # Добавляем метаданные
