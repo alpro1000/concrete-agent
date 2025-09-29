@@ -14,7 +14,11 @@ def prepare_test_data():
 def test_health_check():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "healthy"}
+    data = response.json()
+    assert data["status"] == "healthy"
+    assert "database" in data
+    assert "timestamp" in data
+    assert "uptime" in data
 
 def test_analyze_concrete_api(prepare_test_data):
     files = [

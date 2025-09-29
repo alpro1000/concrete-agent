@@ -16,12 +16,13 @@ def ensure_test_data():
     if not os.path.exists(pdf_path):
         pdf = FPDF()
         pdf.add_page()
-        pdf.set_font("Arial", size=12)
+        pdf.set_font("helvetica", size=12)
+        # Use ASCII-safe text to avoid Unicode issues
         pdf.multi_cell(
             0, 10,
-            "Projektová dokumentace\n"
-            "Použitý beton: C25/30 XC2 XF1\n"
-            "Použitá výztuž: Fe500\n"
+            "Projektova dokumentace\n"
+            "Pouzity beton: C25/30 XC2 XF1\n"
+            "Pouzita vyztuz: Fe500\n"
         )
         pdf.output(pdf_path)
         print(f"✅ Сгенерирован {pdf_path}")
@@ -35,13 +36,13 @@ def ensure_test_data():
 <smeta>
   <row>
     <code>001</code>
-    <description>Monolitická základová deska C25/30</description>
+    <description>Monoliticka zakladova deska C25/30</description>
     <qty>10</qty>
     <unit>m3</unit>
   </row>
   <row>
     <code>002</code>
-    <description>Železobetonový věnec C25/30</description>
+    <description>Zelezobetorovy venec C25/30</description>
     <qty>5</qty>
     <unit>m3</unit>
   </row>

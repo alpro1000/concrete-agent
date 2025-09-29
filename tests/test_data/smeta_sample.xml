@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<smeta>
+  <row>
+    <code>001</code>
+    <description>Monoliticka zakladova deska C25/30</description>
+    <qty>10</qty>
+    <unit>m3</unit>
+  </row>
+  <row>
+    <code>002</code>
+    <description>Zelezobetorovy venec C25/30</description>
+    <qty>5</qty>
+    <unit>m3</unit>
+  </row>
+</smeta>
