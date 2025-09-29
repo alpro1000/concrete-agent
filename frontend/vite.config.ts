@@ -14,6 +14,8 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },
+     // Разрешенные хосты
+    allowedHosts: ['stav-agent.onrender.com'],
   },
   build: {
     outDir: 'dist',
