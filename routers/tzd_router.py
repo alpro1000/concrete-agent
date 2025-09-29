@@ -171,11 +171,23 @@ async def analyze_tzd_documents(
         )
         
     except SecurityError as e:
-        cleanup_temp_files(temp_dir)
+        # Cleanup temp files synchronously for error cases
+        import shutil
+        if os.path.exists(temp_dir) and temp_dir.startswith('/tmp/'):
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass
         logger.error(f"Security error in TZD analysis: {e}")
         raise HTTPException(status_code=400, detail=f"Нарушение безопасности: {str(e)}")
     except Exception as e:
-        cleanup_temp_files(temp_dir)
+        # Cleanup temp files synchronously for error cases  
+        import shutil
+        if os.path.exists(temp_dir) and temp_dir.startswith('/tmp/'):
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass
         logger.error(f"TZD analysis error: {e}")
         raise HTTPException(status_code=500, detail=f"Ошибка анализа: {str(e)}")
 
