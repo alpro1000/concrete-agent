@@ -380,7 +380,7 @@ class LLMService:
         Args:
             provider: LLM provider ("claude", "gpt", "perplexity")
             prompt: User prompt text
-            model: Optional model override
+            model: Optional model override (can use aliases like 'sonnet', 'opus')
             system_prompt: Optional system prompt
             max_tokens: Maximum tokens in response
             
@@ -390,11 +390,19 @@ class LLMService:
         provider = provider.lower()
         
         if provider == LLMProvider.CLAUDE:
-            model = model or "claude-3-sonnet-20240229"
+            # Apply model mapping if alias is provided
+            if model and model in claude_models:
+                model = claude_models[model]
+            elif not model:
+                model = "claude-3-sonnet-20240229"
             return await self.call_claude(prompt, model, max_tokens, system_prompt)
             
         elif provider in [LLMProvider.GPT, LLMProvider.OPENAI]:
-            model = model or "gpt-4o-mini"
+            # Apply model mapping if alias is provided
+            if model and model in openai_models:
+                model = openai_models[model]
+            elif not model:
+                model = "gpt-4o-mini"
             return await self.call_gpt(prompt, model, max_tokens, system_prompt)
             
         elif provider == LLMProvider.PERPLEXITY:
