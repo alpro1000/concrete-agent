@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 class ClaudeAnalysisClient:
     """
     Клиент для работы с Claude API для анализа строительных документов
+    Updated to use centralized LLM service
     """
     
     def __init__(self, api_key: Optional[str] = None):
@@ -18,7 +19,17 @@ class ClaudeAnalysisClient:
         if not self.api_key:
             raise ValueError("ANTHROPIC_API_KEY не найден в переменных окружения")
         
-        self.client = anthropic.Anthropic(api_key=self.api_key)
+        # Initialize centralized LLM service
+        try:
+            from app.services.llm_service import get_llm_service
+            self.llm_service = get_llm_service()
+            self.use_centralized = True
+            logger.info("Using centralized LLM service for Claude")
+        except Exception as e:
+            logger.warning(f"Failed to load centralized LLM service, using legacy: {e}")
+            self.client = anthropic.Anthropic(api_key=self.api_key)
+            self.use_centralized = False
+        
         self.model = "claude-3-7-sonnet-20250219"  # Используем Claude 3.7 Sonnet
         
         # Загружаем промпты из JSON файлов
@@ -42,30 +53,60 @@ class ClaudeAnalysisClient:
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     async def analyze_concrete_with_claude(self, document_text: str, smeta_data: List[Dict]) -> Dict[str, Any]:
         """
-        Анализ бетонных конструкций с использованием Claude
+        Анализ бетонных конструкций с использением Claude via centralized LLM service
         """
         try:
             # Формируем промпт для Claude
             system_prompt = self._build_concrete_system_prompt()
             user_prompt = self._build_concrete_user_prompt(document_text, smeta_data)
             
-            # Отправляем запрос к Claude
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=4000,
-                temperature=0.1,  # Низкая температура для точности
-                system=system_prompt,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": user_prompt
-                    }
-                ]
-            )
-            
-            # Обрабатываем ответ
-            result_text = response.content[0].text
-            logger.info(f"Получен ответ от Claude: {len(result_text)} символов")
+            # Отправляем запрос через централизованный сервис
+            if self.use_centralized:
+                try:
+                    response = await self.llm_service.call_claude(
+                        prompt=user_prompt,
+                        model=self.model,
+                        max_tokens=4000,
+                        system_prompt=system_prompt
+                    )
+                    
+                    if response.get("success"):
+                        result_text = response.get("content", "")
+                        tokens_used = response.get("usage", {})
+                        logger.info(f"Получен ответ от Claude via LLM service: {len(result_text)} символов")
+                    else:
+                        raise Exception(f"Centralized service error: {response.get('error')}")
+                        
+                except Exception as e:
+                    logger.warning(f"Centralized service failed, using legacy: {e}")
+                    # Fallback to legacy client
+                    response_obj = self.client.messages.create(
+                        model=self.model,
+                        max_tokens=4000,
+                        temperature=0.1,
+                        system=system_prompt,
+                        messages=[{"role": "user", "content": user_prompt}]
+                    )
+                    result_text = response_obj.content[0].text
+                    tokens_used = {"input_tokens": response_obj.usage.input_tokens, "output_tokens": response_obj.usage.output_tokens}
+                    
+            else:
+                # Legacy client
+                response_obj = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=4000,
+                    temperature=0.1,  # Низкая температура для точности
+                    system=system_prompt,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": user_prompt
+                        }
+                    ]
+                )
+                result_text = response_obj.content[0].text
+                tokens_used = {"input_tokens": response_obj.usage.input_tokens, "output_tokens": response_obj.usage.output_tokens}
+                logger.info(f"Получен ответ от Claude (legacy): {len(result_text)} символов")
             
             # Пытаемся распарсить JSON ответ
             try:
@@ -74,7 +115,7 @@ class ClaudeAnalysisClient:
                     "claude_analysis": result_json,
                     "raw_response": result_text,
                     "model_used": self.model,
-                    "tokens_used": response.usage.input_tokens + response.usage.output_tokens
+                    "tokens_used": tokens_used.get("input_tokens", 0) + tokens_used.get("output_tokens", 0)
                 }
             except json.JSONDecodeError:
                 # Если JSON не парсится, возвращаем как текст
@@ -82,7 +123,7 @@ class ClaudeAnalysisClient:
                     "claude_analysis": {"error": "Не удалось распарсить JSON ответ"},
                     "raw_response": result_text,
                     "model_used": self.model,
-                    "tokens_used": response.usage.input_tokens + response.usage.output_tokens
+                    "tokens_used": tokens_used.get("input_tokens", 0) + tokens_used.get("output_tokens", 0)
                 }
                 
         except Exception as e:
@@ -143,7 +184,7 @@ class ClaudeAnalysisClient:
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     async def analyze_materials_with_claude(self, document_text: str) -> Dict[str, Any]:
         """
-        Анализ строительных материалов (кроме бетона) с использованием Claude
+        Анализ строительных материалов (кроме бетона) с использованием Claude via centralized LLM service
         """
         try:
             system_prompt = """Ты — эксперт по строительным материалам. 
@@ -158,28 +199,58 @@ class ClaudeAnalysisClient:
 Верни в формате JSON с полями: category, term, context_snippet, usage.
 """
             
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=3000,
-                temperature=0.1,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_prompt}]
-            )
-            
-            result_text = response.content[0].text
+            # Отправляем запрос через централизованный сервис
+            if self.use_centralized:
+                try:
+                    response = await self.llm_service.call_claude(
+                        prompt=user_prompt,
+                        model=self.model,
+                        max_tokens=3000,
+                        system_prompt=system_prompt
+                    )
+                    
+                    if response.get("success"):
+                        result_text = response.get("content", "")
+                        tokens_used = response.get("usage", {})
+                    else:
+                        raise Exception(f"Centralized service error: {response.get('error')}")
+                        
+                except Exception as e:
+                    logger.warning(f"Centralized service failed, using legacy: {e}")
+                    # Fallback to legacy client
+                    response_obj = self.client.messages.create(
+                        model=self.model,
+                        max_tokens=3000,
+                        temperature=0.1,
+                        system=system_prompt,
+                        messages=[{"role": "user", "content": user_prompt}]
+                    )
+                    result_text = response_obj.content[0].text
+                    tokens_used = {"input_tokens": response_obj.usage.input_tokens, "output_tokens": response_obj.usage.output_tokens}
+            else:
+                # Legacy client
+                response_obj = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=3000,
+                    temperature=0.1,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": user_prompt}]
+                )
+                result_text = response_obj.content[0].text
+                tokens_used = {"input_tokens": response_obj.usage.input_tokens, "output_tokens": response_obj.usage.output_tokens}
             
             try:
                 result_json = json.loads(result_text)
                 return {
                     "materials_analysis": result_json,
                     "raw_response": result_text,
-                    "tokens_used": response.usage.input_tokens + response.usage.output_tokens
+                    "tokens_used": tokens_used.get("input_tokens", 0) + tokens_used.get("output_tokens", 0)
                 }
             except json.JSONDecodeError:
                 return {
                     "materials_analysis": {"error": "Не удалось распарсить JSON ответ"},
                     "raw_response": result_text,
-                    "tokens_used": response.usage.input_tokens + response.usage.output_tokens
+                    "tokens_used": tokens_used.get("input_tokens", 0) + tokens_used.get("output_tokens", 0)
                 }
                 
         except Exception as e:

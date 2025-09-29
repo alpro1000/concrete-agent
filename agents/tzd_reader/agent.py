@@ -179,7 +179,16 @@ class SecureAIAnalyzer:
             return self._get_empty_result()
     
     def analyze_with_gpt(self, text: str) -> Dict[str, Any]:
-        """Analysis using OpenAI GPT"""
+        """Analysis using OpenAI GPT via centralized LLM service"""
+        # Try new centralized service first
+        if self.use_new_service:
+            try:
+                import asyncio
+                return asyncio.run(self.analyze_with_new_llm_service(text))
+            except Exception as e:
+                logger.warning(f"New LLM service failed, falling back to legacy: {e}")
+        
+        # Legacy fallback
         if not self.openai_client:
             logger.error("OpenAI client not initialized")
             # Try to reinitialize
@@ -202,20 +211,42 @@ class SecureAIAnalyzer:
         try:
             prompt = self.get_analysis_prompt() + text
             
-            response = self.openai_client.chat.completions.create(
-                model=self.openai_model,
-                messages=[
-                    {
-                        "role": "system", 
-                        "content": "Ты эксперт по анализу технических заданий в строительстве. "
-                                 "Отвечай ТОЛЬКО валидным JSON без дополнительного текста."
-                    },
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1,
-                max_tokens=4000,
-                timeout=API_TIMEOUT
-            )
+            # Try using centralized LLM service sync interface
+            try:
+                from app.services.llm_service import get_llm_service
+                llm_service = get_llm_service()
+                
+                # Create messages manually for legacy compatibility
+                system_prompt = ("Ты эксперт по анализу технических заданий в строительстве. "
+                               "Отвечай ТОЛЬКО валидным JSON без дополнительного текста.")
+                
+                response = llm_service.openai_client.chat.completions.create(
+                    model=self.openai_model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.1,
+                    max_tokens=4000,
+                    timeout=API_TIMEOUT
+                )
+            except Exception as e:
+                logger.warning(f"Centralized service failed, using legacy client: {e}")
+                # Use legacy client directly
+                response = self.openai_client.chat.completions.create(
+                    model=self.openai_model,
+                    messages=[
+                        {
+                            "role": "system", 
+                            "content": "Ты эксперт по анализу технических заданий в строительстве. "
+                                     "Отвечай ТОЛЬКО валидным JSON без дополнительного текста."
+                        },
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.1,
+                    max_tokens=4000,
+                    timeout=API_TIMEOUT
+                )
             
             result_text = response.choices[0].message.content
             if not result_text:
@@ -238,7 +269,16 @@ class SecureAIAnalyzer:
             return self._get_empty_result()
     
     def analyze_with_claude(self, text: str) -> Dict[str, Any]:
-        """Analysis using Anthropic Claude"""
+        """Analysis using Anthropic Claude via centralized LLM service"""
+        # Try new centralized service first
+        if self.use_new_service:
+            try:
+                import asyncio
+                return asyncio.run(self.analyze_with_new_llm_service(text))
+            except Exception as e:
+                logger.warning(f"New LLM service failed, falling back to legacy: {e}")
+        
+        # Legacy fallback
         if not self.anthropic_client:
             raise ValueError("Anthropic client not initialized")
         
@@ -251,15 +291,32 @@ class SecureAIAnalyzer:
         try:
             prompt = self.get_analysis_prompt() + text
             
-            response = self.anthropic_client.messages.create(
-                model=self.claude_model,
-                max_tokens=4000,
-                temperature=0.1,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ],
-                timeout=API_TIMEOUT
-            )
+            # Try using centralized LLM service
+            try:
+                from app.services.llm_service import get_llm_service
+                llm_service = get_llm_service()
+                
+                response = llm_service.claude_client.messages.create(
+                    model=self.claude_model,
+                    max_tokens=4000,
+                    temperature=0.1,
+                    messages=[
+                        {"role": "user", "content": prompt}
+                    ],
+                    timeout=API_TIMEOUT
+                )
+            except Exception as e:
+                logger.warning(f"Centralized service failed, using legacy client: {e}")
+                # Use legacy client directly
+                response = self.anthropic_client.messages.create(
+                    model=self.claude_model,
+                    max_tokens=4000,
+                    temperature=0.1,
+                    messages=[
+                        {"role": "user", "content": prompt}
+                    ],
+                    timeout=API_TIMEOUT
+                )
             
             result_text = response.content[0].text
             if not result_text:
