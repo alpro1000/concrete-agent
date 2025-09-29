@@ -44,6 +44,36 @@ class ApiClient {
       },
       (error) => {
         console.error('API Response Error:', error);
+        
+        // Enhanced error handling for better user experience
+        if (error.response) {
+          // Server responded with error status
+          const { status, data } = error.response;
+          
+          if (status === 500 && data?.error) {
+            // Check if it's an LLM service unavailable error
+            if (data.error.includes('API недоступен') || data.error.includes('API key')) {
+              error.message = 'LLM service is not configured. Please check API keys in server configuration.';
+              error.user_friendly = true;
+            } else {
+              error.message = data.message || data.error || 'Internal server error';
+            }
+          } else if (status === 400) {
+            error.message = data?.detail || data?.message || 'Bad request';
+          } else if (status === 404) {
+            error.message = 'Service endpoint not found';
+          } else if (status >= 500) {
+            error.message = 'Server error occurred. Please try again later.';
+          }
+        } else if (error.request) {
+          // Network error
+          error.message = 'Network error - unable to connect to server. Please check if the server is running.';
+          error.user_friendly = true;
+        } else {
+          // Request setup error
+          error.message = 'Request configuration error';
+        }
+        
         return Promise.reject(error);
       }
     );

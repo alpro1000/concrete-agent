@@ -275,11 +275,25 @@ async def detailed_status():
         except Exception as e:
             db_status = f"error: {str(e)}"
         
+        # Проверяем конфигурацию API ключей
+        api_config = {
+            "anthropic_api_key": {
+                "configured": bool(os.getenv("ANTHROPIC_API_KEY")),
+                "status": "✅ Ready" if os.getenv("ANTHROPIC_API_KEY") else "❌ Missing - Claude analysis will be unavailable"
+            },
+            "openai_api_key": {
+                "configured": bool(os.getenv("OPENAI_API_KEY")),
+                "status": "✅ Ready" if os.getenv("OPENAI_API_KEY") else "❌ Missing - OpenAI analysis will be unavailable"
+            }
+        }
+        
         return {
             "api_status": "operational",
             "database_status": db_status,
             "dependencies": deps,
+            "api_configuration": api_config,
             "claude_available": bool(os.getenv("ANTHROPIC_API_KEY")),
+            "openai_available": bool(os.getenv("OPENAI_API_KEY")),
             "directories": {
                 "uploads": os.path.exists("uploads"),
                 "logs": os.path.exists("logs"),
@@ -292,6 +306,13 @@ async def detailed_status():
                 "MAX_FILE_SIZE": os.getenv("MAX_FILE_SIZE", "not_set"),
                 "PORT": os.getenv("PORT", "not_set"),
                 "DATABASE_URL": "configured" if os.getenv("DATABASE_URL") else "default"
+            },
+            "setup_instructions": {
+                "missing_apis": [
+                    key for key, config in api_config.items() 
+                    if not config["configured"]
+                ],
+                "message": "To enable full functionality, configure missing API keys in environment variables"
             }
         }
     except Exception as e:

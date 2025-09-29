@@ -9,6 +9,8 @@
     "original_length": 128,
     "fixed_length": 128
   },
+  "claude_unavailable": true,
+  "claude_error": "Claude API недоступен - проверьте ANTHROPIC_API_KEY",
   "processed_documents": [
     {
       "file": "test_doc.txt",

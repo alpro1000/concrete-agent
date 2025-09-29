@@ -16,25 +16,42 @@ class ClaudeAnalysisClient:
     
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
+        self.client = None
+        self.llm_service = None
+        self.use_centralized = False
+        self.is_available = False
+        
         if not self.api_key:
-            raise ValueError("ANTHROPIC_API_KEY не найден в переменных окружения")
+            logger.warning("ANTHROPIC_API_KEY не найден в переменных окружения - Claude будет недоступен")
+            return
         
         # Initialize centralized LLM service
         try:
             from app.services.llm_service import get_llm_service
             self.llm_service = get_llm_service()
             self.use_centralized = True
+            self.is_available = True
             logger.info("Using centralized LLM service for Claude")
         except Exception as e:
             logger.warning(f"Failed to load centralized LLM service, using legacy: {e}")
-            self.client = anthropic.Anthropic(api_key=self.api_key)
-            self.use_centralized = False
+            try:
+                self.client = anthropic.Anthropic(api_key=self.api_key)
+                self.use_centralized = False
+                self.is_available = True
+                logger.info("Using legacy Claude client")
+            except Exception as client_error:
+                logger.warning(f"Failed to initialize Claude client: {client_error}")
+                self.is_available = False
         
         self.model = "claude-3-7-sonnet-20250219"  # Используем Claude 3.7 Sonnet
         
-        # Загружаем промпты из JSON файлов
-        self.concrete_prompt = self._load_prompt("prompt/concrete_extractor_prompt.json")
-        self.materials_prompt = self._load_prompt("prompt/materials_prompt.json")
+        # Загружаем промпты из JSON файлов только если Claude доступен
+        if self.is_available:
+            self.concrete_prompt = self._load_prompt("prompt/concrete_extractor_prompt.json")
+            self.materials_prompt = self._load_prompt("prompt/materials_prompt.json")
+        else:
+            self.concrete_prompt = {}
+            self.materials_prompt = {}
     
     def _load_prompt(self, file_path: str) -> Dict[str, Any]:
         """Загрузка промпта из JSON файла"""
@@ -55,6 +72,17 @@ class ClaudeAnalysisClient:
         """
         Анализ бетонных конструкций с использением Claude via centralized LLM service
         """
+        if not self.is_available:
+            logger.info("Claude API недоступен - пропускаем анализ с Claude")
+            return {
+                "claude_analysis": {"error": "Claude API недоступен - проверьте ANTHROPIC_API_KEY"},
+                "raw_response": "",
+                "model_used": self.model,
+                "tokens_used": 0,
+                "success": False,
+                "error_type": "api_unavailable"
+            }
+        
         try:
             # Формируем промпт для Claude
             system_prompt = self._build_concrete_system_prompt()
@@ -186,6 +214,14 @@ class ClaudeAnalysisClient:
         """
         Анализ строительных материалов (кроме бетона) с использованием Claude via centralized LLM service
         """
+        if not self.is_available:
+            logger.info("Claude API недоступен - пропускаем анализ материалов с Claude")
+            return {
+                "materials_analysis": {"error": "Claude API недоступен - проверьте ANTHROPIC_API_KEY"},
+                "success": False,
+                "error_type": "api_unavailable"
+            }
+        
         try:
             system_prompt = """Ты — эксперт по строительным материалам. 
             Найди и классифицируй все строительные материалы в документе, кроме бетона.
