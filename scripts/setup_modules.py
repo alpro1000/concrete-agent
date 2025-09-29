@@ -23,7 +23,12 @@ class ConcreteAgentSetup:
     """Автоматическая настройка Concrete-Agent"""
     
     def __init__(self, project_root: str = None):
-        self.project_root = Path(project_root) if project_root else Path(__file__).parent
+        if project_root:
+            self.project_root = Path(project_root).resolve()
+        else:
+            # Определяем корень проекта относительно расположения скрипта
+            self.project_root = Path(__file__).parent.parent.resolve()
+        
         self.results = {
             "agents": {},
             "routers": {},
@@ -99,7 +104,10 @@ class ConcreteAgentSetup:
                 try:
                     with open(router_path, 'r', encoding='utf-8') as f:
                         content = f.read()
-                        has_router = "router = APIRouter()" in content
+                        # Проверяем наличие объекта router (более гибкий поиск)
+                        has_router = ("router = APIRouter(" in content or 
+                                    "router=APIRouter(" in content or
+                                    "router = fastapi.APIRouter(" in content)
                         if has_router:
                             logger.info(f"✅ {router_file}")
                         else:
@@ -139,19 +147,26 @@ class ConcreteAgentSetup:
         """Проверка зависимостей"""
         logger.info("📦 Проверка зависимостей...")
         
-        critical_packages = [
-            "fastapi", "uvicorn", "pdfplumber", "python-docx", 
-            "openpyxl", "anthropic", "pandas", "numpy"
-        ]
+        # Мапинг имен пакетов для правильного импорта
+        critical_packages = {
+            "fastapi": "fastapi",
+            "uvicorn": "uvicorn", 
+            "pdfplumber": "pdfplumber",
+            "python-docx": "docx",
+            "openpyxl": "openpyxl",
+            "anthropic": "anthropic",
+            "pandas": "pandas",
+            "numpy": "numpy"
+        }
         
-        for package in critical_packages:
+        for package_name, import_name in critical_packages.items():
             try:
-                __import__(package.replace("-", "_"))
-                self.results["dependencies"][package] = True
-                logger.info(f"✅ {package}")
+                __import__(import_name)
+                self.results["dependencies"][package_name] = True
+                logger.info(f"✅ {package_name}")
             except ImportError:
-                self.results["dependencies"][package] = False
-                logger.error(f"❌ {package} не установлен")
+                self.results["dependencies"][package_name] = False
+                logger.error(f"❌ {package_name} не установлен")
         
         return self.results["dependencies"]
     
@@ -185,8 +200,11 @@ class ConcreteAgentSetup:
         logger.info("🚀 Тестирование запуска сервера...")
         
         try:
-            # Импортируем приложение
-            sys.path.insert(0, str(self.project_root))
+            # Импортируем приложение с правильной настройкой пути
+            project_path = str(self.project_root.resolve())
+            if project_path not in sys.path:
+                sys.path.insert(0, project_path)
+            
             from app.main import app
             
             # Получаем список endpoints
@@ -203,6 +221,9 @@ class ConcreteAgentSetup:
             
         except Exception as e:
             logger.error(f"❌ Ошибка запуска сервера: {e}")
+            # Дополнительная диагностика
+            logger.error(f"Текущий путь Python: {sys.path[:3]}")
+            logger.error(f"Рабочая директория: {self.project_root}")
             return False, []
     
     def generate_report(self) -> str:
