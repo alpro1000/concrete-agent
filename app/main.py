@@ -148,6 +148,10 @@ def setup_routers():
             project_router
         )
         
+        # Enhanced analysis routers
+        from app.routers.analyze_concrete import router as concrete_router
+        from app.routers.analyze_materials import router as materials_router
+        
         app.include_router(projects_router, prefix="/api", tags=["Projects"])
         app.include_router(documents_router, prefix="/api", tags=["Documents"])
         app.include_router(extractions_router, prefix="/api", tags=["Extractions"])
@@ -155,6 +159,10 @@ def setup_routers():
         app.include_router(compare_router, prefix="/api", tags=["Compare"])
         app.include_router(upload_router, prefix="/api", tags=["Upload"])
         app.include_router(project_router, prefix="/analyze", tags=["Project Analysis"])
+        
+        # Enhanced analysis routers
+        app.include_router(concrete_router, prefix="/analyze", tags=["Concrete Analysis"])
+        app.include_router(materials_router, prefix="/analyze", tags=["Material Analysis"])
         
         logger.info("✅ Новые роутеры подключены")
         

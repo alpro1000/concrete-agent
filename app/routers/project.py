@@ -9,7 +9,7 @@ from typing import List, Optional
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 from fastapi.responses import JSONResponse
 
-from app.agents.orchestrator_agent import get_orchestrator_agent
+from app.core.orchestrator import get_orchestrator_service
 from config.settings import settings
 
 router = APIRouter()
@@ -39,7 +39,7 @@ async def analyze_project(
         raise HTTPException(status_code=400, detail="No files provided")
     
     temp_dir = tempfile.mkdtemp()
-    orchestrator = get_orchestrator_agent()
+    orchestrator = get_orchestrator_service()
     
     try:
         # Save uploaded files
