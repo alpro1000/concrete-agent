@@ -1,171 +1,109 @@
 """
-Prompt loading utility for Construction Analysis API
-Handles loading and caching of agent prompts from JSON files
+Prompt Loader - Enhanced version with error handling for JSON reading and support for the latest LLM models.
 """
 
 import os
 import json
 import logging
 from typing import Dict, Any, Optional
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-
 class PromptLoader:
-    """Utility class for loading and caching agent prompts"""
-    
-    def __init__(self, prompts_dir: Optional[str] = None):
-        # Default to app/prompts directory
-        if prompts_dir is None:
-            current_dir = Path(__file__).parent.parent
-            self.prompts_dir = current_dir / "prompts"
-        else:
-            self.prompts_dir = Path(prompts_dir)
-            
-        self._cache = {}
-        logger.info(f"PromptLoader initialized with directory: {self.prompts_dir}")
+    """
+    A utility class for loading and managing prompts for various LLM models.
+    """
 
-    def load_prompt(self, agent_name: str, use_cache: bool = True) -> Dict[str, Any]:
+    def __init__(self, prompt_dir: Optional[str] = "prompts"):
         """
-        Load prompt for specified agent
+        Initialize the PromptLoader with the directory containing JSON prompt files.
         
         Args:
-            agent_name: Name of the agent (e.g., 'concrete', 'material', 'tzd')
-            use_cache: Whether to use cached prompts
-            
-        Returns:
-            Dict containing prompt data
+            prompt_dir (str): Directory containing the JSON prompt files.
         """
-        if use_cache and agent_name in self._cache:
-            return self._cache[agent_name]
-            
-        prompt_file = self.prompts_dir / f"{agent_name}_prompt.json"
-        
-        try:
-            if not prompt_file.exists():
-                logger.warning(f"Prompt file not found: {prompt_file}")
-                return self._get_default_prompt(agent_name)
-                
-            with open(prompt_file, 'r', encoding='utf-8') as f:
-                prompt_data = json.load(f)
-                
-            # Cache the loaded prompt
-            if use_cache:
-                self._cache[agent_name] = prompt_data
-                
-            logger.debug(f"Loaded prompt for {agent_name}")
-            return prompt_data
-            
-        except Exception as e:
-            logger.error(f"Error loading prompt for {agent_name}: {e}")
-            return self._get_default_prompt(agent_name)
-
-    def get_prompt_content(self, agent_name: str) -> str:
-        """Get just the content string from prompt"""
-        prompt_data = self.load_prompt(agent_name)
-        return prompt_data.get("content", "")
-
-    def get_system_prompt(self, agent_name: str) -> str:
-        """Get system prompt content for agent"""
-        prompt_data = self.load_prompt(agent_name)
-        if prompt_data.get("role") == "system":
-            return prompt_data.get("content", "")
-        return ""
-
-    def get_prompt_config(self, agent_name: str) -> Dict[str, Any]:
-        """Get configuration parameters for agent prompt"""
-        prompt_data = self.load_prompt(agent_name)
-        return {
-            "provider": prompt_data.get("provider", "claude"),
-            "model": prompt_data.get("model", "claude-3-sonnet-20240229"),
-            "parameters": prompt_data.get("parameters", {})
+        self.prompt_dir = prompt_dir
+        self.prompts = {}
+        self.supported_models = {
+            "gpt-4.1": "gpt-4.1-2025-04-14",
+            "o3": "o3-2025-04-16",
+            "o3-pro": "o3-pro-2025-04-16",
+            "sonar": "sonar-2025-09",
+            "sonar-pro": "sonar-pro-2025-09",
+            "sonar-reasoning-pro": "sonar-reasoning-pro-2025-09",
+            "claude-opus-4.1": "claude-opus-4-1-20250805",
+            "claude-sonnet-4": "claude-sonnet-4-20250514",
+            "claude-sonnet-3.7": "claude-3-7-sonnet-20250219",
         }
+        self.load_prompts()
 
-    def _get_default_prompt(self, agent_name: str) -> Dict[str, Any]:
-        """Get default prompt if file not found"""
-        defaults = {
-            "concrete": {
-                "role": "system",
-                "content": "You are a concrete analysis specialist. Extract concrete grades and specifications from construction documents.",
-                "provider": "claude",
-                "model": "claude-3-sonnet-20240229"
-            },
-            "material": {
-                "role": "system", 
-                "content": "You are a materials analysis specialist. Identify construction materials (except concrete) from project documents.",
-                "provider": "claude",
-                "model": "claude-3-sonnet-20240229"
-            },
-            "volume": {
-                "role": "system",
-                "content": "You are a volume analysis specialist. Extract quantities and volumes from construction documents and smeta.",
-                "provider": "claude", 
-                "model": "claude-3-sonnet-20240229"
-            },
-            "tzd": {
-                "role": "system",
-                "content": "You are a technical assignment reader. Extract structured information from technical specifications.",
-                "provider": "gpt",
-                "model": "gpt-4o-mini"
-            },
-            "orchestrator": {
-                "role": "system",
-                "content": "You are an orchestrator agent. Coordinate file analysis and route to appropriate specialist agents.",
-                "provider": "claude",
-                "model": "claude-3-sonnet-20240229"
-            }
-        }
+    def load_prompts(self):
+        """
+        Load all JSON prompt files from the prompt directory.
+        """
+        if not os.path.isdir(self.prompt_dir):
+            logger.error(f"Prompt directory not found: {self.prompt_dir}")
+            return
+
+        for file_name in os.listdir(self.prompt_dir):
+            if file_name.endswith(".json"):
+                file_path = os.path.join(self.prompt_dir, file_name)
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        content = json.load(f)
+                        self.prompts[file_name] = content
+                        logger.info(f"Loaded prompts from {file_name}")
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse JSON in {file_name}: {e}")
+                except Exception as e:
+                    logger.error(f"Error loading prompt file {file_name}: {e}")
+
+    def get_prompt(self, model_id: str, prompt_name: str) -> Optional[str]:
+        """
+        Retrieve a specific prompt for a given model and prompt name.
         
-        return defaults.get(agent_name, {
-            "role": "system",
-            "content": f"You are {agent_name} agent for construction document analysis.",
-            "provider": "claude",
-            "model": "claude-3-sonnet-20240229"
-        })
-
-    def list_available_prompts(self) -> list:
-        """List all available prompt files"""
-        if not self.prompts_dir.exists():
-            return []
-            
-        prompt_files = []
-        for file in self.prompts_dir.glob("*_prompt.json"):
-            agent_name = file.stem.replace("_prompt", "")
-            prompt_files.append(agent_name)
-            
-        return sorted(prompt_files)
-
-    def reload_cache(self):
-        """Clear cache and reload all prompts"""
-        self._cache.clear()
-        logger.info("Prompt cache cleared")
-
-    def validate_prompts(self) -> Dict[str, bool]:
-        """Validate all prompt files can be loaded"""
-        results = {}
+        Args:
+            model_id (str): Identifier of the model.
+            prompt_name (str): Name of the prompt.
         
-        for agent_name in self.list_available_prompts():
-            try:
-                prompt_data = self.load_prompt(agent_name, use_cache=False)
-                # Check required fields
-                has_content = bool(prompt_data.get("content"))
-                has_role = bool(prompt_data.get("role"))
-                results[agent_name] = has_content and has_role
-            except Exception as e:
-                logger.error(f"Validation failed for {agent_name}: {e}")
-                results[agent_name] = False
-                
-        return results
+        Returns:
+            Optional[str]: The prompt text if found, else None.
+        """
+        if model_id not in self.supported_models:
+            logger.warning(f"Model {model_id} is not supported.")
+            return None
+
+        for file_name, content in self.prompts.items():
+            if prompt_name in content:
+                logger.debug(f"Prompt '{prompt_name}' found in {file_name} for model {model_id}")
+                return content[prompt_name]
+
+        logger.warning(f"Prompt '{prompt_name}' not found for model {model_id}")
+        return None
+
+    def list_available_prompts(self) -> Dict[str, Any]:
+        """
+        List all available prompts grouped by their respective files.
+        
+        Returns:
+            Dict[str, Any]: A dictionary of prompts grouped by file names.
+        """
+        return {file_name: list(content.keys()) for file_name, content in self.prompts.items()}
 
 
-# Global instance
-_prompt_loader = None
-
-
-def get_prompt_loader() -> PromptLoader:
-    """Get global prompt loader instance"""
-    global _prompt_loader
-    if _prompt_loader is None:
-        _prompt_loader = PromptLoader()
-    return _prompt_loader
+# Testing the PromptLoader
+if __name__ == "__main__":
+    # Initialize the loader for testing purposes
+    loader = PromptLoader(prompt_dir="prompts")
+    
+    # List all available prompts
+    print("Available Prompts:")
+    print(loader.list_available_prompts())
+    
+    # Retrieve a specific prompt
+    model = "gpt-4.1"
+    prompt = "example_prompt"
+    prompt_text = loader.get_prompt(model_id=model, prompt_name=prompt)
+    if prompt_text:
+        print(f"Retrieved prompt for {model}: {prompt_text}")
+    else:
+        print(f"Prompt '{prompt}' not found for model {model}")
