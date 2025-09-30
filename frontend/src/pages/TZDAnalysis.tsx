@@ -13,21 +13,18 @@ import {
 } from 'antd';
 import { 
   UploadOutlined, 
-  AnalyticsOutlined, 
+  BarChartOutlined, 
   CheckCircleOutlined,
   ReloadOutlined
 } from '@ant-design/icons';
-import { useTranslation } from 'react-i18next';
 import TZDUpload from '../components/TZDUpload';
 import TZDResults from '../components/TZDResults';
 import apiClient from '../api/client';
 import type { TZDAnalysisResult } from '../types/api';
 
 const { Title, Paragraph } = Typography;
-const { Step } = Steps;
 
 const TZDAnalysis: React.FC = () => {
-  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [analysisResult, setAnalysisResult] = useState<TZDAnalysisResult | null>(null);
@@ -137,7 +134,7 @@ const TZDAnalysis: React.FC = () => {
     {
       title: 'Анализ документов',
       description: 'AI извлекает требования из документов',
-      icon: <AnalyticsOutlined />,
+      icon: <BarChartOutlined />,
     },
     {
       title: 'Результаты',

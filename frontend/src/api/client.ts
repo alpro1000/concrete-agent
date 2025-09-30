@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { AxiosInstance, AxiosResponse } from 'axios';
+import type { AxiosInstance, AxiosResponse, AxiosRequestConfig } from 'axios';
 import type {
   ApiResponse,
   ConcreteAnalysisResult,
@@ -10,8 +10,6 @@ import type {
   DetailedStatus,
   FileUpload,
   Language,
-  TZDAnalysisResult,
-  TZDHealthStatus,
 } from '../types/api';
 
 class ApiClient {
@@ -312,6 +310,15 @@ class ApiClient {
       },
     });
     return response.data;
+  }
+
+  // Generic HTTP methods
+  async get<T = any>(url: string, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+    return await this.client.get<T>(url, config);
+  }
+
+  async post<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<AxiosResponse<T>> {
+    return await this.client.post<T>(url, data, config);
   }
 }
 
