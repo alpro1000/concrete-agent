@@ -5,17 +5,16 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 5173,
+    port: process.env.PORT || 5173, // Используем динамический порт
     host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8000', // Убедитесь, что API сервер доступен
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },
-     // Разрешенные хосты
-    allowedHosts: ['stav-agent.onrender.com'],
+    allowedHosts: ['stav-agent.onrender.com', 'localhost'], // Добавляем оба хоста
   },
   build: {
     outDir: 'dist',
