@@ -1,5 +1,5 @@
 """
-TZD Reader Agent - Refactored Version
+TZD Reader Agent - Fixed Version
 Technical Assignment Reader for AI-powered document analysis
 """
 
@@ -8,13 +8,11 @@ import os
 import time
 import json
 import logging
-from dataclasses import dataclass
 from pathlib import Path
 
 try:
     from services.doc_parser import DocParser
 except ImportError:
-    # Fallback to old import for backward compatibility
     from parsers.doc_parser import DocParser
     
 from utils.ai_clients import get_openai_client, get_anthropic_client
@@ -35,7 +33,6 @@ class SecureAIAnalyzer:
     """Secure AI analyzer using centralized LLM service"""
     
     def __init__(self):
-        # Import new LLM service
         import sys
         sys.path.append('/home/runner/work/concrete-agent/concrete-agent')
         
@@ -50,7 +47,6 @@ class SecureAIAnalyzer:
             logger.warning(f"Failed to load new LLM service, falling back to legacy: {e}")
             self.use_new_service = False
             
-        # Always initialize legacy clients as fallback
         try:
             self.openai_client = get_openai_client()
             self.anthropic_client = get_anthropic_client()
@@ -66,7 +62,6 @@ class SecureAIAnalyzer:
         """Get system prompt for technical assignment analysis"""
         if self.use_new_service:
             try:
-                # Use new prompt system
                 system_prompt = self.prompt_loader.get_system_prompt("tzd")
                 if system_prompt:
                     return system_prompt
@@ -74,7 +69,6 @@ class SecureAIAnalyzer:
             except Exception as e:
                 logger.warning(f"Failed to load new prompt, using fallback: {e}")
         
-        # Fallback to hardcoded prompt - updated to match new format
         return """Ты — инженер-эксперт по строительным ТЗ и техническим заданиям. Извлеки из текста ключевые требования проекта и верни структурированный JSON.
 
 Возвращай результат СТРОГО в JSON формате:
@@ -99,7 +93,6 @@ class SecureAIAnalyzer:
         """Extract JSON from AI model response"""
         text = response_text.strip()
         
-        # Remove markdown blocks
         if "```json" in text:
             start = text.find("```json") + 7
             end = text.find("```", start)
@@ -108,7 +101,6 @@ class SecureAIAnalyzer:
         elif text.startswith("```") and text.endswith("```"):
             text = text[3:-3].strip()
         
-        # Find JSON object
         start = text.find('{')
         end = text.rfind('}') + 1
         
@@ -118,7 +110,7 @@ class SecureAIAnalyzer:
         return text
     
     def _get_empty_result(self) -> Dict[str, Any]:
-        """Base result for errors - updated to match new format"""
+        """Base result for errors"""
         return {
             "project_object": "",
             "requirements": [],
@@ -129,18 +121,28 @@ class SecureAIAnalyzer:
             "processing_error": True
         }
     
-    async def analyze_with_new_llm_service(self, text: str) -> Dict[str, Any]:
-        """Analysis using new centralized LLM service"""
+    async def analyze_with_llm_service(
+        self, 
+        text: str, 
+        provider: str = "claude"
+    ) -> Dict[str, Any]:
+        """
+        Unified analysis using centralized LLM service
+        
+        Args:
+            text: Text to analyze
+            provider: "claude" or "openai"
+        """
         if not self.use_new_service:
             raise ValueError("New LLM service not available")
         
         try:
-            # Get prompt configuration
             prompt_config = self.prompt_loader.get_prompt_config("tzd")
-            provider = prompt_config.get("provider", "gpt")
-            model = prompt_config.get("model", "gpt-4o-mini")
+            model = prompt_config.get("model", 
+                "claude-3-5-sonnet-20241022" if provider == "claude" else "gpt-4o-mini"
+            )
             
-            # Truncate text if too long
+            # Truncate if needed
             max_tokens_input = 100000
             if len(text) > max_tokens_input:
                 text = text[:max_tokens_input] + "\n\n[ТЕКСТ ОБРЕЗАН ПО ЛИМИТУ]"
@@ -157,61 +159,20 @@ class SecureAIAnalyzer:
             )
             
             if not response.get("success"):
-                raise ValueError(f"LLM service error: {response.get('error', 'Unknown error')}")
+                raise ValueError(f"LLM service error: {response.get('error', 'Unknown')}")
             
             result_text = response.get("content", "")
             if not result_text:
                 raise ValueError("Empty response from LLM service")
             
-            # Extract and parse JSON
             json_text = self._extract_json_from_response(result_text)
             result = json.loads(json_text)
             
             # Add metadata
             result['ai_model'] = response.get("model", model)
             result['provider'] = provider
-            result['processing_time'] = response.get("usage", {}).get("output_tokens", None)
-            result['analysis_method'] = 'new_llm_service'
-            
-            return result
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON from new LLM service: {e}")
-            return self._get_empty_result()
-        except Exception as e:
-            logger.error(f"New LLM service analysis failed: {e}")
-            return self._get_empty_result()
-    
-    async def analyze_with_new_llm_service(self, text: str) -> Dict[str, Any]:
-        """Analysis using centralized LLM service (new async method)"""
-        try:
-            prompt = self.get_analysis_prompt() + text
-            system_prompt = self.prompt_loader.get_system_prompt("tzd") if self.use_new_service else (
-                "Ты эксперт по анализу технических заданий в строительстве. "
-                "Отвечай ТОЛЬКО валидным JSON без дополнительного текста."
-            )
-            
-            # Use the centralized LLM service with proper async calls
-            response = await self.llm_service.run_prompt(
-                provider="claude",
-                prompt=prompt,
-                system_prompt=system_prompt,
-                model="claude-3-5-sonnet-20241022"
-            )
-            
-            if not response.get("success", False):
-                raise ValueError(f"LLM service failed: {response.get('error', 'Unknown error')}")
-            
-            content = response.get("content", "")
-            if not content:
-                raise ValueError("Empty response from LLM service")
-            
-            json_text = self._extract_json_from_response(content)
-            result = json.loads(json_text)
-            
-            # Add metadata
-            result['ai_model'] = response.get("model", "unknown")
             result['processing_time'] = response.get("usage", {}).get("total_tokens")
+            result['analysis_method'] = 'centralized_llm_service'
             
             return result
             
@@ -219,116 +180,57 @@ class SecureAIAnalyzer:
             logger.error(f"Invalid JSON from LLM service: {e}")
             return self._get_empty_result()
         except Exception as e:
-            logger.error(f"LLM service analysis error: {e}")
+            logger.error(f"LLM service analysis failed: {e}")
             return self._get_empty_result()
+    
     def analyze_with_gpt(self, text: str) -> Dict[str, Any]:
-        """Analysis using OpenAI GPT via centralized LLM service"""
-        # Try new centralized service first
+        """Analysis using OpenAI GPT"""
         if self.use_new_service:
             try:
                 import asyncio
-                return asyncio.run(self.analyze_with_new_llm_service_gpt(text))
+                return asyncio.run(self.analyze_with_llm_service(text, provider="openai"))
             except Exception as e:
-                logger.warning(f"New LLM service failed, falling back to legacy: {e}")
+                logger.warning(f"New LLM service failed: {e}")
         
-        # Legacy fallback - simplified version
-        logger.warning("Using legacy GPT client - consider updating to centralized service")
+        logger.warning("Using legacy GPT client")
         return self._get_empty_result()
     
-    async def analyze_with_new_llm_service_gpt(self, text: str) -> Dict[str, Any]:
-        """GPT analysis using centralized LLM service"""
-        try:
-            prompt = self.get_analysis_prompt() + text
-            system_prompt = self.prompt_loader.get_system_prompt("tzd") if self.use_new_service else (
-                "Ты эксперт по анализу технических заданий в строительстве. "
-                "Отвечай ТОЛЬКО валидным JSON без дополнительного текста."
-            )
-            
-            # Use the centralized LLM service
-            response = await self.llm_service.run_prompt(
-                provider="openai", 
-                prompt=prompt,
-                system_prompt=system_prompt,
-                model="gpt-4o-mini"
-            )
-            
-            if not response.get("success", False):
-                raise ValueError(f"LLM service failed: {response.get('error', 'Unknown error')}")
-            
-            content = response.get("content", "")
-            if not content:
-                raise ValueError("Empty response from LLM service")
-            
-            json_text = self._extract_json_from_response(content)
-            result = json.loads(json_text)
-            
-            # Add metadata
-            result['ai_model'] = response.get("model", "gpt-4o-mini")
-            result['processing_time'] = response.get("usage", {}).get("total_tokens")
-            
-            return result
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON from LLM service: {e}")
-            return self._get_empty_result()
-        except Exception as e:
-            logger.error(f"LLM service analysis error: {e}")
-            return self._get_empty_result()
-    
     def analyze_with_claude(self, text: str) -> Dict[str, Any]:
-        """Analysis using Anthropic Claude via centralized LLM service"""
-        # Try new centralized service first
+        """Analysis using Anthropic Claude"""
         if self.use_new_service:
             try:
                 import asyncio
-                return asyncio.run(self.analyze_with_new_llm_service(text))
+                return asyncio.run(self.analyze_with_llm_service(text, provider="claude"))
             except Exception as e:
-                logger.warning(f"New LLM service failed, falling back to legacy: {e}")
+                logger.warning(f"New LLM service failed: {e}")
         
-        # Legacy fallback - simplified 
-        logger.warning("Using legacy Claude - consider updating to centralized service")
+        logger.warning("Using legacy Claude client")
         return self._get_empty_result()
 
 
 def _build_project_summary(parsed_text: str, ai_result: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Build project summary by sections
+    Build project summary from new format results
     
     Args:
         parsed_text: Raw extracted text
-        ai_result: AI analysis result
+        ai_result: AI analysis result with new format
         
     Returns:
         Dictionary with summary sections
     """
     return {
-        "overview": ai_result.get("project_scope", "")[:500],
-        "scope": ai_result.get("project_scope", ""),
-        "concrete": ai_result.get("concrete_requirements", []),
-        "materials": ai_result.get("materials", []),
+        "overview": ai_result.get("project_object", "")[:500],
+        "requirements": ai_result.get("requirements", []),
         "norms": ai_result.get("norms", []),
-        "risks": ai_result.get("risks_and_constraints", []),
-        "schedule": [],  # Could be extracted with additional logic
-        "costs": [],     # Could be extracted with additional logic
-        "deliverables": []  # Could be extracted with additional logic
+        "constraints": ai_result.get("constraints", []),
+        "environment": ai_result.get("environment", ""),
+        "functions": ai_result.get("functions", [])
     }
 
 
 def _process_files_with_parsers(files: List[str], base_dir: Optional[str] = None) -> str:
-    """
-    Process files using DocParser with optional MinerU integration
-    
-    Args:
-        files: List of file paths
-        base_dir: Base directory for security validation
-        
-    Returns:
-        Combined text from all files
-        
-    Raises:
-        SecurityError: For security violations
-        ValueError: For invalid inputs
-    """
+    """Process files using DocParser with optional MinerU integration"""
     if not files:
         raise ValueError("File list cannot be empty")
     
@@ -341,10 +243,8 @@ def _process_files_with_parsers(files: List[str], base_dir: Optional[str] = None
     total_length = 0
     processed_files = 0
     
-    # Try MinerU first for PDFs if available
+    # Try MinerU for PDFs
     pdf_files = [f for f in files if Path(f).suffix.lower() == '.pdf']
-    mineru_text = None
-    
     if pdf_files:
         mineru_text = extract_with_mineru_if_available(pdf_files)
         if mineru_text:
@@ -352,13 +252,11 @@ def _process_files_with_parsers(files: List[str], base_dir: Optional[str] = None
             text_parts.append(f"\n=== MinerU Extracted Content ===\n{mineru_text}\n")
             total_length += len(mineru_text)
             processed_files += len(pdf_files)
-            # Remove processed PDFs from the main list
             files = [f for f in files if Path(f).suffix.lower() != '.pdf']
     
-    # Process remaining files with DocParser
+    # Process remaining files
     for file_path in files:
         try:
-            # Security validation
             validator.validate_file_path(file_path, base_dir)
             validator.validate_file_size(file_path)
             validator.validate_file_extension(file_path)
@@ -368,17 +266,13 @@ def _process_files_with_parsers(files: List[str], base_dir: Optional[str] = None
                 continue
             
             logger.info(f"Processing file: {Path(file_path).name}")
-            
-            # Use DocParser
             text = doc_parser.parse(file_path)
             
             if text.strip():
                 file_header = f"\n=== File: {Path(file_path).name} ===\n"
                 text_parts.extend([file_header, text, "\n"])
-                
                 total_length += len(file_header) + len(text) + 1
                 
-                # Check total limit
                 if total_length > MAX_TOTAL_TEXT_LENGTH:
                     logger.warning("Maximum text limit reached")
                     break
@@ -388,85 +282,77 @@ def _process_files_with_parsers(files: List[str], base_dir: Optional[str] = None
                 logger.warning(f"Empty text in file: {file_path}")
                 
         except SecurityError:
-            raise  # Security issues interrupt processing
+            raise
         except Exception as e:
             logger.error(f"File processing error {file_path}: {e}")
-            continue  # Continue with other files
+            continue
     
     combined_text = ''.join(text_parts)
     
     if not combined_text.strip():
         raise ValueError("Could not extract text from any file")
     
-    logger.info(f"Processed files: {processed_files}")
-    logger.info(f"Total text length: {len(combined_text)} characters")
-    
+    logger.info(f"Processed {processed_files} files, {len(combined_text)} chars")
     return combined_text
 
 
-def tzd_reader(files: List[str], engine: str = "gpt", base_dir: Optional[str] = None) -> Dict[str, Any]:
+def tzd_reader(
+    files: List[str], 
+    engine: str = "gpt", 
+    base_dir: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Main function for secure technical assignment analysis
     
     Args:
         files: List of file paths
-        engine: AI engine ("gpt", "claude", or "auto" for new service)
+        engine: AI engine ("gpt", "claude", or "auto")
         base_dir: Base directory for file access restriction
         
     Returns:
-        Dictionary with analysis results including project_summary
-        
-    Raises:
-        ValueError: For invalid parameters
-        SecurityError: For security issues
+        Dictionary with analysis results
     """
     if not files:
         raise ValueError("File list cannot be empty")
     
     if engine.lower() not in ['gpt', 'claude', 'auto']:
-        raise ValueError(f"Unsupported AI engine: {engine}. Use 'gpt', 'claude', or 'auto'")
+        raise ValueError(f"Unsupported AI engine: {engine}")
     
     start_time = time.time()
     
     try:
-        # Process files using DocParser with optional MinerU
         combined_text = _process_files_with_parsers(files, base_dir)
-        
-        # AI analysis
         analyzer = SecureAIAnalyzer()
         
-        # Try new LLM service first if available and auto mode
+        # Select engine
         if engine.lower() == "auto" and analyzer.use_new_service:
             try:
                 import asyncio
-                result = asyncio.run(analyzer.analyze_with_new_llm_service(combined_text))
-                logger.info("Used new centralized LLM service")
+                result = asyncio.run(
+                    analyzer.analyze_with_llm_service(combined_text, provider="claude")
+                )
+                logger.info("Used centralized LLM service (Claude)")
             except Exception as e:
-                logger.warning(f"New LLM service failed, falling back to legacy: {e}")
-                # Fallback to GPT
+                logger.warning(f"Auto mode failed, falling back to GPT: {e}")
                 result = analyzer.analyze_with_gpt(combined_text)
         elif engine.lower() == "gpt":
             result = analyzer.analyze_with_gpt(combined_text)
         else:  # claude
             result = analyzer.analyze_with_claude(combined_text)
         
-        # Add project summary
+        # Add summary and metadata
         result['project_summary'] = _build_project_summary(combined_text, result)
-        
-        # Add processing metadata
         result['processing_metadata'] = {
             'processed_files': len([f for f in files if os.path.exists(f)]),
             'total_text_length': len(combined_text),
             'processing_time_seconds': round(time.time() - start_time, 2),
             'ai_engine': engine.lower(),
-            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
-            'mineru_used': extract_with_mineru_if_available([]) is not None  # Check if MinerU is available
+            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
         }
         
         return result
         
     except (ValueError, SecurityError) as e:
-        # Re-raise validation and security errors
         raise e
     except Exception as e:
         logger.error(f"Critical error in tzd_reader: {e}")
