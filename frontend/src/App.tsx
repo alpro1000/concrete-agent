@@ -1,17 +1,10 @@
-import { useState } from 'react';
-import { Layout, Menu, ConfigProvider, theme } from 'antd';
+import { Layout, ConfigProvider, theme } from 'antd';
 import { 
-  HomeOutlined, 
-  BarChartOutlined, 
-  FileTextOutlined,
-  ProjectOutlined
+  BarChartOutlined
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
-// Import pages
-import Home from './pages/Home';
-import Analysis from './pages/Analysis';
-import Reports from './pages/Reports';
+// Import page
 import TZDAnalysis from './pages/TZDAnalysis';
 
 // Import components
@@ -25,71 +18,8 @@ import './styles/globals.css';
 
 const { Header, Content, Footer } = Layout;
 
-interface AnalysisData {
-  docs: File[];
-  smeta: File[];
-  drawings: File[];
-  material_query?: string;
-  use_claude: boolean;
-  claude_mode: string;
-  language: 'cs' | 'en' | 'ru';
-  include_drawing_analysis: boolean;
-  analysis_type: 'concrete' | 'materials' | 'comparison' | 'tov' | 'integrated';
-  project_name?: string;
-  project_duration_days?: number;
-}
-
 function App() {
-  const { t } = useTranslation();
-  const [currentPage, setCurrentPage] = useState<'home' | 'analysis' | 'reports' | 'tzd'>('home');
-  const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
-
-  const handleAnalysisStart = (data: AnalysisData) => {
-    setAnalysisData(data);
-    setCurrentPage('analysis');
-  };
-
-  const handleBackToHome = () => {
-    setCurrentPage('home');
-    setAnalysisData(null);
-  };
-
-  const menuItems = [
-    {
-      key: 'home',
-      icon: <HomeOutlined />,
-      label: t('nav.home'),
-    },
-    {
-      key: 'tzd',
-      icon: <ProjectOutlined />,
-      label: 'TZD Reader',
-    },
-    {
-      key: 'reports',
-      icon: <FileTextOutlined />,
-      label: t('nav.reports'),
-    },
-  ];
-
-  const renderContent = () => {
-    switch (currentPage) {
-      case 'home':
-        return <Home onAnalysisStart={handleAnalysisStart} />;
-      case 'analysis':
-        return analysisData ? (
-          <Analysis analysisData={analysisData} onBack={handleBackToHome} />
-        ) : (
-          <Home onAnalysisStart={handleAnalysisStart} />
-        );
-      case 'tzd':
-        return <TZDAnalysis />;
-      case 'reports':
-        return <Reports />;
-      default:
-        return <Home onAnalysisStart={handleAnalysisStart} />;
-    }
-  };
+  useTranslation(); // Initialize translation
 
   return (
     <ConfigProvider
@@ -117,21 +47,8 @@ function App() {
               marginRight: '32px'
             }}>
               <BarChartOutlined style={{ marginRight: '8px' }} />
-              {t('home.title')}
+              TZD Reader - Анализ технических заданий
             </div>
-            
-            <Menu
-              theme="dark"
-              mode="horizontal"
-              selectedKeys={[currentPage]}
-              items={menuItems}
-              onClick={({ key }) => setCurrentPage(key as any)}
-              style={{ 
-                backgroundColor: 'transparent', 
-                borderBottom: 'none',
-                minWidth: '200px'
-              }}
-            />
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -140,12 +57,11 @@ function App() {
         </Header>
 
         <Content className="main-content">
-          {renderContent()}
+          <TZDAnalysis />
         </Content>
 
         <Footer style={{ textAlign: 'center', backgroundColor: '#f0f2f5' }}>
-          Construction Analysis Frontend ©2024 | 
-          Built with React + Vite + TypeScript + Ant Design
+          TZD Reader ©2024 | Built with React + Vite + TypeScript + Ant Design
         </Footer>
       </Layout>
     </ConfigProvider>
