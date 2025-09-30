@@ -26,3 +26,4 @@ uploads/
 # === System ===
 .DS_Store
 Thumbs.db
+# Frontend\nnode_modules/\ndist/\n.vite/\n*.tsbuildinfo
