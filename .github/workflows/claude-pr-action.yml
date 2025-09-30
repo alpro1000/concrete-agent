@@ -1,3 +1,0 @@
-# This workflow has been removed as it was a duplicate of claude.yml
-# The main Claude integration is handled by .github/workflows/claude.yml
-# This file is kept as a placeholder to avoid breaking any existing references
