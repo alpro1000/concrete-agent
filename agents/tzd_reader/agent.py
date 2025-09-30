@@ -8,6 +8,7 @@ import os
 import time
 import json
 import logging
+import unicodedata
 from pathlib import Path
 
 try:
@@ -27,6 +28,56 @@ DEFAULT_CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
 API_TIMEOUT = int(os.getenv("API_TIMEOUT", "60"))
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 MAX_TOTAL_TEXT_LENGTH = 500_000
+
+
+def normalize_diacritics(text: str) -> str:
+    """
+    Normalize text using Unicode NFC normalization to fix diacritics.
+    
+    Args:
+        text: Input text
+        
+    Returns:
+        Normalized text with properly composed diacritics
+    """
+    if not text:
+        return text
+    return unicodedata.normalize("NFC", text)
+
+
+def normalize_result_diacritics(result: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Apply diacritics normalization to all text fields in the result.
+    
+    Args:
+        result: Analysis result dictionary
+        
+    Returns:
+        Result with normalized text fields
+    """
+    # Normalize string fields
+    if 'project_object' in result and isinstance(result['project_object'], str):
+        result['project_object'] = normalize_diacritics(result['project_object'])
+    
+    if 'environment' in result and isinstance(result['environment'], str):
+        result['environment'] = normalize_diacritics(result['environment'])
+    
+    # Normalize list fields
+    for list_field in ['requirements', 'norms', 'constraints', 'functions']:
+        if list_field in result and isinstance(result[list_field], list):
+            result[list_field] = [normalize_diacritics(str(item)) for item in result[list_field]]
+    
+    # Normalize nested project_summary
+    if 'project_summary' in result and isinstance(result['project_summary'], dict):
+        if 'overview' in result['project_summary']:
+            result['project_summary']['overview'] = normalize_diacritics(result['project_summary']['overview'])
+        if 'environment' in result['project_summary']:
+            result['project_summary']['environment'] = normalize_diacritics(result['project_summary']['environment'])
+        for list_field in ['requirements', 'norms', 'constraints', 'functions']:
+            if list_field in result['project_summary'] and isinstance(result['project_summary'][list_field], list):
+                result['project_summary'][list_field] = [normalize_diacritics(str(item)) for item in result['project_summary'][list_field]]
+    
+    return result
 
 
 class SecureAIAnalyzer:
@@ -249,6 +300,8 @@ def _process_files_with_parsers(files: List[str], base_dir: Optional[str] = None
         mineru_text = extract_with_mineru_if_available(pdf_files)
         if mineru_text:
             logger.info(f"MinerU processed {len(pdf_files)} PDF files")
+            # Apply diacritics normalization to MinerU output
+            mineru_text = normalize_diacritics(mineru_text)
             text_parts.append(f"\n=== MinerU Extracted Content ===\n{mineru_text}\n")
             total_length += len(mineru_text)
             processed_files += len(pdf_files)
@@ -267,6 +320,9 @@ def _process_files_with_parsers(files: List[str], base_dir: Optional[str] = None
             
             logger.info(f"Processing file: {Path(file_path).name}")
             text = doc_parser.parse(file_path)
+            
+            # Apply diacritics normalization
+            text = normalize_diacritics(text)
             
             if text.strip():
                 file_header = f"\n=== File: {Path(file_path).name} ===\n"
@@ -349,6 +405,9 @@ def tzd_reader(
             'ai_engine': engine.lower(),
             'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
         }
+        
+        # Apply diacritics normalization to all text fields
+        result = normalize_result_diacritics(result)
         
         return result
         

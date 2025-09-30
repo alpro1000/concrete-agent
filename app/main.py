@@ -97,64 +97,20 @@ def check_dependencies():
     return dependencies
 
 def setup_routers():
-    """Setup all routers"""
+    """Setup TZD router only"""
     try:
         sys.path.append('/home/runner/work/concrete-agent/concrete-agent')
         
-        from app.routers import (
-            projects_router,
-            documents_router,
-            extractions_router,
-            corrections_router,
-            compare_router,
-            upload_router,
-            project_router
-        )
+        from app.routers import tzd_router
         
-        from app.routers.analyze_concrete import router as concrete_router
-        from app.routers.analyze_materials import router as materials_router
+        # Include only TZD router
+        app.include_router(tzd_router, tags=["TZD Reader"])
         
-        app.include_router(projects_router, prefix="/api", tags=["Projects"])
-        app.include_router(documents_router, prefix="/api", tags=["Documents"])
-        app.include_router(extractions_router, prefix="/api", tags=["Extractions"])
-        app.include_router(corrections_router, prefix="/api", tags=["Corrections"])
-        app.include_router(compare_router, prefix="/api", tags=["Compare"])
-        app.include_router(upload_router, prefix="/api", tags=["Upload"])
-        app.include_router(project_router, prefix="/analyze", tags=["Project Analysis"])
-        app.include_router(concrete_router, prefix="/analyze", tags=["Concrete Analysis"])
-        app.include_router(materials_router, prefix="/analyze", tags=["Material Analysis"])
-        
-        logger.info("New routers connected")
-        setup_legacy_routers()
+        logger.info("TZD Router connected successfully")
         
     except Exception as e:
         logger.error(f"Router setup error: {e}")
-        setup_legacy_routers()
-
-def setup_legacy_routers():
-    """Setup legacy routers for backward compatibility"""
-    router_configs = [
-        ("routers.analyze_concrete", "router", "/legacy/analyze", ["Legacy Concrete"]),
-        ("routers.analyze_materials", "router", "/legacy/analyze", ["Legacy Materials"]),
-        ("routers.analyze_volume", "router", "/legacy/analyze", ["Legacy Volume"]),
-        ("routers.analyze_tov", "router", "/legacy/analyze", ["Legacy TOV"]),
-        ("routers.version_diff", "router", "/legacy/compare", ["Legacy Diff"]),
-        ("routers.upload", "router", "/legacy/upload", ["Legacy Upload"]),
-        ("routers.tzd_router", "router", "/legacy/tzd", ["Legacy TZD"]),
-    ]
-    
-    successful = 0
-    for module_path, router_name, prefix, tags in router_configs:
-        try:
-            module = __import__(module_path, fromlist=[router_name])
-            router = getattr(module, router_name)
-            app.include_router(router, prefix=prefix, tags=tags)
-            successful += 1
-        except Exception as e:
-            logger.warning(f"Failed to load {module_path}: {e}")
-    
-    logger.info(f"Legacy routers: {successful} loaded")
-    return successful
+        raise
 
 # Setup endpoints - use app_factory if available, otherwise inline
 if USE_APP_FACTORY:
