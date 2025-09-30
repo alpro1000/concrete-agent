@@ -8,7 +8,6 @@ import {
   Row, 
   Col, 
   Statistic, 
-  Divider,
   Button,
   Alert,
   Collapse,
@@ -26,10 +25,10 @@ import {
   CopyOutlined,
   InfoCircleOutlined
 } from '@ant-design/icons';
-import { useTranslation } from 'react-i18next';
 import type { TZDAnalysisResult } from '../types/api';
+import type { BadgeProps } from 'antd';
 
-const { Title, Text, Paragraph } = Typography;
+const { Text, Paragraph } = Typography;
 const { Panel } = Collapse;
 
 interface TZDResultsProps {
@@ -43,8 +42,6 @@ const TZDResults: React.FC<TZDResultsProps> = ({
   onDownload,
   onCopy
 }) => {
-  const { t } = useTranslation();
-
   if (!result.success) {
     return (
       <Alert
@@ -67,18 +64,11 @@ const TZDResults: React.FC<TZDResultsProps> = ({
                   result.constraints.length > 0 ||
                   result.functions.length > 0;
 
-  const getStatusColor = (items: string[] | string): string => {
+  const getStatusColor = (items: string[] | string): BadgeProps['status'] => {
     if (Array.isArray(items)) {
       return items.length > 0 ? 'success' : 'default';
     }
     return items ? 'success' : 'default';
-  };
-
-  const getStatusCount = (items: string[] | string): number => {
-    if (Array.isArray(items)) {
-      return items.length;
-    }
-    return items ? 1 : 0;
   };
 
   return (

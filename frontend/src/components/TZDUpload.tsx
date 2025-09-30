@@ -22,7 +22,6 @@ import {
   SettingOutlined,
   BarChartOutlined
 } from '@ant-design/icons';
-import { useTranslation } from 'react-i18next';
 import type { UploadProps, UploadFile } from 'antd';
 
 const { Dragger } = Upload;
@@ -40,7 +39,6 @@ const TZDUpload: React.FC<TZDUploadProps> = ({
   loading = false,
   disabled = false,
 }) => {
-  const { t } = useTranslation();
   const [form] = Form.useForm();
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
