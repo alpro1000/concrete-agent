@@ -1,23 +1,22 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: process.env.PORT ? parseInt(process.env.PORT) : 5173, // Используем динамический порт
+    port: 5173,
     host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000', // Убедитесь, что API сервер доступен
+        target: process.env.VITE_API_URL || 'http://localhost:8000',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
+        secure: false,
       },
     },
-    allowedHosts: ['stav-agent.onrender.com', 'localhost'], // Добавляем оба хоста
   },
   build: {
     outDir: 'dist',
+    sourcemap: false,
     rollupOptions: {
       output: {
         manualChunks: {
