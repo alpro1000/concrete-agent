@@ -7,33 +7,56 @@ import {
   message, 
   Spin,
   Card,
-  Steps,
-  Button,
-  Alert
+  Tabs,
+  Divider,
+  Tag,
+  List
 } from 'antd';
 import { 
-  UploadOutlined, 
-  BarChartOutlined, 
   CheckCircleOutlined,
-  ReloadOutlined
+  GlobalOutlined,
+  FileTextOutlined
 } from '@ant-design/icons';
-import TZDUpload from '../components/TZDUpload';
-import TZDResults from '../components/TZDResults';
+import TZDUploadSimple from '../components/TZDUploadSimple';
 import apiClient from '../api/client';
-import type { TZDAnalysisResult } from '../types/api';
 
-const { Title, Paragraph } = Typography;
+const { Title, Paragraph, Text } = Typography;
+
+interface TZDAnalysisResult {
+  success: boolean;
+  analysis_id: string;
+  timestamp: string;
+  project_object: string;
+  requirements: string[];
+  norms: string[];
+  constraints: string[];
+  environment: string;
+  functions: string[];
+  processing_metadata: any;
+  error_message?: string;
+}
+
+// Helper function to normalize diacritics
+const normalizeDiacritics = (text: string): string => {
+  if (!text) return text;
+  return text.normalize('NFC');
+};
 
 const TZDAnalysis: React.FC = () => {
   const [loading, setLoading] = useState(false);
-  const [currentStep, setCurrentStep] = useState(0);
   const [analysisResult, setAnalysisResult] = useState<TZDAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [translations, setTranslations] = useState<{
+    ru: string;
+    cs: string;
+    en: string;
+  } | null>(null);
 
-  const handleAnalyze = async (files: File[], engine: string, context?: string) => {
+  const handleAnalyze = async (files: File[], engine: string) => {
     setLoading(true);
     setError(null);
-    setCurrentStep(1);
+    setAnalysisResult(null);
+    setTranslations(null);
 
     try {
       const formData = new FormData();
@@ -41,9 +64,6 @@ const TZDAnalysis: React.FC = () => {
         formData.append('files', file);
       });
       formData.append('ai_engine', engine);
-      if (context) {
-        formData.append('project_context', context);
-      }
 
       const response = await apiClient.post('/api/v1/tzd/analyze', formData, {
         headers: {
@@ -53,8 +73,29 @@ const TZDAnalysis: React.FC = () => {
       });
 
       if (response.data.success) {
-        setAnalysisResult(response.data);
-        setCurrentStep(2);
+        const result = response.data;
+        
+        // Normalize all text fields
+        const normalizedResult = {
+          ...result,
+          project_object: normalizeDiacritics(result.project_object),
+          requirements: result.requirements.map(normalizeDiacritics),
+          norms: result.norms.map(normalizeDiacritics),
+          constraints: result.constraints.map(normalizeDiacritics),
+          environment: normalizeDiacritics(result.environment),
+          functions: result.functions.map(normalizeDiacritics),
+        };
+        
+        setAnalysisResult(normalizedResult);
+        
+        // Generate translations (simple mock for now)
+        const projectDesc = normalizedResult.project_object || 'Описание проекта недоступно';
+        setTranslations({
+          ru: projectDesc, // Russian (original)
+          cs: projectDesc, // Czech (would need translation API)
+          en: projectDesc, // English (would need translation API)
+        });
+        
         message.success('Анализ технического задания завершен успешно!');
       } else {
         throw new Error(response.data.error_message || 'Анализ не удался');
@@ -63,216 +104,175 @@ const TZDAnalysis: React.FC = () => {
       const errorMessage = err.response?.data?.detail || err.message || 'Произошла ошибка при анализе';
       setError(errorMessage);
       message.error(`Ошибка анализа: ${errorMessage}`);
-      setCurrentStep(0);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDownload = async (format: 'json' | 'pdf') => {
-    if (!analysisResult) return;
+  const renderResults = () => {
+    if (!analysisResult) return null;
 
-    try {
-      if (format === 'json') {
-        // Download as JSON
-        const dataStr = JSON.stringify(analysisResult, null, 2);
-        const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-        
-        const exportFileDefaultName = `tzd_analysis_${analysisResult.analysis_id}.json`;
-        
-        const linkElement = document.createElement('a');
-        linkElement.setAttribute('href', dataUri);
-        linkElement.setAttribute('download', exportFileDefaultName);
-        linkElement.click();
-        
-        message.success('JSON файл скачан');
-      } else if (format === 'pdf') {
-        // Request PDF generation from backend
-        const response = await apiClient.get(`/api/v1/tzd/analysis/${analysisResult.analysis_id}/pdf`, {
-          responseType: 'blob'
-        });
-        
-        const blob = new Blob([response.data], { type: 'application/pdf' });
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `tzd_analysis_${analysisResult.analysis_id}.pdf`;
-        link.click();
-        window.URL.revokeObjectURL(url);
-        
-        message.success('PDF отчет скачан');
-      }
-    } catch (err: any) {
-      message.error('Ошибка при скачивании файла');
-      console.error('Download error:', err);
-    }
+    return (
+      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+        <Card
+          title={
+            <Space>
+              <CheckCircleOutlined style={{ color: '#52c41a' }} />
+              <span>Результаты анализа</span>
+            </Space>
+          }
+        >
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            <div>
+              <Text strong>ID анализа:</Text> <Tag>{analysisResult.analysis_id}</Tag>
+            </div>
+            <div>
+              <Text strong>Время обработки:</Text>{' '}
+              <Text type="secondary">{analysisResult.timestamp}</Text>
+            </div>
+            <Divider />
+            
+            <div>
+              <Title level={4}>
+                <FileTextOutlined /> Описание проекта
+              </Title>
+              <Paragraph>{analysisResult.project_object}</Paragraph>
+            </div>
+
+            <Divider />
+
+            <Row gutter={16}>
+              <Col span={12}>
+                <Card size="small" title="Требования" bordered={false}>
+                  <List
+                    size="small"
+                    dataSource={analysisResult.requirements}
+                    renderItem={(item) => <List.Item>• {item}</List.Item>}
+                  />
+                </Card>
+              </Col>
+              <Col span={12}>
+                <Card size="small" title="Нормы" bordered={false}>
+                  <List
+                    size="small"
+                    dataSource={analysisResult.norms}
+                    renderItem={(item) => <List.Item>• {item}</List.Item>}
+                  />
+                </Card>
+              </Col>
+            </Row>
+
+            <Row gutter={16}>
+              <Col span={12}>
+                <Card size="small" title="Ограничения" bordered={false}>
+                  <List
+                    size="small"
+                    dataSource={analysisResult.constraints}
+                    renderItem={(item) => <List.Item>• {item}</List.Item>}
+                  />
+                </Card>
+              </Col>
+              <Col span={12}>
+                <Card size="small" title="Функции" bordered={false}>
+                  <List
+                    size="small"
+                    dataSource={analysisResult.functions}
+                    renderItem={(item) => <List.Item>• {item}</List.Item>}
+                  />
+                </Card>
+              </Col>
+            </Row>
+
+            {analysisResult.environment && (
+              <>
+                <Divider />
+                <div>
+                  <Title level={5}>Условия окружающей среды</Title>
+                  <Paragraph>{analysisResult.environment}</Paragraph>
+                </div>
+              </>
+            )}
+          </Space>
+        </Card>
+
+        {translations && (
+          <Card
+            title={
+              <Space>
+                <GlobalOutlined style={{ color: '#1890ff' }} />
+                <span>Переводы описания проекта</span>
+              </Space>
+            }
+          >
+            <Tabs
+              items={[
+                {
+                  key: 'ru',
+                  label: '🇷🇺 Русский',
+                  children: <Paragraph>{translations.ru}</Paragraph>,
+                },
+                {
+                  key: 'cs',
+                  label: '🇨🇿 Čeština',
+                  children: <Paragraph>{translations.cs}</Paragraph>,
+                },
+                {
+                  key: 'en',
+                  label: '🇬🇧 English',
+                  children: <Paragraph>{translations.en}</Paragraph>,
+                },
+              ]}
+            />
+          </Card>
+        )}
+      </Space>
+    );
   };
-
-  const handleCopyJSON = () => {
-    if (!analysisResult) return;
-    
-    const jsonString = JSON.stringify(analysisResult, null, 2);
-    navigator.clipboard.writeText(jsonString).then(() => {
-      message.success('JSON скопирован в буфер обмена');
-    }).catch(() => {
-      message.error('Ошибка копирования');
-    });
-  };
-
-  const handleReset = () => {
-    setCurrentStep(0);
-    setAnalysisResult(null);
-    setError(null);
-  };
-
-  const steps = [
-    {
-      title: 'Загрузка файлов',
-      description: 'Выберите документы ТЗ для анализа',
-      icon: <UploadOutlined />,
-    },
-    {
-      title: 'Анализ документов',
-      description: 'AI извлекает требования из документов',
-      icon: <BarChartOutlined />,
-    },
-    {
-      title: 'Результаты',
-      description: 'Структурированные данные готовы',
-      icon: <CheckCircleOutlined />,
-    },
-  ];
 
   return (
     <div style={{ padding: '24px' }}>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
-        {/* Header */}
         <Card>
-          <Space direction="vertical">
-            <Title level={2}>
-              📋 TZD Reader - Анализ технических заданий
-            </Title>
+          <Space direction="vertical" size="small">
+            <Title level={2}>TZD Reader - Анализ технических заданий</Title>
             <Paragraph type="secondary">
-              Система автоматического извлечения требований из технических документов 
-              с использованием AI через централизованный Orchestrator. Поддерживает 
-              анализ PDF, DOCX и TXT файлов с соблюдением требований безопасности.
+              Загрузите технические документы для автоматического извлечения требований,
+              норм, ограничений и другой ключевой информации. Система поддерживает PDF,
+              DOCX и TXT файлы с автоматической проверкой и исправлением диакритики.
             </Paragraph>
           </Space>
         </Card>
 
-        {/* Progress Steps */}
-        <Card>
-          <Steps current={currentStep} items={steps} />
-        </Card>
-
-        {/* Error Display */}
         {error && (
-          <Alert
-            message="Ошибка анализа"
-            description={error}
-            type="error"
-            showIcon
-            closable
-            onClose={() => setError(null)}
-            action={
-              <Button size="small" onClick={handleReset}>
-                Начать заново
-              </Button>
-            }
+          <Card>
+            <Text type="danger">{error}</Text>
+          </Card>
+        )}
+
+        {!analysisResult && !loading && (
+          <TZDUploadSimple
+            onAnalyze={handleAnalyze}
+            loading={loading}
+            disabled={loading}
           />
         )}
 
-        {/* Main Content */}
-        <Row gutter={[24, 24]}>
-          <Col span={24}>
-            {currentStep === 0 && (
-              <TZDUpload
-                onAnalyze={handleAnalyze}
-                loading={loading}
-                disabled={loading}
-              />
-            )}
+        {loading && (
+          <Card>
+            <div style={{ textAlign: 'center', padding: '60px 0' }}>
+              <Spin size="large" />
+              <div style={{ marginTop: '16px' }}>
+                <Title level={4}>Анализ документов...</Title>
+                <Paragraph type="secondary">
+                  AI система обрабатывает ваши документы и извлекает ключевую информацию.
+                  Это может занять несколько минут в зависимости от размера и сложности документов.
+                </Paragraph>
+              </div>
+            </div>
+          </Card>
+        )}
 
-            {currentStep === 1 && (
-              <Card>
-                <div style={{ textAlign: 'center', padding: '60px 0' }}>
-                  <Spin size="large" />
-                  <div style={{ marginTop: '16px' }}>
-                    <Title level={4}>Анализ документов...</Title>
-                    <Paragraph type="secondary">
-                      AI система обрабатывает ваши документы и извлекает ключевую информацию.
-                      Это может занять несколько минут в зависимости от размера и сложности документов.
-                    </Paragraph>
-                  </div>
-                </div>
-              </Card>
-            )}
-
-            {currentStep === 2 && analysisResult && (
-              <Space direction="vertical" size="large" style={{ width: '100%' }}>
-                <TZDResults
-                  result={analysisResult}
-                  onDownload={handleDownload}
-                  onCopy={handleCopyJSON}
-                />
-                
-                <Card>
-                  <Space>
-                    <Button 
-                      icon={<ReloadOutlined />}
-                      onClick={handleReset}
-                    >
-                      Анализировать новые документы
-                    </Button>
-                    <Button 
-                      type="primary"
-                      onClick={() => handleDownload('pdf')}
-                    >
-                      Скачать PDF отчет
-                    </Button>
-                  </Space>
-                </Card>
-              </Space>
-            )}
-          </Col>
-        </Row>
-
-        {/* Help Information */}
-        <Card title="Справочная информация">
-          <Row gutter={[16, 16]}>
-            <Col span={8}>
-              <Card size="small" title="Поддерживаемые форматы">
-                <ul>
-                  <li>PDF документы</li>
-                  <li>Microsoft Word (.docx)</li>
-                  <li>Текстовые файлы (.txt)</li>
-                </ul>
-              </Card>
-            </Col>
-            <Col span={8}>
-              <Card size="small" title="Извлекаемые данные">
-                <ul>
-                  <li>Объект строительства</li>
-                  <li>Технические требования</li>
-                  <li>Нормативные документы</li>
-                  <li>Ограничения проекта</li>
-                  <li>Условия эксплуатации</li>
-                  <li>Функциональное назначение</li>
-                </ul>
-              </Card>
-            </Col>
-            <Col span={8}>
-              <Card size="small" title="Безопасность">
-                <ul>
-                  <li>Максимум 10MB на файл</li>
-                  <li>До 5 файлов одновременно</li>
-                  <li>Защита от path traversal</li>
-                  <li>Проверка расширений файлов</li>
-                </ul>
-              </Card>
-            </Col>
-          </Row>
-        </Card>
+        {analysisResult && renderResults()}
       </Space>
     </div>
   );
