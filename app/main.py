@@ -116,10 +116,10 @@ def setup_routers():
         for router_info in discovered_routers:
             try:
                 router = router_info['router']
-                prefix = router_info.get('prefix', '')
+                # Don't pass prefix again - router already has it
                 tags = router_info.get('tags', [router_info['name']])
                 
-                app.include_router(router, prefix=prefix, tags=tags)
+                app.include_router(router, tags=tags)
                 logger.info(f"✅ Router '{router_info['name']}' registered successfully")
             except Exception as e:
                 logger.error(f"❌ Failed to register router '{router_info['name']}': {e}")
