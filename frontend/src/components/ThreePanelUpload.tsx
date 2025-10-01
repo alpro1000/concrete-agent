@@ -12,16 +12,16 @@ const PANEL_CONFIGS = {
   technical: {
     icon: FileTextOutlined,
     accept: '.pdf,.docx,.doc,.txt',
-    maxSize: 10 * 1024 * 1024, // 10MB
+    maxSize: 50 * 1024 * 1024, // 50MB
   },
   quantities: {
     icon: TableOutlined,
-    accept: '.xlsx,.xls,.xml,.xc4,.csv',
-    maxSize: 15 * 1024 * 1024, // 15MB
+    accept: '.xlsx,.xls,.xml,.xc4',
+    maxSize: 50 * 1024 * 1024, // 50MB
   },
   drawings: {
     icon: PictureOutlined,
-    accept: '.pdf,.dwg,.dxf,.jpg,.jpeg,.png,.rvt,.pln',
+    accept: '.pdf,.dwg,.dxf,.jpg,.jpeg,.png',
     maxSize: 50 * 1024 * 1024, // 50MB
   },
 };

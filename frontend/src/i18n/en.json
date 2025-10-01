@@ -54,23 +54,23 @@
     },
     "panels": {
       "technical": {
-        "title": "📋 Technical Assignments & Documents",
-        "description": "Technical specifications, TZD (Technical Design Documents), PDFs, project descriptions and narratives",
+        "title": "Technical assignment",
+        "description": "Technical assignment & project descriptions (PDF, DOCX, TXT)",
         "formats": "Formats: PDF, DOCX, DOC, TXT",
         "dragHint": "Drag technical documents here or click to browse",
         "examples": "Examples: Technical specifications, project briefs, TZD documents"
       },
       "quantities": {
-        "title": "📊 Bills of Quantities / Work Lists",
-        "description": "Výkaz výměr (Bills of Quantities), Rozpočet (Budget), SuperSprite, Excel spreadsheets, structured work lists",
-        "formats": "Formats: Excel (XLS, XLSX), XML, XC4, CSV",
+        "title": "Bill of quantities",
+        "description": "Bill of quantities, budget, work list (Excel, XML, XC4)",
+        "formats": "Formats: Excel (XLS, XLSX), XML, XC4",
         "dragHint": "Drag Excel/XML files here or click to browse",
         "examples": "Examples: BOQ, cost estimates, work schedules, quantity takeoffs"
       },
       "drawings": {
-        "title": "📐 Drawings & Visual Documentation",
-        "description": "Engineering drawings, architectural plans, structural models from ArchiCAD/Revit/AutoCAD",
-        "formats": "Formats: PDF drawings, DWG, DXF, JPG, PNG, images from ArchiCAD, Revit",
+        "title": "Drawings",
+        "description": "Drawings (PDF, DWG, DXF, images from ArchiCAD/Revit)",
+        "formats": "Formats: PDF, DWG, DXF, JPG, PNG",
         "dragHint": "Drag drawings/images here or click to browse",
         "examples": "Examples: Floor plans, sections, elevations, 3D models, BIM exports"
       }
