@@ -40,4 +40,12 @@ def setup_core_endpoints(app: FastAPI):
             "timestamp": datetime.utcnow().isoformat(),
         }
 
+    @app.get("/minio/health/live", response_class=JSONResponse)
+    async def minio_health_live():
+        """MinIO-compatible health check endpoint for keepalive."""
+        return {
+            "status": "ok",
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+
     logger.info("✅ Core endpoints set up successfully.")

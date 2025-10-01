@@ -141,6 +141,14 @@ else:
             "timestamp": "2025-09-30"
         }
 
+    @app.get("/minio/health/live")
+    async def minio_health_live():
+        """MinIO-compatible health check endpoint for keepalive."""
+        return {
+            "status": "ok",
+            "timestamp": "2025-09-30"
+        }
+
 @app.get("/status")
 async def status():
     """Detailed status"""
