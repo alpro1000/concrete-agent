@@ -22,15 +22,9 @@ try:
     from app.agents.tzd_reader.agent import tzd_reader
     from app.agents.tzd_reader.security import FileSecurityValidator, SecurityError
     TZD_AVAILABLE = True
-except ImportError:
-    # Fallback to old location for backward compatibility
-    try:
-        from agents.tzd_reader.agent import tzd_reader
-        from agents.tzd_reader.security import FileSecurityValidator, SecurityError
-        TZD_AVAILABLE = True
-    except ImportError:
-        TZD_AVAILABLE = False
-        logger.warning("TZD Reader not available")
+except ImportError as e:
+    TZD_AVAILABLE = False
+    logger.warning(f"TZD Reader not available: {e}")
 
 # ВАЖНО: Роутер должен называться именно 'router' для автоматического обнаружения
 router = APIRouter(
