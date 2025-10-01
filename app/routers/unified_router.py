@@ -16,6 +16,36 @@ from app.core.orchestrator import get_orchestrator_service
 
 logger = logging.getLogger(__name__)
 
+# File validation configuration
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+
+ALLOWED_EXTENSIONS = {
+    'technical': {'.pdf', '.docx', '.doc', '.txt'},
+    'quantities': {'.xlsx', '.xls', '.xml', '.xc4'},
+    'drawings': {'.pdf', '.dwg', '.dxf', '.png', '.jpg', '.jpeg'}
+}
+
+def validate_file(file: UploadFile, category: str) -> tuple[bool, Optional[str]]:
+    """
+    Validate file extension and size.
+    
+    Returns:
+        tuple: (is_valid, error_message)
+    """
+    # Get file extension
+    file_ext = Path(file.filename).suffix.lower()
+    
+    # Check if extension is allowed for this category
+    allowed = ALLOWED_EXTENSIONS.get(category, set())
+    if file_ext not in allowed:
+        error = f"File '{file.filename}' has invalid extension '{file_ext}'. Allowed for {category}: {', '.join(sorted(allowed))}"
+        logger.warning(f"Upload rejected: {error}")
+        return False, error
+    
+    # Check file size (we need to read and check content length)
+    # Note: file.size might not be available, so we check during read
+    return True, None
+
 # Router must be named 'router' for auto-discovery
 router = APIRouter(
     prefix="/api/v1/analysis",
@@ -106,6 +136,24 @@ async def unified_analysis(
             category_results = []
             
             for upload_file in files:
+                # Validate file before processing
+                is_valid, error_msg = validate_file(upload_file, category)
+                if not is_valid:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=error_msg
+                    )
+                
+                # Read file content and check size
+                content = await upload_file.read()
+                if len(content) > MAX_FILE_SIZE:
+                    error = f"File '{upload_file.filename}' exceeds maximum size of {MAX_FILE_SIZE / 1024 / 1024:.0f}MB (actual: {len(content) / 1024 / 1024:.2f}MB)"
+                    logger.warning(f"Upload rejected: {error}")
+                    raise HTTPException(
+                        status_code=400,
+                        detail=error
+                    )
+                
                 # Save file temporarily
                 suffix = Path(upload_file.filename).suffix
                 with tempfile.NamedTemporaryFile(
@@ -113,7 +161,6 @@ async def unified_analysis(
                     suffix=suffix,
                     dir=tempfile.gettempdir()
                 ) as tmp_file:
-                    content = await upload_file.read()
                     tmp_file.write(content)
                     tmp_path = tmp_file.name
                     temp_files.append(tmp_path)

@@ -40,23 +40,23 @@
     },
     "panels": {
       "technical": {
-        "title": "📋 Technická zadání a dokumenty",
-        "description": "Technické specifikace, TZD (Technická zadávací dokumentace), PDF, projektové popisy a narrativy",
+        "title": "Technické zadání",
+        "description": "Technické zadání a popisy projektu (PDF, DOCX, TXT)",
         "formats": "Formáty: PDF, DOCX, DOC, TXT",
         "dragHint": "Přetáhněte technické dokumenty sem nebo klikněte pro výběr",
         "examples": "Příklady: Technické specifikace, projektové zadání, TZD dokumenty"
       },
       "quantities": {
-        "title": "📊 Výkazy výměr / Seznamy prací",
-        "description": "Výkaz výměr, Rozpočet, SuperSprite, Excel tabulky, strukturované seznamy prací",
-        "formats": "Formáty: Excel (XLS, XLSX), XML, XC4, CSV",
+        "title": "Výkaz výměr",
+        "description": "Výkaz výměr, rozpočet, soupis prací (Excel, XML, XC4)",
+        "formats": "Formáty: Excel (XLS, XLSX), XML, XC4",
         "dragHint": "Přetáhněte Excel/XML soubory sem nebo klikněte pro výběr",
         "examples": "Příklady: Soupisy prací, rozpočty, harmonogramy, výměry"
       },
       "drawings": {
-        "title": "📐 Výkresy a vizuální dokumentace",
-        "description": "Inženýrské výkresy, architektonické plány, konstrukční modely z ArchiCAD/Revit/AutoCAD",
-        "formats": "Formáty: PDF výkresy, DWG, DXF, JPG, PNG, obrázky z ArchiCAD, Revit",
+        "title": "Výkresy",
+        "description": "Výkresy (PDF, DWG, DXF, obrázky z ArchiCAD/Revit)",
+        "formats": "Formáty: PDF, DWG, DXF, JPG, PNG",
         "dragHint": "Přetáhněte výkresy/obrázky sem nebo klikněte pro výběr",
         "examples": "Příklady: Půdorysy, řezy, pohledy, 3D modely, BIM exporty"
       }
