@@ -4,8 +4,8 @@ import {
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
-// Import page
-import TZDAnalysis from './pages/TZDAnalysis';
+// Import pages
+import ProjectAnalysis from './pages/ProjectAnalysis';
 
 // Import components
 import LanguageSelector from './components/LanguageSelector';
@@ -19,7 +19,7 @@ import './styles/globals.css';
 const { Header, Content, Footer } = Layout;
 
 function App() {
-  useTranslation(); // Initialize translation
+  const { t } = useTranslation();
 
   return (
     <ConfigProvider
@@ -47,7 +47,7 @@ function App() {
               marginRight: '32px'
             }}>
               <BarChartOutlined style={{ marginRight: '8px' }} />
-              TZD Reader - Анализ технических заданий
+              {t('home.title')}
             </div>
           </div>
 
@@ -57,11 +57,11 @@ function App() {
         </Header>
 
         <Content className="main-content">
-          <TZDAnalysis />
+          <ProjectAnalysis />
         </Content>
 
         <Footer style={{ textAlign: 'center', backgroundColor: '#f0f2f5' }}>
-          TZD Reader ©2024 | Built with React + Vite + TypeScript + Ant Design
+          Construction Analysis ©2024 | Built with React + Vite + TypeScript + Ant Design
         </Footer>
       </Layout>
     </ConfigProvider>

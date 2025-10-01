@@ -38,6 +38,26 @@
       "maxSize": "Maximální velikost: 10MB",
       "multiple": "Můžete nahrát více souborů najednou"
     },
+    "panels": {
+      "technical": {
+        "title": "📋 Technická zadání a dokumenty",
+        "description": "Technické specifikace, TZD, projektové popisy",
+        "formats": "Formáty: PDF, DOCX, TXT, jakékoli projektové dokumenty",
+        "dragHint": "Přetáhněte technické dokumenty sem nebo klikněte pro výběr"
+      },
+      "quantities": {
+        "title": "📊 Výkazy výměr / Seznamy prací",
+        "description": "Výkaz-výměr, SuperSprite, Rospotč, strukturované seznamy prací",
+        "formats": "Formáty: Excel (XLS, XLSX), XML, XC4, CSV",
+        "dragHint": "Přetáhněte Excel/XML soubory sem nebo klikněte pro výběr"
+      },
+      "drawings": {
+        "title": "📐 Výkresy a vizuální dokumentace",
+        "description": "Inženýrské výkresy, architektonické plány, konstrukční modely",
+        "formats": "Formáty: PDF výkresy, DWG, DXF, JPG, PNG, Revit, ArchiCAD",
+        "dragHint": "Přetáhněte výkresy/obrázky sem nebo klikněte pro výběr"
+      }
+    },
     "materialQuery": {
       "title": "Dotaz na materiál",
       "placeholder": "Zadejte typ materiálu (např. armatury, okna, dveře, dlaždice)",
@@ -92,7 +112,8 @@
     "export": {
       "json": "Exportovat JSON",
       "excel": "Exportovat Excel",
-      "pdf": "Exportovat PDF"
+      "pdf": "Exportovat PDF",
+      "word": "Exportovat Word"
     }
   },
   "reports": {
