@@ -1,0 +1,39 @@
+[pr_reviewer]
+require_score_review = true
+require_tests_review = true
+require_security_review = true
+max_files_to_review = 150
+max_lines_to_review = 15000
+
+extra_instructions = """
+СТРОИТЕЛЬНЫЙ ПРОЕКТ - ЭТАП 1 (ТОЛЬКО TZD АГЕНТ):
+
+ТЕКУЩАЯ АРХИТЕКТУРА:
+- app/agents/tzd_reader/ - ЕДИНСТВЕННЫЙ агент (оставить)
+- app/parsers/ - парсеры документов (оставить)
+- app/core/ - базовые сервисы (оставить)
+- knowledge/ - база знаний (оставить)
+- prompts/ - промты для TZDReader (оставить)
+
+УДАЛИТЬ ПОЛНОСТЬЮ:
+- Все остальные агенты кроме tzd_reader/
+- Хвосты от удаленных агентов (imports, ссылки, тесты)
+- Неиспользуемые файлы и зависимости
+- Все что не относится к TZDReader или базовой инфраструктуре
+
+ОСТАВИТЬ:
+- TZDReader агент и его файлы
+- Базовую инфраструктуру для будущих агентов
+- Парсеры документов
+- База знаний и вспомогательные компоненты
+- LLM сервисы для TZDReader
+"""
+
+[pr_improve]
+max_suggestions = 15
+include_security_suggestions = true
+extra_instructions = "Оптимизировать только для TZDReader агента"
+
+[pr_test]
+testing_framework = "pytest"
+extra_instructions = "Тесты только для TZDReader агента"
