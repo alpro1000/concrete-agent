@@ -50,8 +50,8 @@ class TestLLMService:
         assert 'gpt5-mini' in OPENAI_MODELS
         
         # Check that values are proper model names
-        assert claude_models['opus'] == 'claude-opus-4-1-20250805'
-        assert openai_models['gpt5'] == 'gpt-5-2025-08-07'
+        assert CLAUDE_MODELS['opus'] == 'claude-opus-4-1-20250805'
+        assert OPENAI_MODELS['gpt5'] == 'gpt-5-2025-08-07'
     
     def test_get_available_providers(self):
         """Test getting available providers"""
@@ -97,7 +97,7 @@ class TestLLMService:
                 # Check that the correct model was used
                 mock_client.messages.create.assert_called_once()
                 call_args = mock_client.messages.create.call_args
-                assert call_args[1]['model'] == claude_models['opus']
+                assert call_args[1]['model'] == CLAUDE_MODELS['opus']
                 assert call_args[1]['messages'][0]['content'] == "Test prompt"
     
     def test_run_sync_openai(self):
@@ -117,7 +117,7 @@ class TestLLMService:
                 # Check that the correct model was used
                 mock_client.chat.completions.create.assert_called_once()
                 call_args = mock_client.chat.completions.create.call_args
-                assert call_args[1]['model'] == openai_models['gpt5']
+                assert call_args[1]['model'] == OPENAI_MODELS['gpt5']
                 assert call_args[1]['messages'][0]['content'] == "Test prompt"
     
     def test_run_sync_perplexity(self):
@@ -196,11 +196,11 @@ class TestLLMService:
             with patch.object(service, 'call_claude', side_effect=mock_call_claude):
                 # Test 1: 'sonnet' alias should map to full model name
                 result = await service.run_prompt("claude", "Test prompt", model="sonnet")
-                assert result["model"] == claude_models["sonnet"]
+                assert result["model"] == CLAUDE_MODELS["sonnet"]
                 
                 # Test 2: 'opus' alias should map to full model name
                 result = await service.run_prompt("claude", "Test prompt", model="opus")
-                assert result["model"] == claude_models["opus"]
+                assert result["model"] == CLAUDE_MODELS["opus"]
                 
                 # Test 3: Full model name should pass through unchanged
                 full_model = "claude-3-haiku-20240307"

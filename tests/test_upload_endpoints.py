@@ -10,7 +10,9 @@ from unittest.mock import patch, MagicMock
 
 # Import the test app
 import sys
-sys.path.append('/home/runner/work/concrete-agent/concrete-agent')
+from pathlib import Path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 # Create the test app inline to test router discovery
 from fastapi import FastAPI
@@ -114,7 +116,7 @@ class TestUploadEndpoints:
     def test_docs_upload_success(self):
         """Test successful project documents upload"""
         with open(self.test_doc_path, "rb") as f:
-            response = client.post(
+            response = self.client.post(
                 "/upload/docs",
                 files={"files": ("test_tz.txt", f, "text/plain")},
                 data={
@@ -139,7 +141,7 @@ class TestUploadEndpoints:
             f.write("Invalid file")
             
         with open(invalid_file_path, "rb") as f:
-            response = client.post(
+            response = self.client.post(
                 "/upload/docs",
                 files={"files": ("test.exe", f, "application/octet-stream")},
                 data={"project_name": "Test Project"}
@@ -151,7 +153,7 @@ class TestUploadEndpoints:
     def test_smeta_upload_success(self):
         """Test successful estimates upload"""
         with open(self.test_smeta_path, "rb") as f:
-            response = client.post(
+            response = self.client.post(
                 "/upload/smeta",
                 files={"files": ("test_smeta.xlsx", f, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
                 data={
@@ -177,7 +179,7 @@ class TestUploadEndpoints:
             f.write('<?xml version="1.0"?><estimate><item><name>Test</name></item></estimate>')
             
         with open(xml_path, "rb") as f:
-            response = client.post(
+            response = self.client.post(
                 "/upload/smeta",
                 files={"files": ("test_smeta.xml", f, "application/xml")},
                 data={"project_name": "Test Project"}
@@ -191,7 +193,7 @@ class TestUploadEndpoints:
     def test_drawings_upload_success(self):
         """Test successful drawings upload"""
         with open(self.test_drawing_path, "rb") as f:
-            response = client.post(
+            response = self.client.post(
                 "/upload/drawings",
                 files={"files": ("test_drawing.dwg", f, "application/acad")},
                 data={
@@ -220,7 +222,7 @@ class TestUploadEndpoints:
             f.write(b"Mock PDF content")
             
         with open(pdf_path, "rb") as f:
-            response = client.post(
+            response = self.client.post(
                 "/upload/drawings",
                 files={"files": ("test_plan.pdf", f, "application/pdf")},
                 data={"project_name": "Test Project"}
@@ -242,7 +244,7 @@ class TestUploadEndpoints:
             f.write(b"Mock PDF content")
         
         with open(doc1_path, "rb") as f1, open(doc2_path, "rb") as f2:
-            response = client.post(
+            response = self.client.post(
                 "/upload/docs",
                 files=[
                     ("files", ("doc1.txt", f1, "text/plain")),
@@ -260,7 +262,7 @@ class TestUploadEndpoints:
 
     def test_empty_files_upload(self):
         """Test upload with no files"""
-        response = client.post(
+        response = self.client.post(
             "/upload/docs",
             data={"project_name": "Empty Test"}
         )
@@ -283,7 +285,7 @@ class TestUploadEndpoints:
                 f.write("Test content")
             
             with open(file_path, "rb") as f:
-                response = client.post(
+                response = self.client.post(
                     "/upload/docs",
                     files={"files": (filename, f, "text/plain")},
                     data={"project_name": "Type Detection Test", "auto_analyze": "false"}
@@ -308,7 +310,7 @@ class TestUploadEndpoints:
                 f.write("Test content")
             
             with open(file_path, "rb") as f:
-                response = client.post(
+                response = self.client.post(
                     "/upload/smeta",
                     files={"files": (filename, f, "text/plain")},
                     data={"project_name": "Type Detection Test", "auto_analyze": "false"}
@@ -334,7 +336,7 @@ class TestUploadEndpoints:
                 f.write(b"Test content")
             
             with open(file_path, "rb") as f:
-                response = client.post(
+                response = self.client.post(
                     "/upload/drawings",
                     files={"files": (filename, f, "application/octet-stream")},
                     data={"project_name": "Type Detection Test", "auto_analyze": "false"}
@@ -359,7 +361,7 @@ class TestUploadEndpoints:
         mock_orchestrator.return_value = mock_instance
         
         with open(self.test_doc_path, "rb") as f:
-            response = client.post(
+            response = self.client.post(
                 "/upload/docs",
                 files={"files": ("test_tz.txt", f, "text/plain")},
                 data={
