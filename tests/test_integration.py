@@ -105,13 +105,15 @@ async def test_orchestrator_lazy_loading():
         llm = get_llm_service()
         orchestrator = OrchestratorService(llm)
         
-        # Пытаемся загрузить агенты (могут быть доступны или нет)
+        # Пытаемся загрузить TZD агент (единственный поддерживаемый)
         tzd_agent = await orchestrator._get_agent('tzd')
         logger.info(f"TZD агент доступен: {tzd_agent is not None}")
         
-        # Система должна работать даже если агенты недоступны
-        concrete_agent = await orchestrator._get_agent('concrete')
-        logger.info(f"Concrete агент доступен: {concrete_agent is not None}")
+        # Система должна корректно обрабатывать запросы на несуществующие агенты
+        unknown_agent = await orchestrator._get_agent('unknown_agent')
+        logger.info(f"Unknown агент должен быть None: {unknown_agent is None}")
+        
+        assert unknown_agent is None, "Несуществующий агент должен возвращать None"
         
         logger.info("✅ Тест ленивой загрузки прошел успешно (система работает независимо от наличия агентов)")
         
