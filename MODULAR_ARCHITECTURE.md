@@ -1,15 +1,16 @@
-# Modular Architecture Guide
+# Modular Architecture Guide - Beads System
 
 ## Overview
 
-This project now uses a fully modular, plug-and-play architecture where agents and routers can be added or removed without breaking the system.
+This project uses a **beads system** architecture - a fully modular, plug-and-play architecture where agents are automatically discovered and loaded dynamically. No hardcoded agent references in the core!
 
 ## Key Principles
 
-1. **Core Independence**: Core files never import specific agents
-2. **Lazy Loading**: Agents are loaded only when needed
-3. **Auto-Discovery**: Routers are automatically discovered from `app/routers/`
-4. **Graceful Degradation**: System works even if agents are missing
+1. **Core Independence**: Core files never import specific agents directly
+2. **Dynamic Discovery**: Agents are automatically discovered from `app/agents/` directory
+3. **BaseAgent Interface**: All agents inherit from `BaseAgent` with a standard interface
+4. **Auto-Loading**: The orchestrator automatically finds and loads available agents
+5. **Graceful Degradation**: System works even if agents are missing
 
 ## Architecture Components
 
@@ -18,22 +19,45 @@ This project now uses a fully modular, plug-and-play architecture where agents a
 These files work without any specific agent:
 
 - `app/main.py` - Application entry point with router auto-discovery
-- `app/core/orchestrator.py` - Coordinates agents (lazy-loaded)
+- `app/core/orchestrator.py` - Coordinates agents with dynamic discovery
 - `app/core/llm_service.py` - LLM integration (Claude, OpenAI, Perplexity)
 - `app/core/prompt_loader.py` - Loads prompts from files
 - `app/core/router_registry.py` - Auto-discovers and registers routers
 - `app/core/app_factory.py` - Sets up core endpoints
+
+### BaseAgent Interface
+
+All agents **must** inherit from `BaseAgent` and implement:
+
+```python
+# app/agents/base.py
+from abc import ABC, abstractmethod
+from typing import List, Dict, Any
+
+class BaseAgent(ABC):
+    # Agent identifier - must be overridden
+    name: str = "base"
+    
+    # List of supported file types - must be overridden
+    supported_types: List[str] = []
+    
+    @abstractmethod
+    async def analyze(self, file_path: str) -> Dict[str, Any]:
+        """Analyze a file and return results"""
+        pass
+```
 
 ### Agent Structure
 
 Each agent is self-contained in `app/agents/{agent_name}/`:
 
 ```
-app/agents/tzd_reader/
-├── __init__.py
-├── agent.py          # Main agent logic
-├── security.py       # Security utilities (optional)
-└── parsers.py        # Custom parsers (optional)
+app/agents/
+├── base.py            # BaseAgent interface
+└── tzd_reader/        # Example agent
+    ├── __init__.py
+    ├── agent.py       # Main agent logic (contains agent class)
+    └── security.py    # Security utilities (optional)
 ```
 
 ### Router Structure
@@ -63,30 +87,58 @@ async def health():
 mkdir -p app/agents/my_agent
 ```
 
-### Step 2: Implement Agent
+### Step 2: Implement Agent (Inherit from BaseAgent)
 
 ```python
 # app/agents/my_agent/agent.py
-class MyAgent:
-    def __init__(self):
-        self.name = "MyAgent"
-    
-    def analyze(self, file_path: str):
-        # Your analysis logic here
-        return {"result": "analysis"}
+from app.agents.base import BaseAgent
+from typing import Dict, Any
 
-# Export main function
-def analyze_files(files: list):
-    agent = MyAgent()
-    return agent.analyze(files[0])
+class MyAgent(BaseAgent):
+    """My custom agent for analyzing specific document types"""
+    
+    # Required: Define agent name
+    name = "my_agent"
+    
+    # Required: Define supported file/document types
+    supported_types = ["pdf", "docx", "my_custom_type"]
+    
+    def __init__(self):
+        """Initialize your agent"""
+        super().__init__()
+        # Your initialization code here
+    
+    # Required: Implement analyze method
+    async def analyze(self, file_path: str) -> Dict[str, Any]:
+        """
+        Analyze a file and return structured results
+        
+        Args:
+            file_path: Path to the file to analyze
+            
+        Returns:
+            Dictionary with analysis results
+        """
+        # Your analysis logic here
+        return {
+            "success": True,
+            "result": "analysis complete"
+        }
 ```
+
+**Important:** The agent class will be automatically discovered! Just make sure:
+- It has `name` and `supported_types` attributes
+- It implements the `analyze(file_path)` method
+- It's defined in `app/agents/{agent_name}/agent.py`
 
 ### Step 3: Create Router (Optional)
 
 ```python
 # app/routers/my_agent_router.py
 from fastapi import APIRouter, UploadFile, File
+from app.core.orchestrator import get_orchestrator_service
 
+# IMPORTANT: Must be named 'router' for auto-discovery
 router = APIRouter(
     prefix="/api/v1/my_agent",
     tags=["My Agent"],
@@ -94,30 +146,63 @@ router = APIRouter(
 
 @router.post("/analyze")
 async def analyze(files: list[UploadFile] = File(...)):
-    from app.agents.my_agent.agent import analyze_files
-    # Implementation
-    return {"success": True}
+    orchestrator = get_orchestrator_service()
+    # The orchestrator will automatically select the right agent
+    result = await orchestrator.process_file(files[0].filename)
+    return {"success": True, "result": result}
 ```
 
-### Step 4: Register Agent in Orchestrator (Optional)
+### Step 4: Start Server
 
-Edit `app/core/orchestrator.py` and add to `_get_agent()`:
-
-```python
-elif agent_name == 'my_agent':
-    try:
-        from agents.my_agent.agent import MyAgent
-        agent = MyAgent()
-    except ImportError as ie:
-        logger.warning(f"My agent not available: {ie}")
-```
-
-### Step 5: Start Server
-
-That's it! No changes to main.py needed. The router is auto-discovered!
+That's it! **No changes needed** to orchestrator or core files. The agent is **automatically discovered**!
 
 ```bash
 python -m uvicorn app.main:app --reload
+```
+
+The orchestrator will:
+1. Scan `app/agents/` directory
+2. Find your agent's `agent.py` file
+3. Import and instantiate your agent class
+4. Make it available for file processing
+
+## How Agent Discovery Works
+
+The orchestrator automatically discovers agents using the `discover_agents()` function:
+
+1. **Scans** `app/agents/` directory for subdirectories
+2. **Looks** for `agent.py` file in each subdirectory
+3. **Imports** the module and searches for classes with:
+   - `name` attribute
+   - `supported_types` attribute
+   - `analyze` method
+4. **Instantiates** the agent and caches it
+5. **Matches** files to agents based on `supported_types`
+
+### Agent Selection Process
+
+When a file needs to be analyzed:
+
+1. Orchestrator detects file type (e.g., "pdf", "technical_assignment")
+2. Calls `get_agent_for_type(file_type)` which:
+   - Ensures agents are discovered (lazy loading)
+   - Finds first agent that supports the file type
+   - Returns the agent instance
+3. Calls `agent.analyze(file_path)` on selected agent
+
+### Example Flow
+
+```python
+# User uploads technical_assignment.pdf
+file_type = orchestrator.detect_file_type("technical_assignment.pdf")
+# Returns: "technical_assignment"
+
+agent = orchestrator.get_agent_for_type("technical_assignment")
+# Discovers agents if not already done
+# Finds TZDReaderAgent because it has "technical_assignment" in supported_types
+
+result = await agent.analyze("technical_assignment.pdf")
+# Agent processes the file and returns results
 ```
 
 ## Removing an Agent
@@ -126,7 +211,42 @@ python -m uvicorn app.main:app --reload
 2. Delete the router (if exists): `rm app/routers/{agent_name}_router.py`
 3. Restart the server
 
-The system will continue to work without that agent!
+**The system will continue to work!** The orchestrator will simply not find that agent during discovery.
+
+## Benefits of the Beads System
+
+1. **Zero Coupling**: Core doesn't know about specific agents
+2. **Plug & Play**: Drop in a new agent folder and it's discovered
+3. **Hot-Swappable**: Agents can be added/removed without code changes
+4. **Type-Safe**: BaseAgent enforces a consistent interface
+5. **Maintainable**: Each agent is isolated and self-contained
+6. **Testable**: Agents can be tested independently
+
+## Example: TZD Reader Agent
+
+```python
+# app/agents/tzd_reader/agent.py
+class TZDReaderAgent:
+    name = "tzd_reader"
+    supported_types = [
+        "technical_assignment",
+        "technical_document", 
+        "pdf",
+        "docx",
+        "doc",
+        "txt"
+    ]
+    
+    async def analyze(self, file_path: str) -> Dict[str, Any]:
+        # Analyzes technical assignment documents
+        result = tzd_reader(files=[file_path], engine="auto")
+        return result
+```
+
+This agent is **automatically discovered** and used when:
+- A file is detected as "technical_assignment"
+- A PDF/DOCX needs TZD analysis
+- No manual registration needed!
 
 ## Frontend Architecture
 
@@ -295,9 +415,11 @@ Check:
 ### Agent not loading
 
 Check:
-1. Agent is in `app/agents/{agent_name}/`
-2. Agent is registered in orchestrator's `_get_agent()`
-3. No import errors in agent code
+1. Agent is in `app/agents/{agent_name}/` directory
+2. Agent class has `name`, `supported_types` attributes
+3. Agent class implements `analyze(file_path)` method
+4. No import errors in agent code
+5. Check logs for discovery errors: `grep "Discovered agent" logs/*.log`
 
 ### Frontend language not working
 
