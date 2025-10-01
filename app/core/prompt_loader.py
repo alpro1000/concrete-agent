@@ -6,6 +6,7 @@ import os
 import json
 import logging
 from typing import Dict, Any, Optional
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -29,14 +30,26 @@ class PromptLoader:
     A utility class for loading and managing prompts for various LLM models.
     """
 
-    def __init__(self, prompt_dir: Optional[str] = "prompts"):
+    def __init__(self, prompt_dir: Optional[str] = None):
         """
         Initialize the PromptLoader with the directory containing JSON prompt files.
         
         Args:
             prompt_dir (str): Directory containing the JSON prompt files.
         """
-        self.prompt_dir = prompt_dir
+        if prompt_dir is None:
+            # Calculate correct path relative to this file
+            self.prompts_dir = Path(__file__).parent.parent / "prompts"
+        else:
+            self.prompts_dir = Path(prompt_dir)
+        
+        # Create directory if it doesn't exist
+        if not self.prompts_dir.exists():
+            self.prompts_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"Created prompts directory: {self.prompts_dir}")
+        else:
+            logger.info(f"Prompts directory found: {self.prompts_dir}")
+        
         self.prompts = {}
         self.supported_models = {
             "gpt-4.1": "gpt-4.1-2025-04-14",
@@ -55,22 +68,20 @@ class PromptLoader:
         """
         Load all JSON prompt files from the prompt directory.
         """
-        if not os.path.isdir(self.prompt_dir):
-            logger.error(f"Prompt directory not found: {self.prompt_dir}")
+        if not self.prompts_dir.is_dir():
+            logger.error(f"Prompt directory not found: {self.prompts_dir}")
             return
 
-        for file_name in os.listdir(self.prompt_dir):
-            if file_name.endswith(".json"):
-                file_path = os.path.join(self.prompt_dir, file_name)
-                try:
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        content = json.load(f)
-                        self.prompts[file_name] = content
-                        logger.info(f"Loaded prompts from {file_name}")
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse JSON in {file_name}: {e}")
-                except Exception as e:
-                    logger.error(f"Error loading prompt file {file_name}: {e}")
+        for file_path in self.prompts_dir.glob("*.json"):
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = json.load(f)
+                    self.prompts[file_path.name] = content
+                    logger.info(f"Loaded prompts from {file_path.name}")
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse JSON in {file_path.name}: {e}")
+            except Exception as e:
+                logger.error(f"Error loading prompt file {file_path.name}: {e}")
 
     def get_prompt(self, model_id: str, prompt_name: str) -> Optional[str]:
         """
@@ -94,6 +105,16 @@ class PromptLoader:
 
         logger.warning(f"Prompt '{prompt_name}' not found for model {model_id}")
         return None
+    
+    def load_prompt(self, prompt_name: str) -> str:
+        """Load a prompt from the prompts directory"""
+        prompt_path = self.prompts_dir / f"{prompt_name}.txt"
+        if not prompt_path.exists():
+            logger.warning(f"Prompt not found: {prompt_path}")
+            return ""
+        
+        with open(prompt_path, 'r', encoding='utf-8') as f:
+            return f.read()
 
     def list_available_prompts(self) -> Dict[str, Any]:
         """

@@ -234,24 +234,24 @@ class SecureAIAnalyzer:
             logger.error(f"LLM service analysis failed: {e}")
             return self._get_empty_result()
     
-    def analyze_with_gpt(self, text: str) -> Dict[str, Any]:
+    async def analyze_with_gpt(self, text: str) -> Dict[str, Any]:
         """Analysis using OpenAI GPT"""
         if self.use_new_service:
             try:
-                import asyncio
-                return asyncio.run(self.analyze_with_llm_service(text, provider="openai"))
+                result = await self.analyze_with_llm_service(text, provider="openai")
+                return result
             except Exception as e:
                 logger.warning(f"New LLM service failed: {e}")
         
         logger.warning("Using legacy GPT client")
         return self._get_empty_result()
     
-    def analyze_with_claude(self, text: str) -> Dict[str, Any]:
+    async def analyze_with_claude(self, text: str) -> Dict[str, Any]:
         """Analysis using Anthropic Claude"""
         if self.use_new_service:
             try:
-                import asyncio
-                return asyncio.run(self.analyze_with_llm_service(text, provider="claude"))
+                result = await self.analyze_with_llm_service(text, provider="claude")
+                return result
             except Exception as e:
                 logger.warning(f"New LLM service failed: {e}")
         
@@ -352,7 +352,7 @@ def _process_files_with_parsers(files: List[str], base_dir: Optional[str] = None
     return combined_text
 
 
-def tzd_reader(
+async def tzd_reader(
     files: List[str], 
     engine: str = "gpt", 
     base_dir: Optional[str] = None
@@ -383,18 +383,15 @@ def tzd_reader(
         # Select engine
         if engine.lower() == "auto" and analyzer.use_new_service:
             try:
-                import asyncio
-                result = asyncio.run(
-                    analyzer.analyze_with_llm_service(combined_text, provider="claude")
-                )
+                result = await analyzer.analyze_with_llm_service(combined_text, provider="claude")
                 logger.info("Used centralized LLM service (Claude)")
             except Exception as e:
                 logger.warning(f"Auto mode failed, falling back to GPT: {e}")
-                result = analyzer.analyze_with_gpt(combined_text)
+                result = await analyzer.analyze_with_gpt(combined_text)
         elif engine.lower() == "gpt":
-            result = analyzer.analyze_with_gpt(combined_text)
+            result = await analyzer.analyze_with_gpt(combined_text)
         else:  # claude
-            result = analyzer.analyze_with_claude(combined_text)
+            result = await analyzer.analyze_with_claude(combined_text)
         
         # Add summary and metadata
         result['project_summary'] = _build_project_summary(combined_text, result)
@@ -474,7 +471,7 @@ class TZDReaderAgent:
         """
         try:
             # Use the existing tzd_reader function
-            result = tzd_reader(
+            result = await tzd_reader(
                 files=[file_path],
                 engine=self.engine,
                 base_dir=None
