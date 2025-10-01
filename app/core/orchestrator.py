@@ -90,72 +90,101 @@ class OrchestratorService:
     async def _get_agent(self, agent_name: str):
         """
         Lazy loading of agents with proper error handling
+        Agent modules are optional - system works with any available agents
         
         Args:
             agent_name: Name of the agent to load
             
         Returns:
-            Agent instance or fallback function
+            Agent instance or None if not available
         """
+        # Return cached agent if already loaded
         if agent_name in self._agents:
             return self._agents[agent_name]
+        
+        # Check if we already failed to load this agent
+        if agent_name in self._initialized_agents:
+            return None
             
         try:
-            # Import agents based on name
-            if agent_name == 'concrete':
-                import sys
-                sys.path.append('/home/runner/work/concrete-agent/concrete-agent')
-                from agents.concrete_agent import UnifiedConcreteAgent
-                agent = UnifiedConcreteAgent()
-                self._agents[agent_name] = agent
+            # Dynamic agent loading based on name
+            # Each agent is optional - missing agents won't break the system
+            agent = None
+            
+            if agent_name == 'tzd':
+                try:
+                    from agents.tzd_reader.agent import TZDReader
+                    agent = TZDReader()
+                except ImportError as ie:
+                    logger.warning(f"TZD agent not available: {ie}")
+                    
+            elif agent_name == 'concrete':
+                try:
+                    from agents.concrete_agent import UnifiedConcreteAgent
+                    agent = UnifiedConcreteAgent()
+                except ImportError as ie:
+                    logger.warning(f"Concrete agent not available: {ie}")
                 
             elif agent_name == 'material':
-                from agents.materials_agent import MaterialAgent
-                agent = MaterialAgent()
-                self._agents[agent_name] = agent
+                try:
+                    from agents.materials_agent import MaterialAgent
+                    agent = MaterialAgent()
+                except ImportError as ie:
+                    logger.warning(f"Material agent not available: {ie}")
                 
             elif agent_name == 'volume':
-                from agents.concrete_volume_agent import ConcreteVolumeAgent
-                agent = ConcreteVolumeAgent()
-                self._agents[agent_name] = agent
-                
-            elif agent_name == 'tzd':
-                from agents.tzd_reader.agent import TZDReader
-                agent = TZDReader()
-                self._agents[agent_name] = agent
+                try:
+                    from agents.concrete_volume_agent import ConcreteVolumeAgent
+                    agent = ConcreteVolumeAgent()
+                except ImportError as ie:
+                    logger.warning(f"Volume agent not available: {ie}")
                 
             elif agent_name == 'drawing':
-                from agents.drawing_volume_agent import DrawingVolumeAgent
-                agent = DrawingVolumeAgent()
-                self._agents[agent_name] = agent
+                try:
+                    from agents.drawing_volume_agent import DrawingVolumeAgent
+                    agent = DrawingVolumeAgent()
+                except ImportError as ie:
+                    logger.warning(f"Drawing agent not available: {ie}")
                 
             elif agent_name == 'smeta':
-                from agents.smetny_inzenyr.agent import SmetnyInzenyr
-                agent = SmetnyInzenyr()
-                self._agents[agent_name] = agent
+                try:
+                    from agents.smetny_inzenyr.agent import SmetnyInzenyr
+                    agent = SmetnyInzenyr()
+                except ImportError as ie:
+                    logger.warning(f"Smeta agent not available: {ie}")
                 
             elif agent_name == 'tov':
-                from agents.tov_agent import TOVAgent
-                agent = TOVAgent()
-                self._agents[agent_name] = agent
+                try:
+                    from agents.tov_agent import TOVAgent
+                    agent = TOVAgent()
+                except ImportError as ie:
+                    logger.warning(f"TOV agent not available: {ie}")
                 
             elif agent_name == 'diff':
-                from agents.version_diff_agent import VersionDiffAgent
-                agent = VersionDiffAgent()
-                self._agents[agent_name] = agent
-                
+                try:
+                    from agents.version_diff_agent import VersionDiffAgent
+                    agent = VersionDiffAgent()
+                except ImportError as ie:
+                    logger.warning(f"Diff agent not available: {ie}")
             else:
-                logger.warning(f"Unknown agent: {agent_name}")
-                return None
-                
+                logger.warning(f"Unknown agent requested: {agent_name}")
+            
+            # Cache the agent (or None if failed)
+            self._agents[agent_name] = agent
             self._initialized_agents.add(agent_name)
-            logger.info(f"✅ Agent {agent_name} loaded successfully")
+            
+            if agent:
+                logger.info(f"✅ Agent '{agent_name}' loaded successfully")
+            else:
+                logger.info(f"⚠️ Agent '{agent_name}' not available - using fallback")
+            
             return agent
             
         except Exception as e:
-            logger.error(f"Failed to load agent {agent_name}: {e}")
-            # Return fallback function
-            return getattr(self, f'_fallback_{agent_name}_analysis', None)
+            logger.error(f"Unexpected error loading agent {agent_name}: {e}")
+            self._agents[agent_name] = None
+            self._initialized_agents.add(agent_name)
+            return None
 
     async def process_file(self, file_path: str) -> FileAnalysis:
         """
