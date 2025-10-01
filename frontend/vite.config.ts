@@ -14,6 +14,11 @@ export default defineConfig({
       },
     },
   },
+  preview: {
+    host: '0.0.0.0',
+    port: 5173,
+    allowedHosts: ['stav-agent.onrender.com', 'localhost', '127.0.0.1'],
+  },
   build: {
     outDir: 'dist',
     sourcemap: false,
