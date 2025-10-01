@@ -9,6 +9,21 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
+# Global singleton instance
+_prompt_loader_instance = None
+
+def get_prompt_loader() -> "PromptLoader":
+    """
+    Get or create the global PromptLoader singleton instance.
+    
+    Returns:
+        PromptLoader: The singleton instance
+    """
+    global _prompt_loader_instance
+    if _prompt_loader_instance is None:
+        _prompt_loader_instance = PromptLoader()
+    return _prompt_loader_instance
+
 class PromptLoader:
     """
     A utility class for loading and managing prompts for various LLM models.
