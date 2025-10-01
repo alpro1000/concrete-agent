@@ -158,9 +158,14 @@ const ThreePanelUpload: React.FC<ThreePanelUploadProps> = ({ onFilesChange }) =>
             <Paragraph style={{ fontSize: '12px', color: '#8c8c8c', margin: '4px 0' }}>
               {t(`${panelKey}.description`)}
             </Paragraph>
-            <Text type="secondary" style={{ fontSize: '11px' }}>
+            <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginBottom: '4px' }}>
               {t(`${panelKey}.formats`)}
             </Text>
+            {t(`${panelKey}.examples`) && (
+              <Text type="secondary" style={{ fontSize: '10px', fontStyle: 'italic' }}>
+                {t(`${panelKey}.examples`)}
+              </Text>
+            )}
           </div>
 
           <Dragger
