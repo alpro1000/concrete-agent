@@ -19,12 +19,18 @@ logger = logging.getLogger(__name__)
 
 # Интеграция с системами
 try:
-    from agents.tzd_reader.agent import tzd_reader
-    from agents.tzd_reader.security import FileSecurityValidator, SecurityError
+    from app.agents.tzd_reader.agent import tzd_reader
+    from app.agents.tzd_reader.security import FileSecurityValidator, SecurityError
     TZD_AVAILABLE = True
 except ImportError:
-    TZD_AVAILABLE = False
-    logger.warning("TZD Reader not available")
+    # Fallback to old location for backward compatibility
+    try:
+        from agents.tzd_reader.agent import tzd_reader
+        from agents.tzd_reader.security import FileSecurityValidator, SecurityError
+        TZD_AVAILABLE = True
+    except ImportError:
+        TZD_AVAILABLE = False
+        logger.warning("TZD Reader not available")
 
 # ВАЖНО: Роутер должен называться именно 'router' для автоматического обнаружения
 router = APIRouter(

@@ -4,9 +4,11 @@ Enhanced version with consistency validation and parallel execution support
 """
 
 import os
+import sys
 import logging
 import asyncio
 import mimetypes
+import importlib
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
@@ -15,6 +17,94 @@ from app.core.llm_service import LLMService, get_llm_service
 from app.core.prompt_loader import get_prompt_loader
 
 logger = logging.getLogger(__name__)
+
+
+def discover_agents(agents_dir: str = "app/agents") -> Dict[str, Any]:
+    """
+    Dynamically discover and load agents from the agents directory.
+    
+    Each agent must:
+    - Be in a subdirectory of agents_dir
+    - Have an agent.py file
+    - Contain a class that has 'name' and 'supported_types' attributes
+    - Implement an 'analyze' method
+    
+    Args:
+        agents_dir: Path to agents directory (default: "app/agents")
+        
+    Returns:
+        Dictionary mapping agent names to agent instances
+    """
+    discovered_agents = {}
+    agents_path = Path(agents_dir)
+    
+    if not agents_path.exists():
+        logger.warning(f"Agents directory not found: {agents_dir}")
+        return discovered_agents
+    
+    # Add parent directory to Python path if needed
+    parent_dir = str(agents_path.parent.parent)
+    if parent_dir not in sys.path:
+        sys.path.insert(0, parent_dir)
+    
+    logger.info(f"Discovering agents in: {agents_dir}")
+    
+    # Iterate through subdirectories in agents directory
+    for agent_folder in agents_path.iterdir():
+        if not agent_folder.is_dir():
+            continue
+            
+        if agent_folder.name.startswith('_') or agent_folder.name.startswith('.'):
+            continue
+        
+        agent_file = agent_folder / "agent.py"
+        if not agent_file.exists():
+            logger.debug(f"No agent.py found in {agent_folder.name}, skipping")
+            continue
+        
+        try:
+            # Import the agent module
+            module_path = f"{agents_dir.replace('/', '.')}.{agent_folder.name}.agent"
+            logger.debug(f"Attempting to import: {module_path}")
+            
+            agent_module = importlib.import_module(module_path)
+            
+            # Look for agent class in the module
+            agent_class = None
+            for attr_name in dir(agent_module):
+                attr = getattr(agent_module, attr_name)
+                
+                # Check if it's a class with required attributes
+                if (isinstance(attr, type) and 
+                    hasattr(attr, 'name') and 
+                    hasattr(attr, 'supported_types') and
+                    hasattr(attr, 'analyze')):
+                    
+                    # Skip base classes
+                    if attr_name in ['BaseAgent', 'ABC']:
+                        continue
+                    
+                    agent_class = attr
+                    break
+            
+            if agent_class:
+                # Instantiate the agent
+                agent_instance = agent_class()
+                agent_name = getattr(agent_instance, 'name', agent_folder.name)
+                
+                discovered_agents[agent_name] = agent_instance
+                
+                supported = getattr(agent_instance, 'supported_types', [])
+                logger.info(f"✅ Discovered agent: {agent_name} (supports: {supported})")
+            else:
+                logger.warning(f"No valid agent class found in {agent_folder.name}/agent.py")
+                
+        except Exception as e:
+            logger.error(f"Failed to load agent from {agent_folder.name}: {e}")
+            continue
+    
+    logger.info(f"Agent discovery complete: {len(discovered_agents)} agents loaded")
+    return discovered_agents
 
 
 @dataclass
@@ -39,11 +129,47 @@ class OrchestratorService:
         self.llm = llm_service or get_llm_service()
         self.prompt_loader = get_prompt_loader()
         
-        # Agent instances - loaded lazily to avoid circular imports
+        # Agent instances - discovered dynamically
         self._agents = {}
-        self._initialized_agents = set()
+        self._initialized = False
         
         logger.info("OrchestratorService initialized with enhanced features")
+    
+    def _ensure_agents_loaded(self):
+        """Ensure agents are discovered and loaded (lazy loading)"""
+        if not self._initialized:
+            logger.info("Performing agent discovery...")
+            self._agents = discover_agents("app/agents")
+            self._initialized = True
+            
+            if self._agents:
+                logger.info(f"Loaded {len(self._agents)} agent(s): {list(self._agents.keys())}")
+            else:
+                logger.warning("No agents discovered")
+    
+    def get_agent_for_type(self, file_type: str):
+        """
+        Get the appropriate agent for a given file type.
+        
+        Args:
+            file_type: Type of file or document (e.g., "technical_assignment", "pdf")
+            
+        Returns:
+            Agent instance or None if no agent supports this type
+        """
+        self._ensure_agents_loaded()
+        
+        # Find first agent that supports this type
+        for agent_name, agent in self._agents.items():
+            if hasattr(agent, 'supports_type') and agent.supports_type(file_type):
+                logger.info(f"Selected agent '{agent_name}' for type '{file_type}'")
+                return agent
+            elif file_type.lower() in [t.lower() for t in getattr(agent, 'supported_types', [])]:
+                logger.info(f"Selected agent '{agent_name}' for type '{file_type}'")
+                return agent
+        
+        logger.warning(f"No agent found for type '{file_type}'")
+        return None
 
     def detect_file_type(self, file_path: str) -> str:
         """
@@ -77,59 +203,9 @@ class OrchestratorService:
         else:
             return 'general_document'
 
-    async def _get_agent(self, agent_name: str):
-        """
-        Lazy loading of agents with proper error handling
-        Agent modules are optional - system works with any available agents
-        
-        Args:
-            agent_name: Name of the agent to load
-            
-        Returns:
-            Agent instance or None if not available
-        """
-        # Return cached agent if already loaded
-        if agent_name in self._agents:
-            return self._agents[agent_name]
-        
-        # Check if we already failed to load this agent
-        if agent_name in self._initialized_agents:
-            return None
-            
-        try:
-            # Dynamic agent loading based on name
-            # Each agent is optional - missing agents won't break the system
-            agent = None
-            
-            if agent_name == 'tzd':
-                try:
-                    from agents.tzd_reader.agent import TZDReader
-                    agent = TZDReader()
-                except ImportError as ie:
-                    logger.warning(f"TZD agent not available: {ie}")
-            else:
-                logger.warning(f"Unknown agent requested: {agent_name}")
-            
-            # Cache the agent (or None if failed)
-            self._agents[agent_name] = agent
-            self._initialized_agents.add(agent_name)
-            
-            if agent:
-                logger.info(f"✅ Agent '{agent_name}' loaded successfully")
-            else:
-                logger.info(f"⚠️ Agent '{agent_name}' not available - using fallback")
-            
-            return agent
-            
-        except Exception as e:
-            logger.error(f"Unexpected error loading agent {agent_name}: {e}")
-            self._agents[agent_name] = None
-            self._initialized_agents.add(agent_name)
-            return None
-
     async def process_file(self, file_path: str) -> FileAnalysis:
         """
-        Process file using TZD Reader agent
+        Process file using dynamically discovered agents
         
         Args:
             file_path: Path to the file to process
@@ -141,15 +217,17 @@ class OrchestratorService:
             file_type = self.detect_file_type(file_path)
             logger.info(f"Processing {file_path} as {file_type}")
             
-            # Only TZD agent is available
-            tzd_agent = await self._get_agent('tzd')
+            # Get appropriate agent for this file type
+            agent = self.get_agent_for_type(file_type)
             
-            if tzd_agent:
-                result = await self._run_tzd_analysis(tzd_agent, file_path)
-                agent_used = "TZDReader"
+            if agent:
+                # Use agent's analyze method
+                result = await agent.analyze(file_path)
+                agent_used = getattr(agent, 'name', agent.__class__.__name__)
             else:
-                result = await self._fallback_tzd_analysis([file_path])
-                agent_used = "TZDReader (fallback)"
+                # Fallback if no agent available
+                result = await self._fallback_analysis([file_path])
+                agent_used = "fallback"
 
             return FileAnalysis(
                 file_path=file_path,
@@ -230,26 +308,15 @@ class OrchestratorService:
         
         return project_summary
 
-    # Helper methods for running TZD analysis
-    async def _run_tzd_analysis(self, agent, file_path: str) -> Dict[str, Any]:
-        """Run TZD analysis with proper error handling"""
-        try:
-            if hasattr(agent, 'analyze_document'):
-                result = await agent.analyze_document(file_path)
-            elif hasattr(agent, 'analyze'):
-                result = await agent.analyze(file_path)
-            else:
-                result = await self._fallback_tzd_analysis([file_path])
-            return result
-        except Exception as e:
-            logger.error(f"TZD analysis failed: {e}")
-            return {"error": str(e)}
-
     # Fallback analysis method
-    async def _fallback_tzd_analysis(self, files: List[str]) -> Dict[str, Any]:
-        """Fallback TZD analysis using LLM service directly"""
+    async def _fallback_analysis(self, files: List[str]) -> Dict[str, Any]:
+        """Fallback analysis using LLM service directly when no agent is available"""
         try:
-            system_prompt = self.prompt_loader.get_system_prompt("tzd")
+            # Try to get a system prompt (prefer tzd for now, but could be made more generic)
+            try:
+                system_prompt = self.prompt_loader.get_system_prompt("tzd")
+            except:
+                system_prompt = "Analyze this document and extract key information."
             
             if files:
                 with open(files[0], 'r', encoding='utf-8', errors='ignore') as f:
@@ -257,7 +324,7 @@ class OrchestratorService:
                     
                 response = await self.llm.run_prompt(
                     provider="gpt",
-                    prompt=f"Analyze this technical assignment:\n\n{content}",
+                    prompt=f"Analyze this document:\n\n{content}",
                     system_prompt=system_prompt
                 )
                 
@@ -267,7 +334,7 @@ class OrchestratorService:
                     "success": response.get("success", False)
                 }
         except Exception as e:
-            logger.error(f"Fallback TZD analysis failed: {e}")
+            logger.error(f"Fallback analysis failed: {e}")
             
         return {"method": "fallback", "error": "Analysis unavailable"}
 
