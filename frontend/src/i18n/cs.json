@@ -29,7 +29,7 @@
     "upload": "Nahrát soubory"
   },
   "home": {
-    "title": "Analýza stavebních materiálů",
+    "title": "Analýza stavebních projektů﻿",
     "subtitle": "Pokročilá analýza betonu, materiálů a dokumentů",
     "fileUpload": {
       "title": "Nahrát dokumenty",
@@ -47,7 +47,7 @@
       },
       "quantities": {
         "title": "📊 Výkazy výměr / Seznamy prací",
-        "description": "Výkaz-výměr, SuperSprite, Rospotč, strukturované seznamy prací",
+        "description": "Výkaz výměr, ﻿Soupis prací﻿, Rozpočet, strukturované seznamy prací",
         "formats": "Formáty: Excel (XLS, XLSX), XML, XC4, CSV",
         "dragHint": "Přetáhněte Excel/XML soubory sem nebo klikněte pro výběr"
       },
