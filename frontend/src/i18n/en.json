@@ -55,21 +55,24 @@
     "panels": {
       "technical": {
         "title": "📋 Technical Assignments & Documents",
-        "description": "Technical specifications, TZD, project narratives",
-        "formats": "Formats: PDF, DOCX, TXT, any project descriptions",
-        "dragHint": "Drag technical documents here or click to browse"
+        "description": "Technical specifications, TZD (Technical Design Documents), PDFs, project descriptions and narratives",
+        "formats": "Formats: PDF, DOCX, DOC, TXT",
+        "dragHint": "Drag technical documents here or click to browse",
+        "examples": "Examples: Technical specifications, project briefs, TZD documents"
       },
       "quantities": {
         "title": "📊 Bills of Quantities / Work Lists",
-        "description": "Výkaz-výměr, SuperSprite, Rospotč, structured worklists",
+        "description": "Výkaz výměr (Bills of Quantities), Rozpočet (Budget), SuperSprite, Excel spreadsheets, structured work lists",
         "formats": "Formats: Excel (XLS, XLSX), XML, XC4, CSV",
-        "dragHint": "Drag Excel/XML files here or click to browse"
+        "dragHint": "Drag Excel/XML files here or click to browse",
+        "examples": "Examples: BOQ, cost estimates, work schedules, quantity takeoffs"
       },
       "drawings": {
         "title": "📐 Drawings & Visual Documentation",
-        "description": "Engineering drawings, architectural plans, structural models",
-        "formats": "Formats: PDF drawings, DWG, DXF, JPG, PNG, Revit, ArchiCAD",
-        "dragHint": "Drag drawings/images here or click to browse"
+        "description": "Engineering drawings, architectural plans, structural models from ArchiCAD/Revit/AutoCAD",
+        "formats": "Formats: PDF drawings, DWG, DXF, JPG, PNG, images from ArchiCAD, Revit",
+        "dragHint": "Drag drawings/images here or click to browse",
+        "examples": "Examples: Floor plans, sections, elevations, 3D models, BIM exports"
       }
     },
     "materialQuery": {

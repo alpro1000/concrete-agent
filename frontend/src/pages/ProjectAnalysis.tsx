@@ -74,10 +74,10 @@ const ProjectAnalysis: React.FC = () => {
       // Add metadata
       formData.append('ai_engine', 'auto');
       formData.append('language', localStorage.getItem('i18nextLng') || 'en');
+      formData.append('project_name', 'Project Analysis');
 
-      // Make API call - for now, we'll use the TZD endpoint as a starting point
-      // In production, you would create a new combined endpoint
-      const response = await apiClient.post('/api/v1/tzd/analyze', formData, {
+      // Use the new unified analysis endpoint
+      const response = await apiClient.post('/api/v1/analysis/unified', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },

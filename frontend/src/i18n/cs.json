@@ -41,21 +41,24 @@
     "panels": {
       "technical": {
         "title": "📋 Technická zadání a dokumenty",
-        "description": "Technické specifikace, TZD, projektové popisy",
-        "formats": "Formáty: PDF, DOCX, TXT, jakékoli projektové dokumenty",
-        "dragHint": "Přetáhněte technické dokumenty sem nebo klikněte pro výběr"
+        "description": "Technické specifikace, TZD (Technická zadávací dokumentace), PDF, projektové popisy a narrativy",
+        "formats": "Formáty: PDF, DOCX, DOC, TXT",
+        "dragHint": "Přetáhněte technické dokumenty sem nebo klikněte pro výběr",
+        "examples": "Příklady: Technické specifikace, projektové zadání, TZD dokumenty"
       },
       "quantities": {
         "title": "📊 Výkazy výměr / Seznamy prací",
-        "description": "Výkaz výměr, ﻿Soupis prací﻿, Rozpočet, strukturované seznamy prací",
+        "description": "Výkaz výměr, Rozpočet, SuperSprite, Excel tabulky, strukturované seznamy prací",
         "formats": "Formáty: Excel (XLS, XLSX), XML, XC4, CSV",
-        "dragHint": "Přetáhněte Excel/XML soubory sem nebo klikněte pro výběr"
+        "dragHint": "Přetáhněte Excel/XML soubory sem nebo klikněte pro výběr",
+        "examples": "Příklady: Soupisy prací, rozpočty, harmonogramy, výměry"
       },
       "drawings": {
         "title": "📐 Výkresy a vizuální dokumentace",
-        "description": "Inženýrské výkresy, architektonické plány, konstrukční modely",
-        "formats": "Formáty: PDF výkresy, DWG, DXF, JPG, PNG, Revit, ArchiCAD",
-        "dragHint": "Přetáhněte výkresy/obrázky sem nebo klikněte pro výběr"
+        "description": "Inženýrské výkresy, architektonické plány, konstrukční modely z ArchiCAD/Revit/AutoCAD",
+        "formats": "Formáty: PDF výkresy, DWG, DXF, JPG, PNG, obrázky z ArchiCAD, Revit",
+        "dragHint": "Přetáhněte výkresy/obrázky sem nebo klikněte pro výběr",
+        "examples": "Příklady: Půdorysy, řezy, pohledy, 3D modely, BIM exporty"
       }
     },
     "materialQuery": {
