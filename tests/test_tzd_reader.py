@@ -23,7 +23,11 @@ except ImportError:
 
 def create_test_pdf():
     """Create a simple test PDF file"""
-    from fpdf import FPDF
+    try:
+        from fpdf import FPDF
+    except ImportError:
+        pytest.skip("fpdf2 not installed")
+        return b"%PDF-1.4\ntest"  # Minimal PDF
     
     pdf = FPDF()
     pdf.add_page()
