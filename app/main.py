@@ -26,20 +26,10 @@ except ImportError:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    logger.info("Construction Analysis API starting...")
+    logger.info("TZD Reader API starting...")
     
     os.makedirs("uploads", exist_ok=True)
     os.makedirs("logs", exist_ok=True)
-    os.makedirs("outputs", exist_ok=True)
-    os.makedirs("storage", exist_ok=True)
-    
-    try:
-        sys.path.append('/home/runner/work/concrete-agent/concrete-agent')
-        from app.database import init_database
-        await init_database()
-        logger.info("Database initialized")
-    except Exception as e:
-        logger.error(f"Database init error: {e}")
     
     deps = check_dependencies()
     logger.info(f"Dependencies: {deps}")
@@ -52,16 +42,10 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("Server stopping...")
-    try:
-        from app.database import close_database
-        await close_database()
-        logger.info("Database closed")
-    except Exception as e:
-        logger.error(f"Database close error: {e}")
 
 app = FastAPI(
-    title="Construction Analysis API",
-    description="Construction document analysis with database support",
+    title="TZD Reader API",
+    description="Technical Assignment Reader for construction documents",
     version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -87,10 +71,7 @@ def check_dependencies():
     dependencies = {
         "anthropic": False,
         "pdfplumber": False,
-        "docx": False,
-        "openpyxl": False,
-        "sqlalchemy": False,
-        "asyncpg": False
+        "docx": False
     }
     
     for module_name in dependencies.keys():
@@ -143,7 +124,7 @@ else:
     @app.get("/")
     async def root():
         return {
-            "service": "Construction Analysis API",
+            "service": "TZD Reader API",
             "version": "2.0.0",
             "status": "running",
             "endpoints": {
@@ -166,18 +147,8 @@ async def status():
     try:
         deps = check_dependencies()
         
-        try:
-            from app.database import AsyncSessionLocal
-            from sqlalchemy import text
-            async with AsyncSessionLocal() as session:
-                await session.execute(text("SELECT 1"))
-            db_status = "connected"
-        except:
-            db_status = "disconnected"
-        
         return {
             "api_status": "operational",
-            "database": db_status,
             "dependencies": deps
         }
     except Exception as e:
