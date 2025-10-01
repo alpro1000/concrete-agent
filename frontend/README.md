@@ -47,7 +47,20 @@ The built files will be in the `dist/` directory.
 
 ### Backend API
 
-By default, the frontend connects to the backend at `http://localhost:8000`. To change this, update `baseURL` in `src/api/client.ts`.
+The frontend uses environment variables to configure the backend API URL:
+
+- **Development**: Uses `.env.development` → `http://localhost:8000`
+- **Production**: Uses `.env.production` → `https://concrete-agent.onrender.com`
+
+#### Environment Variables
+
+Create a `.env.local` file (ignored by git) to override the default configuration:
+
+```bash
+VITE_API_URL=http://your-custom-api-url.com
+```
+
+The API client (`src/api/client.ts`) automatically uses `import.meta.env.VITE_API_URL` with a fallback to `http://localhost:8000`.
 
 ## 🌐 Internationalization
 
