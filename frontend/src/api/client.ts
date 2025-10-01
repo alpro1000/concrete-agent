@@ -15,9 +15,17 @@ import type {
 class ApiClient {
   private client: AxiosInstance;
 
-  constructor(baseURL: string = import.meta.env.VITE_API_URL || 'http://localhost:8000') {
+  constructor(baseURL?: string) {
+    // Use environment variable with proper fallback logic
+    const API_BASE_URL = 
+      baseURL || 
+      import.meta.env.VITE_API_BASE_URL || 
+      (import.meta.env.PROD 
+        ? 'https://concrete-agent.onrender.com' 
+        : 'http://localhost:8000');
+    
     this.client = axios.create({
-      baseURL,
+      baseURL: API_BASE_URL,
       timeout: 300000, // 5 minutes for long-running analysis
       headers: {
         'Content-Type': 'multipart/form-data',

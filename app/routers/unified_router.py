@@ -5,7 +5,7 @@ This router uses the orchestrator to dynamically route files to appropriate agen
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import JSONResponse
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import tempfile
 import os
 import logging
@@ -13,38 +13,33 @@ from pathlib import Path
 from datetime import datetime
 
 from app.core.orchestrator import get_orchestrator_service
+from app.core.prompt_loader import get_prompt_loader
 
 logger = logging.getLogger(__name__)
 
 # File validation configuration
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 
-ALLOWED_EXTENSIONS = {
-    'technical': {'.pdf', '.docx', '.doc', '.txt'},
-    'quantities': {'.xlsx', '.xls', '.xml', '.xc4'},
-    'drawings': {'.pdf', '.dwg', '.dxf', '.png', '.jpg', '.jpeg'}
-}
+# Unified allowed extensions across all categories
+ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.txt', '.xlsx', '.xls', '.xml', '.xc4', '.dwg', '.dxf', '.png', '.jpg', '.jpeg'}
 
-def validate_file(file: UploadFile, category: str) -> tuple[bool, Optional[str]]:
+def validate_file(file: UploadFile) -> tuple[bool, Optional[str], str]:
     """
-    Validate file extension and size.
+    Validate file extension and return file type.
     
     Returns:
-        tuple: (is_valid, error_message)
+        tuple: (is_valid, error_message, file_type)
     """
     # Get file extension
     file_ext = Path(file.filename).suffix.lower()
     
-    # Check if extension is allowed for this category
-    allowed = ALLOWED_EXTENSIONS.get(category, set())
-    if file_ext not in allowed:
-        error = f"File '{file.filename}' has invalid extension '{file_ext}'. Allowed for {category}: {', '.join(sorted(allowed))}"
-        logger.warning(f"Upload rejected: {error}")
-        return False, error
+    # Check if extension is allowed
+    if file_ext not in ALLOWED_EXTENSIONS:
+        error = f"Invalid extension '{file_ext}'. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
+        logger.warning(f"Upload rejected: {error} for file '{file.filename}'")
+        return False, error, file_ext.lstrip('.')
     
-    # Check file size (we need to read and check content length)
-    # Note: file.size might not be available, so we check during read
-    return True, None
+    return True, None, file_ext.lstrip('.')
 
 # Router must be named 'router' for auto-discovery
 router = APIRouter(
@@ -71,95 +66,101 @@ async def unified_analysis(
     2. Work Lists (výkaz výměr, Rozpočet, Excel, XML, XC4)
     3. Drawings (PDF, DWG, DXF, ArchiCAD/Revit images)
     
-    **Features:**
-    - Dynamic agent discovery and routing
-    - Multilingual support (Czech, Russian, English)
-    - Automatic file type detection
-    - Parallel processing of multiple file types
+    **Returns JSON with structure:**
+    ```json
+    {
+      "status": "success" | "error",
+      "message": "Optional error description",
+      "files": [
+        { "name": "file.pdf", "type": "pdf", "success": true, "error": null },
+        { "name": "bad.exe", "type": "exe", "success": false, "error": "Invalid extension" }
+      ],
+      "summary": { "total": 2, "successful": 1, "failed": 1 }
+    }
+    ```
     
-    **Returns:**
-    - Combined analysis results from all agents
-    - Separate results for each file category
-    - Export-ready JSON format
+    **HTTP Status Codes:**
+    - 200: All files processed successfully
+    - 207: Partial success (some files failed)
+    - 400: Validation error (bad request)
+    - 500: Server error
     """
+    
+    # Initialize prompt loader (ensures it's available)
+    _ = get_prompt_loader()
     
     orchestrator = get_orchestrator_service()
     
     # Collect all files
-    all_files = []
-    file_categories = {
-        'technical': technical_files or [],
-        'quantities': quantities_files or [],
-        'drawings': drawings_files or []
-    }
+    all_files: List[tuple[UploadFile, str]] = []  # (file, category)
     
-    # Count files
-    total_files = sum(len(files) for files in file_categories.values())
+    if technical_files:
+        all_files.extend([(f, 'technical') for f in technical_files])
+    if quantities_files:
+        all_files.extend([(f, 'quantities') for f in quantities_files])
+    if drawings_files:
+        all_files.extend([(f, 'drawings') for f in drawings_files])
     
-    if total_files == 0:
-        raise HTTPException(
+    if not all_files:
+        return JSONResponse(
             status_code=400,
-            detail="At least one file is required from any upload panel"
+            content={
+                "status": "error",
+                "message": "At least one file is required from any upload panel",
+                "files": [],
+                "summary": {"total": 0, "successful": 0, "failed": 0}
+            }
         )
     
-    logger.info(f"Unified analysis started: {total_files} files total")
-    logger.info(f"  - Technical: {len(file_categories['technical'])}")
-    logger.info(f"  - Quantities: {len(file_categories['quantities'])}")
-    logger.info(f"  - Drawings: {len(file_categories['drawings'])}")
+    logger.info(f"Unified analysis started: {len(all_files)} files total")
     
-    results = {
-        'success': True,
-        'timestamp': datetime.utcnow().isoformat(),
-        'project_name': project_name or 'Unified Analysis',
-        'language': language,
-        'file_summary': {
-            'technical_count': len(file_categories['technical']),
-            'quantities_count': len(file_categories['quantities']),
-            'drawings_count': len(file_categories['drawings']),
-            'total_count': total_files
-        },
-        'technical_summary': None,
-        'quantities_summary': None,
-        'drawings_summary': None,
-        'combined_results': None,
-        'error_message': None
-    }
-    
+    # Response structure
+    file_results = []
     temp_files = []
+    successful_count = 0
+    failed_count = 0
     
     try:
-        # Process each category
-        for category, files in file_categories.items():
-            if not files:
-                continue
+        # Process each file
+        for upload_file, category in all_files:
+            file_result = {
+                "name": upload_file.filename,
+                "type": None,
+                "category": category,
+                "success": False,
+                "error": None,
+                "result": None
+            }
             
-            category_results = []
-            
-            for upload_file in files:
-                # Validate file before processing
-                is_valid, error_msg = validate_file(upload_file, category)
+            try:
+                # Validate file
+                is_valid, error_msg, file_type = validate_file(upload_file)
+                file_result["type"] = file_type
+                
                 if not is_valid:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=error_msg
-                    )
+                    file_result["error"] = error_msg
+                    failed_count += 1
+                    file_results.append(file_result)
+                    continue
                 
                 # Read file content and check size
                 content = await upload_file.read()
                 if len(content) > MAX_FILE_SIZE:
-                    error = f"File '{upload_file.filename}' exceeds maximum size of {MAX_FILE_SIZE / 1024 / 1024:.0f}MB (actual: {len(content) / 1024 / 1024:.2f}MB)"
-                    logger.warning(f"Upload rejected: {error}")
-                    raise HTTPException(
-                        status_code=400,
-                        detail=error
-                    )
+                    size_mb = len(content) / 1024 / 1024
+                    max_mb = MAX_FILE_SIZE / 1024 / 1024
+                    error = f"File exceeds maximum size of {max_mb:.0f}MB (actual: {size_mb:.2f}MB)"
+                    file_result["error"] = error
+                    failed_count += 1
+                    file_results.append(file_result)
+                    logger.warning(f"Upload rejected: {error} for '{upload_file.filename}'")
+                    continue
                 
-                # Save file temporarily
+                # Save file temporarily to /tmp
                 suffix = Path(upload_file.filename).suffix
                 with tempfile.NamedTemporaryFile(
                     delete=False, 
                     suffix=suffix,
-                    dir=tempfile.gettempdir()
+                    dir='/tmp'
                 ) as tmp_file:
                     tmp_file.write(content)
                     tmp_path = tmp_file.name
@@ -168,58 +169,83 @@ async def unified_analysis(
                 # Process with orchestrator (dynamic agent selection)
                 analysis = await orchestrator.process_file(tmp_path)
                 
-                category_results.append({
-                    'filename': upload_file.filename,
-                    'detected_type': analysis.detected_type,
-                    'agent_used': analysis.agent_used,
-                    'success': analysis.success,
-                    'result': analysis.result if analysis.success else None,
-                    'error': analysis.error
-                })
+                if analysis.success:
+                    file_result["success"] = True
+                    file_result["result"] = {
+                        "detected_type": analysis.detected_type,
+                        "agent_used": analysis.agent_used,
+                        "analysis": analysis.result
+                    }
+                    successful_count += 1
+                else:
+                    file_result["error"] = analysis.error or "Processing failed"
+                    failed_count += 1
+                
+            except Exception as e:
+                logger.error(f"Error processing file {upload_file.filename}: {e}")
+                file_result["error"] = str(e)
+                failed_count += 1
             
-            # Store category results
-            if category == 'technical':
-                results['technical_summary'] = category_results
-            elif category == 'quantities':
-                results['quantities_summary'] = category_results
-            elif category == 'drawings':
-                results['drawings_summary'] = category_results
+            file_results.append(file_result)
         
-        # Create combined results
-        results['combined_results'] = {
-            'technical': results['technical_summary'],
-            'quantities': results['quantities_summary'],
-            'drawings': results['drawings_summary'],
-            'project_summary': f"Analysis completed successfully for {total_files} files",
-            'agents_used': list(set([
-                item['agent_used'] 
-                for category_results in [
-                    results['technical_summary'],
-                    results['quantities_summary'],
-                    results['drawings_summary']
-                ]
-                if category_results
-                for item in category_results
-            ]))
+        # Determine status and HTTP code
+        total = len(all_files)
+        
+        if failed_count == 0:
+            status = "success"
+            status_code = 200
+            message = f"All {total} file(s) processed successfully"
+        elif successful_count == 0:
+            status = "error"
+            status_code = 400
+            message = f"All {total} file(s) failed to process"
+        else:
+            status = "success"
+            status_code = 207  # Multi-Status (partial success)
+            message = f"Partial success: {successful_count} succeeded, {failed_count} failed"
+        
+        response_data = {
+            "status": status,
+            "message": message,
+            "files": file_results,
+            "summary": {
+                "total": total,
+                "successful": successful_count,
+                "failed": failed_count
+            },
+            "project_name": project_name or "Unified Analysis",
+            "language": language,
+            "timestamp": datetime.utcnow().isoformat()
         }
         
-        logger.info(f"Unified analysis completed successfully")
+        logger.info(f"Unified analysis completed: {message}")
+        return JSONResponse(status_code=status_code, content=response_data)
         
     except Exception as e:
         logger.error(f"Unified analysis failed: {e}")
-        results['success'] = False
-        results['error_message'] = str(e)
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "message": f"Server error: {str(e)}",
+                "files": file_results,
+                "summary": {
+                    "total": len(all_files),
+                    "successful": successful_count,
+                    "failed": failed_count
+                }
+            }
+        )
     
     finally:
-        # Cleanup temporary files
+        # Clean up temporary files from /tmp
         for tmp_path in temp_files:
             try:
-                os.unlink(tmp_path)
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+                    logger.debug(f"Cleaned up temp file: {tmp_path}")
             except Exception as e:
                 logger.warning(f"Failed to delete temp file {tmp_path}: {e}")
-    
-    return JSONResponse(content=results)
 
 
 @router.get("/health")

@@ -2,34 +2,35 @@ import React, { useState } from 'react';
 import {
   Typography,
   Button,
-  Space,
   message,
-  Card,
   Spin,
-  Divider,
-  Tabs
 } from 'antd';
-import {
-  CheckCircleOutlined,
-  FileTextOutlined,
-  FileExcelOutlined,
-  FilePdfOutlined,
-  FileWordOutlined
-} from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import ThreePanelUpload from '../components/ThreePanelUpload';
+import ResultsPanel from '../components/ResultsPanel';
 import apiClient from '../api/client';
 
-const { Title, Paragraph, Text } = Typography;
+const { Title, Paragraph } = Typography;
 
 interface AnalysisResult {
-  success: boolean;
-  project_summary?: string;
-  technical_summary?: any;
-  quantities_summary?: any;
-  drawings_summary?: any;
-  combined_results?: any;
-  error_message?: string;
+  status: 'success' | 'error';
+  message?: string;
+  files: Array<{
+    name: string;
+    type: string;
+    category?: string;
+    success: boolean;
+    error: string | null;
+    result?: any;
+  }>;
+  summary: {
+    total: number;
+    successful: number;
+    failed: number;
+  };
+  project_name?: string;
+  language?: string;
+  timestamp?: string;
 }
 
 const ProjectAnalysis: React.FC = () => {
@@ -84,178 +85,37 @@ const ProjectAnalysis: React.FC = () => {
         timeout: 300000, // 5 minutes
       });
 
-      if (response.data.success) {
-        setAnalysisResult(response.data);
-        message.success(t('common.success'));
-      } else {
-        message.error(response.data.error_message || t('errors.analysisFailed'));
+      // Handle response with new format
+      const data = response.data;
+      setAnalysisResult(data);
+      
+      // Show appropriate message based on status code
+      if (response.status === 200) {
+        message.success(data.message || t('common.success'));
+      } else if (response.status === 207) {
+        message.warning(data.message || 'Partial success');
+      } else if (data.status === 'error') {
+        message.error(data.message || t('errors.analysisFailed'));
       }
     } catch (error: any) {
       console.error('Analysis error:', error);
-      message.error(error.response?.data?.detail || t('errors.networkError'));
+      
+      // Handle different error types
+      if (error.response) {
+        const { status, data } = error.response;
+        if (status === 400) {
+          message.error(data?.message || data?.detail || t('errors.validationError'));
+        } else if (status === 500) {
+          message.error(data?.message || t('errors.serverError'));
+        } else {
+          message.error(data?.message || t('errors.networkError'));
+        }
+      } else {
+        message.error(t('errors.networkError') || 'Connection failed');
+      }
     } finally {
       setLoading(false);
     }
-  };
-
-  const exportResults = (format: 'json' | 'pdf' | 'word' | 'excel') => {
-    if (!analysisResult) return;
-
-    try {
-      if (format === 'json') {
-        const dataStr = JSON.stringify(analysisResult, null, 2);
-        const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
-        const exportFileDefaultName = `analysis_${new Date().toISOString()}.json`;
-        
-        const linkElement = document.createElement('a');
-        linkElement.setAttribute('href', dataUri);
-        linkElement.setAttribute('download', exportFileDefaultName);
-        linkElement.click();
-        
-        message.success(t('analysis.export.json'));
-      } else {
-        message.info(`${format.toUpperCase()} export coming soon!`);
-      }
-    } catch (error) {
-      message.error(t('errors.unknownError'));
-    }
-  };
-
-  const renderResults = () => {
-    if (!analysisResult) return null;
-
-    return (
-      <Card style={{ marginTop: '24px' }}>
-        <Space direction="vertical" size="large" style={{ width: '100%' }}>
-          <div style={{ textAlign: 'center' }}>
-            <CheckCircleOutlined style={{ fontSize: '48px', color: '#52c41a' }} />
-            <Title level={3} style={{ marginTop: '16px' }}>
-              {t('analysis.title')}
-            </Title>
-          </div>
-
-          <Divider />
-
-          <Tabs
-            defaultActiveKey="summary"
-            items={[
-              {
-                key: 'summary',
-                label: t('analysis.comparison.summary'),
-                children: (
-                  <Card>
-                    <Paragraph>
-                      {analysisResult.project_summary || 'Analysis completed successfully'}
-                    </Paragraph>
-                    {analysisResult.combined_results && (
-                      <pre style={{ 
-                        background: '#f5f5f5', 
-                        padding: '16px', 
-                        borderRadius: '4px',
-                        overflow: 'auto'
-                      }}>
-                        {JSON.stringify(analysisResult.combined_results, null, 2)}
-                      </pre>
-                    )}
-                  </Card>
-                ),
-              },
-              {
-                key: 'technical',
-                label: t('home.panels.technical.title'),
-                children: (
-                  <Card>
-                    <Text>Technical files analyzed: {technicalFiles.length}</Text>
-                    {analysisResult.technical_summary && (
-                      <pre style={{ 
-                        background: '#f5f5f5', 
-                        padding: '16px', 
-                        borderRadius: '4px',
-                        marginTop: '16px',
-                        overflow: 'auto'
-                      }}>
-                        {JSON.stringify(analysisResult.technical_summary, null, 2)}
-                      </pre>
-                    )}
-                  </Card>
-                ),
-              },
-              {
-                key: 'quantities',
-                label: t('home.panels.quantities.title'),
-                children: (
-                  <Card>
-                    <Text>Quantity files analyzed: {quantitiesFiles.length}</Text>
-                    {analysisResult.quantities_summary && (
-                      <pre style={{ 
-                        background: '#f5f5f5', 
-                        padding: '16px', 
-                        borderRadius: '4px',
-                        marginTop: '16px',
-                        overflow: 'auto'
-                      }}>
-                        {JSON.stringify(analysisResult.quantities_summary, null, 2)}
-                      </pre>
-                    )}
-                  </Card>
-                ),
-              },
-              {
-                key: 'drawings',
-                label: t('home.panels.drawings.title'),
-                children: (
-                  <Card>
-                    <Text>Drawing files analyzed: {drawingsFiles.length}</Text>
-                    {analysisResult.drawings_summary && (
-                      <pre style={{ 
-                        background: '#f5f5f5', 
-                        padding: '16px', 
-                        borderRadius: '4px',
-                        marginTop: '16px',
-                        overflow: 'auto'
-                      }}>
-                        {JSON.stringify(analysisResult.drawings_summary, null, 2)}
-                      </pre>
-                    )}
-                  </Card>
-                ),
-              },
-            ]}
-          />
-
-          <Divider />
-
-          <div style={{ textAlign: 'center' }}>
-            <Space size="middle" wrap>
-              <Button
-                icon={<FileTextOutlined />}
-                onClick={() => exportResults('json')}
-              >
-                {t('analysis.export.json')}
-              </Button>
-              <Button
-                icon={<FilePdfOutlined />}
-                onClick={() => exportResults('pdf')}
-              >
-                {t('analysis.export.pdf')}
-              </Button>
-              <Button
-                icon={<FileWordOutlined />}
-                onClick={() => exportResults('word')}
-              >
-                {t('analysis.export.word')}
-              </Button>
-              <Button
-                icon={<FileExcelOutlined />}
-                onClick={() => exportResults('excel')}
-              >
-                {t('analysis.export.excel')}
-              </Button>
-            </Space>
-          </div>
-        </Space>
-      </Card>
-    );
   };
 
   return (
@@ -291,7 +151,7 @@ const ProjectAnalysis: React.FC = () => {
         </div>
       )}
 
-      {renderResults()}
+      <ResultsPanel results={analysisResult} loading={loading} />
     </div>
   );
 };
