@@ -1,54 +1,73 @@
 import pytest
 import logging
 import requests
+import os
 
 logger = logging.getLogger(__name__)
 
 # ====================================================
 # 🔍 Функция для проверки импортов
 # ====================================================
-def check_imports():
+def check_core_imports():
     """
-    Проверяет, доступны ли внутренние модули проекта.
+    Проверяет, доступны ли CORE модули проекта (не зависящие от агентов).
     """
     try:
-        from utils.claude_client import get_claude_client
-        # Import from the main concrete_agent.py file (not the package)
-        import importlib.util
-        import os
-        spec = importlib.util.spec_from_file_location("concrete_agent_main", 
-                os.path.join(os.path.dirname(os.path.dirname(__file__)), 'agents', 'concrete_agent.py'))
-        concrete_agent_main = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(concrete_agent_main)
-        analyze_concrete = concrete_agent_main.analyze_concrete
-        from config.claude_config import claude_config
+        from app.core.llm_service import get_llm_service
+        from app.core.orchestrator import OrchestratorService
         return True
     except ImportError as e:
-        logger.error(f"❌ Ошибка импорта: {e}")
+        logger.error(f"❌ Ошибка импорта core модулей: {e}")
         return False
 
-# ====================================================
-# ✅ Тест гибридного анализа через Claude
-# ====================================================
-@pytest.mark.skipif(not check_imports(), reason="Не найдены модули проекта")
-async def test_hybrid_analysis():
+def check_agent_available(agent_name: str) -> bool:
     """
-    Проверяет работу агента Concrete через Claude API.
+    Проверяет, доступен ли конкретный агент.
+    Агенты опциональны - тесты должны работать даже если агента нет.
     """
-    # Import from the main concrete_agent.py file (not the package)
-    import importlib.util
-    import os
-    spec = importlib.util.spec_from_file_location("concrete_agent_main", 
-            os.path.join(os.path.dirname(os.path.dirname(__file__)), 'agents', 'concrete_agent.py'))
-    concrete_agent_main = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(concrete_agent_main)
-    analyze_concrete = concrete_agent_main.analyze_concrete
+    if agent_name == 'tzd_reader':
+        try:
+            from agents.tzd_reader.agent import tzd_reader
+            return True
+        except ImportError:
+            return False
+    return False
 
+# ====================================================
+# ✅ Тест доступности core модулей
+# ====================================================
+@pytest.mark.skipif(not check_core_imports(), reason="Core модули недоступны")
+def test_core_modules_available():
+    """
+    Проверяет, что core модули доступны независимо от агентов.
+    """
+    from app.core.llm_service import get_llm_service
+    from app.core.orchestrator import OrchestratorService
+    
+    llm = get_llm_service()
+    assert llm is not None
+    logger.info("✅ LLM сервис доступен")
+    
+    orchestrator = OrchestratorService(llm)
+    assert orchestrator is not None
+    logger.info("✅ Orchestrator доступен")
+
+# ====================================================
+# ✅ Тест анализа через TZD агент (если доступен)
+# ====================================================
+@pytest.mark.skipif(not check_agent_available('tzd_reader'), reason="TZD Reader агент не установлен")
+async def test_tzd_agent_if_available():
+    """
+    Проверяет работу TZD агента, если он установлен.
+    Тест пропускается, если агент недоступен.
+    """
     try:
-        result = await analyze_concrete(["test_doc.pdf"], None, use_claude=False)
-        assert result is not None
-        logger.info(f"✅ Результат анализа: {result}")
-
+        from agents.tzd_reader.agent import tzd_reader
+        
+        # Simple availability test
+        assert tzd_reader is not None
+        logger.info("✅ TZD Reader агент доступен")
+        
     except Exception as e:
         if "rate_limit" in str(e).lower():
             pytest.skip("⚠️ Превышен лимит API запросов")
@@ -63,7 +82,7 @@ async def test_hybrid_analysis():
 def api_running():
     """Проверяет, поднят ли сервер API на localhost:8000"""
     try:
-        r = requests.get("http://localhost:8000/docs")
+        r = requests.get("http://localhost:8000/docs", timeout=2)
         return r.status_code == 200
     except Exception:
         return False

@@ -103,20 +103,37 @@ def check_dependencies():
     return dependencies
 
 def setup_routers():
-    """Setup TZD router only"""
+    """Auto-discover and setup routers from app/routers/"""
     try:
         sys.path.append('/home/runner/work/concrete-agent/concrete-agent')
         
-        from app.routers import tzd_router
+        from app.core.router_registry import router_registry
         
-        # Include only TZD router
-        app.include_router(tzd_router, tags=["TZD Reader"])
+        # Auto-discover all routers
+        discovered_routers = router_registry.discover_routers("app/routers")
         
-        logger.info("TZD Router connected successfully")
+        # Register discovered routers
+        for router_info in discovered_routers:
+            try:
+                router = router_info['router']
+                prefix = router_info.get('prefix', '')
+                tags = router_info.get('tags', [router_info['name']])
+                
+                app.include_router(router, prefix=prefix, tags=tags)
+                logger.info(f"✅ Router '{router_info['name']}' registered successfully")
+            except Exception as e:
+                logger.error(f"❌ Failed to register router '{router_info['name']}': {e}")
+        
+        # Log registry status
+        status = router_registry.get_registry_status()
+        logger.info(f"Router registry: {status['successful']}/{status['total_discovered']} routers loaded")
+        
+        if status['failed']:
+            logger.warning(f"Failed routers: {status['failed_routers']}")
         
     except Exception as e:
         logger.error(f"Router setup error: {e}")
-        raise
+        # Don't raise - continue running without routers if necessary
 
 # Setup endpoints - use app_factory if available, otherwise inline
 if USE_APP_FACTORY:

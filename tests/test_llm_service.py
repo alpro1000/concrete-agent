@@ -6,7 +6,7 @@ import pytest
 import os
 import asyncio
 from unittest.mock import Mock, patch, AsyncMock
-from app.core.llm_service import LLMService, LLMProvider, get_llm_service, claude_models, openai_models
+from app.core.llm_service import LLMService, get_llm_service, CLAUDE_MODELS, OPENAI_MODELS
 
 
 class TestLLMService:
@@ -44,10 +44,10 @@ class TestLLMService:
     
     def test_model_mappings(self):
         """Test that model mappings are correctly defined"""
-        assert 'opus' in claude_models
-        assert 'sonnet' in claude_models
-        assert 'gpt5' in openai_models
-        assert 'gpt5-mini' in openai_models
+        assert 'opus' in CLAUDE_MODELS
+        assert 'sonnet' in CLAUDE_MODELS
+        assert 'gpt5' in OPENAI_MODELS
+        assert 'gpt5-mini' in OPENAI_MODELS
         
         # Check that values are proper model names
         assert claude_models['opus'] == 'claude-opus-4-1-20250805'
