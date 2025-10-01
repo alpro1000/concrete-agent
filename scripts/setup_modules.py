@@ -61,12 +61,7 @@ class ConcreteAgentSetup:
         logger.info("🤖 Проверка агентов...")
         
         expected_agents = [
-            ("concrete_agent/agent.py", "ConcreteGradeExtractor"),
-            ("volume_agent/agent.py", "VolumeAnalysisAgent"),
-            ("material_agent/agent.py", "MaterialAnalysisAgent"),
             ("tzd_reader/agent.py", "SecureAIAnalyzer"),
-            ("smetny_inzenyr/agent.py", "SmetnyInzenyr"),
-            ("dwg_agent/agent.py", "DwgAnalysisAgent")
         ]
         
         for agent_path, class_name in expected_agents:
@@ -86,11 +81,6 @@ class ConcreteAgentSetup:
         logger.info("🛣️ Проверка роутеров...")
         
         expected_routers = [
-            "analyze_concrete.py",
-            "analyze_materials.py", 
-            "analyze_volume.py",
-            "version_diff.py",
-            "upload.py",
             "tzd_router.py"
         ]
         
