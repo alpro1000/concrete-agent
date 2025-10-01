@@ -139,7 +139,7 @@ async def analyze_tzd_documents(
         # Анализ с TZD Reader через централизованную систему
         logger.info(f"Starting TZD analysis with {len(file_paths)} files using engine: {ai_engine}")
         
-        result = tzd_reader(
+        result = await tzd_reader(
             files=file_paths,
             engine=ai_engine,
             base_dir=temp_dir
