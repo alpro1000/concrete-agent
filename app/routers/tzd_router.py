@@ -13,6 +13,9 @@ import json
 import logging
 from pathlib import Path
 from datetime import datetime
+from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 # Интеграция с системами
 try:
@@ -22,10 +25,6 @@ try:
 except ImportError:
     TZD_AVAILABLE = False
     logger.warning("TZD Reader not available")
-
-from pydantic import BaseModel, Field
-
-logger = logging.getLogger(__name__)
 
 # ВАЖНО: Роутер должен называться именно 'router' для автоматического обнаружения
 router = APIRouter(
