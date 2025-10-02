@@ -57,10 +57,21 @@ The frontend uses environment variables to configure the backend API URL:
 Create a `.env.local` file (ignored by git) to override the default configuration:
 
 ```bash
-VITE_API_URL=http://your-custom-api-url.com
+VITE_API_BASE_URL=http://your-custom-api-url.com
 ```
 
-The API client (`src/api/client.ts`) automatically uses `import.meta.env.VITE_API_URL` with a fallback to `http://localhost:8000`.
+The API client (`src/api/client.ts`) automatically uses `import.meta.env.VITE_API_BASE_URL` with fallbacks:
+- Production: `https://concrete-agent.onrender.com`
+- Development: `http://localhost:8000`
+
+### Vite Configuration
+
+The `vite.config.ts` is configured for Render deployment:
+
+- **Development Server**: Runs on port `5173`
+- **Preview Server**: Runs on port `4173` (use `npm run preview` after build)
+- **Allowed Hosts**: Configured for `stav-agent.onrender.com` deployment
+- **No Proxy**: Direct API calls to backend using environment variables
 
 ## 🌐 Internationalization
 
