@@ -33,7 +33,7 @@ function App() {
         </Content>
 
         <Footer style={{ textAlign: 'center', backgroundColor: '#f0f2f5' }}>
-          Construction Analysis ©2024 | Built with React + Vite + TypeScript + Ant Design
+          Stav Agent ©2024 | Built with React + Vite + TypeScript + Ant Design
         </Footer>
       </Layout>
     </ConfigProvider>
