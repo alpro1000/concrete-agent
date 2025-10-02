@@ -14,7 +14,7 @@ const Header: React.FC = () => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        backgroundColor: '#111827', // gray-900
+        backgroundColor: '#003333', // dark teal
         color: 'white',
         padding: '12px 24px',
         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
@@ -28,8 +28,8 @@ const Header: React.FC = () => {
         }}
       >
         <img 
-          src="/assets/logo.svg" 
-          alt="Concrete Agent Logo" 
+          src="/assets/stav-logo.svg" 
+          alt="Stav Agent Logo" 
           style={{
             height: '48px',
             width: 'auto',
@@ -42,7 +42,7 @@ const Header: React.FC = () => {
             margin: 0,
           }}
         >
-          Concrete Agent
+          Stav Agent
         </h1>
       </div>
 
