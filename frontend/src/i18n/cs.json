@@ -19,7 +19,8 @@
     "search": "Hledat",
     "filter": "Filtrovat",
     "export": "Exportovat",
-    "import": "Importovat"
+    "import": "Importovat",
+    "noData": "Žádná data"
   },
   "nav": {
     "home": "Domů",

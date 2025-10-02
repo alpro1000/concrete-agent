@@ -19,7 +19,8 @@
     "search": "Search",
     "filter": "Filter",
     "export": "Export",
-    "import": "Import"
+    "import": "Import",
+    "noData": "No data"
   },
   "nav": {
     "home": "Home",
@@ -54,14 +55,14 @@
     },
     "panels": {
       "technical": {
-        "title": "Technical assignment",
+        "title": "Technical Documents",
         "description": "Technical assignment & project descriptions (PDF, DOCX, TXT)",
         "formats": "Formats: PDF, DOCX, DOC, TXT",
         "dragHint": "Drag technical documents here or click to browse",
         "examples": "Examples: Technical specifications, project briefs, TZD documents"
       },
       "quantities": {
-        "title": "Bill of quantities",
+        "title": "Quantities & Budget",
         "description": "Bill of quantities, budget, work list (Excel, XML, XC4)",
         "formats": "Formats: Excel (XLS, XLSX), XML, XC4",
         "dragHint": "Drag Excel/XML files here or click to browse",
