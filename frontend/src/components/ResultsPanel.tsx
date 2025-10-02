@@ -17,11 +17,10 @@ import {
   FilePdfOutlined,
   FileWordOutlined,
   FileExcelOutlined,
-  DownloadOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
-const { Title, Text, Paragraph } = Typography;
+const { Title, Text } = Typography;
 const { TabPane } = Tabs;
 
 interface FileResult {
