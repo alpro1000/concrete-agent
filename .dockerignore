@@ -1,0 +1,69 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pkl
+.pytest_cache/
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# Logs
+logs/
+*.log
+
+# Uploads and temp files
+uploads/
+outputs/
+*.tmp
+
+# Environment
+.env
+.env.*
+*.secrets
+
+# Git
+.git/
+.github/
+.gitignore
+
+# Documentation
+*.md
+ARCHITECTURE*.md
+IMPLEMENTATION*.md
+FINAL*.md
+REFACTORING*.md
+VERIFICATION*.md
+FRONTEND*.md
+BEADS*.md
+QUICK*.md
+TZD*.md
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# System
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Render
+render.yaml
+Procfile
