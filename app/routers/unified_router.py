@@ -4,7 +4,7 @@ This router uses the orchestrator to dynamically route files to appropriate agen
 """
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
-from typing import List
+from typing import List, Optional
 import os
 import tempfile
 import logging
@@ -17,10 +17,29 @@ MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 
 
 @router.post("/unified")
-async def analyze_files(files: List[UploadFile] = File(...)):
+async def analyze_files(
+    technical_files: Optional[List[UploadFile]] = File(None),
+    quantities_files: Optional[List[UploadFile]] = File(None),
+    drawings_files: Optional[List[UploadFile]] = File(None)
+):
     """Unified endpoint for file analysis"""
     
-    logger.info(f"Received {len(files)} files for analysis")
+    # Combine all files into a single list with category tracking
+    all_files = []
+    
+    if technical_files:
+        for file in technical_files:
+            all_files.append((file, "technical"))
+    
+    if quantities_files:
+        for file in quantities_files:
+            all_files.append((file, "quantities"))
+    
+    if drawings_files:
+        for file in drawings_files:
+            all_files.append((file, "drawings"))
+    
+    logger.info(f"Received {len(all_files)} files for analysis (technical: {len(technical_files or [])}, quantities: {len(quantities_files or [])}, drawings: {len(drawings_files or [])})")
     
     results = {
         "status": "success",
@@ -29,15 +48,16 @@ async def analyze_files(files: List[UploadFile] = File(...)):
         "summary": {"total": 0, "successful": 0, "failed": 0}
     }
     
-    if not files:
+    if not all_files:
         raise HTTPException(status_code=400, detail="No files uploaded")
     
-    results["summary"]["total"] = len(files)
+    results["summary"]["total"] = len(all_files)
     
-    for file in files:
+    for file, category in all_files:
         file_result = {
             "name": file.filename,
             "type": os.path.splitext(file.filename)[1].lower(),
+            "category": category,
             "success": False,
             "error": None
         }
