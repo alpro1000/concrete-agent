@@ -11,7 +11,7 @@ import type { Language, LanguageOption } from '../types/api';
 // Available language options with flags
 export const languageOptions: LanguageOption[] = [
   { code: 'cs', name: 'Čeština', flag: '🇨🇿' },
-  { code: 'en', name: 'English', flag: '🇺🇸' },
+  { code: 'en', name: 'English', flag: '🇬🇧' },
   { code: 'ru', name: 'Русский', flag: '🇷🇺' },
 ];
 
