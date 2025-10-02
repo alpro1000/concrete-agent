@@ -105,6 +105,8 @@ const ProjectAnalysis: React.FC = () => {
         const { status, data } = error.response;
         if (status === 400) {
           message.error(data?.message || data?.detail || t('errors.validationError'));
+        } else if (status === 422) {
+          message.error(data?.message || data?.detail || 'Invalid request format. Please check your files and try again.');
         } else if (status === 500) {
           message.error(data?.message || t('errors.serverError'));
         } else {
