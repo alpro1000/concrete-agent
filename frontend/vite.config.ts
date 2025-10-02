@@ -6,18 +6,14 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
-    proxy: {
-      '/api': {
-        target: process.env.VITE_API_URL || 'http://localhost:8000',
-        changeOrigin: true,
-        secure: false,
-      },
-    },
+    allowedHosts: ['stav-agent.onrender.com', 'localhost', '127.0.0.1'],
   },
   preview: {
-    host: '0.0.0.0',
-    port: 5173,
+    port: 4173,
     allowedHosts: ['stav-agent.onrender.com', 'localhost', '127.0.0.1'],
+  },
+  define: {
+    'process.env': {}
   },
   build: {
     outDir: 'dist',
