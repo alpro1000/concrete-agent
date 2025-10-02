@@ -72,6 +72,13 @@ const ProjectAnalysis: React.FC = () => {
         formData.append('drawings_files', file);
       });
 
+      // Log what we're sending for debugging
+      console.log('Sending files:', {
+        technical: technicalFiles.map(f => f.name),
+        quantities: quantitiesFiles.map(f => f.name),
+        drawings: drawingsFiles.map(f => f.name)
+      });
+
       // Use the new unified analysis endpoint
       // Note: Do not manually set Content-Type header - Axios handles it automatically for FormData
       const response = await apiClient.post('/api/v1/analysis/unified', formData, {
@@ -96,16 +103,50 @@ const ProjectAnalysis: React.FC = () => {
       // Handle different error types
       if (error.response) {
         const { status, data } = error.response;
+        
+        // Log full error details for debugging
+        console.error('Error response:', {
+          status,
+          statusText: error.response.statusText,
+          data,
+          headers: error.response.headers
+        });
+        
         if (status === 400) {
           message.error(data?.message || data?.detail || t('errors.validationError'));
         } else if (status === 422) {
-          message.error(data?.message || data?.detail || 'Invalid request format. Please check your files and try again.');
+          // FastAPI returns validation errors in a detail array
+          let errorMessage = 'Invalid request format. Please check your files and try again.';
+          
+          if (data?.detail) {
+            if (Array.isArray(data.detail)) {
+              // Format the validation errors for display
+              const errors = data.detail.map((err: any) => {
+                if (typeof err === 'object' && err.msg) {
+                  return `${err.loc?.join(' > ') || 'Field'}: ${err.msg}`;
+                }
+                return String(err);
+              }).join('; ');
+              errorMessage = `Validation error: ${errors}`;
+              console.error('Validation errors:', data.detail);
+            } else {
+              errorMessage = String(data.detail);
+            }
+          } else if (data?.message) {
+            errorMessage = data.message;
+          }
+          
+          message.error(errorMessage);
         } else if (status === 500) {
           message.error(data?.message || t('errors.serverError'));
         } else {
           message.error(data?.message || t('errors.networkError'));
         }
+      } else if (error.request) {
+        console.error('No response received:', error.request);
+        message.error(t('errors.networkError') || 'No response from server. Please check your connection.');
       } else {
+        console.error('Error setting up request:', error.message);
         message.error(t('errors.networkError') || 'Connection failed');
       }
     } finally {
