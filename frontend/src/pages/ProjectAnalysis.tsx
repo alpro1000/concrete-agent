@@ -72,16 +72,9 @@ const ProjectAnalysis: React.FC = () => {
         formData.append('drawings_files', file);
       });
 
-      // Add metadata
-      formData.append('ai_engine', 'auto');
-      formData.append('language', localStorage.getItem('i18nextLng') || 'en');
-      formData.append('project_name', 'Project Analysis');
-
       // Use the new unified analysis endpoint
+      // Note: Do not manually set Content-Type header - Axios handles it automatically for FormData
       const response = await apiClient.post('/api/v1/analysis/unified', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
         timeout: 300000, // 5 minutes
       });
 
