@@ -29,19 +29,19 @@ const UploadPage: React.FC = () => {
 
     technicalFiles.forEach((file) => {
       if (file.originFileObj) {
-        formData.append('technical_files', file.originFileObj);
+        formData.append('project_documentation', file.originFileObj);
       }
     });
 
     quantitiesFiles.forEach((file) => {
       if (file.originFileObj) {
-        formData.append('quantities_files', file.originFileObj);
+        formData.append('budget_estimate', file.originFileObj);
       }
     });
 
     drawingsFiles.forEach((file) => {
       if (file.originFileObj) {
-        formData.append('drawings_files', file.originFileObj);
+        formData.append('drawings', file.originFileObj);
       }
     });
 
