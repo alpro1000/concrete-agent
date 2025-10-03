@@ -75,6 +75,143 @@ erDiagram
 
 ## 🔧 API Endpoints
 
+### Unified Analysis Upload (multipart/form-data)
+
+#### POST /api/v1/analysis/unified
+
+Upload files for analysis using multipart/form-data format. Supports both new and legacy field names for backward compatibility.
+
+**Field Names:**
+- **technical_files** or **project_documentation**: Technical documents (PDF, DOCX, TXT)
+- **quantities_files** or **budget_estimate**: Budget and quantities (Excel, XML, PDF)
+- **drawings_files** or **drawings**: Drawings and CAD files (PDF, DWG, DXF, images)
+
+**Headers:**
+- `Authorization: Bearer mock_jwt_token_12345` (optional, for user identification)
+
+**Allowed MIME Types:**
+
+| Field Type | Allowed MIME Types |
+|------------|-------------------|
+| technical_files / project_documentation | application/pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document, text/plain |
+| quantities_files / budget_estimate | application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel, application/pdf, application/xml, text/xml |
+| drawings_files / drawings | application/pdf, image/jpeg, image/png, image/gif, image/bmp, application/acad, image/vnd.dwg, application/dwg, application/dxf |
+
+**File Size Limit:** 50 MB per file (configurable via `MAX_FILE_SIZE_MB` environment variable)
+
+**Response Format:**
+```json
+{
+  "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "processing",
+  "files": {
+    "technical_files": [
+      {
+        "filename": "technical_document.pdf",
+        "original_filename": "technical document.pdf",
+        "size": 123456
+      }
+    ],
+    "quantities_files": [
+      {
+        "filename": "budget.xlsx",
+        "original_filename": "budget.xlsx",
+        "size": 234567
+      }
+    ],
+    "drawings_files": [
+      {
+        "filename": "drawing_1.pdf",
+        "original_filename": "drawing 1.pdf",
+        "size": 345678
+      }
+    ]
+  }
+}
+```
+
+**Error Response (400):**
+```json
+{
+  "detail": "Invalid file type 'application/exe' for technical. Allowed: application/pdf, ..."
+}
+```
+
+**Storage:**
+Files are saved to: `storage/{user_id}/uploads/{analysis_id}/`
+- `user_id`: 1 for valid Bearer token, 0 otherwise
+- `analysis_id`: UUID generated for this analysis
+- Filenames are sanitized to prevent security issues
+
+**Examples:**
+
+1. **Using Swagger UI** (http://localhost:8000/docs):
+   - Navigate to POST /api/v1/analysis/unified
+   - Click "Try it out"
+   - Use file upload buttons to select files for each field
+   - Add Authorization header: `Bearer mock_jwt_token_12345`
+   - Click "Execute"
+
+2. **Using curl (single file per field):**
+```bash
+curl -X POST "http://localhost:8000/api/v1/analysis/unified" \
+  -H "Authorization: Bearer mock_jwt_token_12345" \
+  -F "technical_files=@/path/to/technical.pdf" \
+  -F "quantities_files=@/path/to/budget.xlsx" \
+  -F "drawings_files=@/path/to/drawing.pdf"
+```
+
+3. **Using curl (multiple files in one field):**
+```bash
+curl -X POST "http://localhost:8000/api/v1/analysis/unified" \
+  -H "Authorization: Bearer mock_jwt_token_12345" \
+  -F "technical_files=@/path/to/tech1.pdf" \
+  -F "technical_files=@/path/to/tech2.docx" \
+  -F "drawings_files=@/path/to/drawing1.dwg" \
+  -F "drawings_files=@/path/to/drawing2.pdf"
+```
+
+4. **Using curl (legacy field names):**
+```bash
+curl -X POST "http://localhost:8000/api/v1/analysis/unified" \
+  -H "Authorization: Bearer mock_jwt_token_12345" \
+  -F "project_documentation=@/path/to/project.pdf" \
+  -F "budget_estimate=@/path/to/estimate.xlsx" \
+  -F "drawings=@/path/to/plan.pdf"
+```
+
+5. **Using Python requests:**
+```python
+import requests
+
+files = {
+    'technical_files': [
+        ('technical_files', open('technical.pdf', 'rb')),
+        ('technical_files', open('spec.docx', 'rb'))
+    ],
+    'quantities_files': [
+        ('quantities_files', open('budget.xlsx', 'rb'))
+    ],
+    'drawings_files': [
+        ('drawings_files', open('drawing.dwg', 'rb'))
+    ]
+}
+
+headers = {
+    'Authorization': 'Bearer mock_jwt_token_12345'
+}
+
+response = requests.post(
+    'http://localhost:8000/api/v1/analysis/unified',
+    files=files,
+    headers=headers
+)
+
+print(response.json())
+```
+
+---
+
 ### New Database-Powered Endpoints
 
 #### Projects
