@@ -101,3 +101,26 @@ erDiagram
 - `POST /compare/docs` - Document comparison
 - `POST /compare/smeta` - Smeta comparison
 - `POST /upload/files` - Simple file upload
+
+---
+
+## 🌐 Production URLs and CORS
+
+- Frontend (prod): https://stav-agent.onrender.com  
+- Backend (prod): https://concrete-agent.onrender.com
+
+### Frontend env
+Set the backend base URL (Render → frontend service → Environment):
+- Vite: `VITE_API_URL=https://concrete-agent.onrender.com`
+- Next.js: `NEXT_PUBLIC_API_URL=https://concrete-agent.onrender.com`
+
+Frontend must use absolute API URL from env (see `frontend/src/lib/api.ts`).
+
+### Backend CORS
+Set allowed origins (Render → backend service → Environment):
+```
+ALLOWED_ORIGINS=https://stav-agent.onrender.com,http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173
+```
+FastAPI reads `ALLOWED_ORIGINS` and configures `CORSMiddleware`.
+
+Подробнее см. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
