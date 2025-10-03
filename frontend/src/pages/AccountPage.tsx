@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, Tabs, Form, Input, Select, Button, Table, Space, message, Modal, Spin, Empty } from 'antd';
 import { DeleteOutlined, EyeOutlined, DownloadOutlined, CheckCircleOutlined, ClockCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import { api } from '../api/client';
+import { login, getHistory, deleteAnalysis as deleteAnalysisApi, exportResults } from '../lib/api';
 import type { User, Analysis } from '../types';
 import { languageOptions } from '../i18n';
 import './AccountPage.css';
@@ -23,9 +23,9 @@ const AccountPage: React.FC = () => {
 
   const loadUserData = async () => {
     try {
-      const response = await api.login();
-      setUser(response.data);
-      localStorage.setItem('auth_token', response.data.token);
+      const response = await login();
+      setUser(response as User);
+      localStorage.setItem('auth_token', (response as any).token);
     } catch (error) {
       console.error('Failed to load user data:', error);
     }
@@ -34,8 +34,8 @@ const AccountPage: React.FC = () => {
   const loadAnalyses = async () => {
     setAnalysesLoading(true);
     try {
-      const response = await api.getHistory();
-      setAnalyses(response.data);
+      const response = await getHistory();
+      setAnalyses(response as Analysis[]);
     } catch (error) {
       console.error('Failed to load analyses:', error);
     } finally {
@@ -70,7 +70,7 @@ const AccountPage: React.FC = () => {
       okType: 'danger',
       onOk: async () => {
         try {
-          await api.deleteAnalysis(analysisId);
+          await deleteAnalysisApi(analysisId);
           setAnalyses(analyses.filter(a => a.id !== analysisId));
           message.success(t('analyses.deleted'));
         } catch (error) {
@@ -86,9 +86,8 @@ const AccountPage: React.FC = () => {
 
   const handleDownload = async (analysisId: string) => {
     try {
-      const response = await api.exportResults(analysisId, 'pdf');
-      const blob = new Blob([response.data], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
+      const blob = await exportResults(analysisId, 'pdf');
+      const url = URL.createObjectURL(blob as Blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `analysis_${analysisId}.pdf`;
