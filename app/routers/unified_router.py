@@ -8,6 +8,8 @@ from typing import List, Optional
 import os
 import tempfile
 import logging
+import uuid
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/analysis", tags=["unified"])
@@ -15,31 +17,41 @@ router = APIRouter(prefix="/api/v1/analysis", tags=["unified"])
 ALLOWED_EXTENSIONS = {'.pdf', '.docx', '.txt', '.xlsx', '.xls', '.xml', '.xc4', '.dwg', '.dxf', '.png', '.jpg', '.jpeg'}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 
+# Import orchestrator for file processing
+try:
+    from app.core.orchestrator import OrchestratorService
+    orchestrator = OrchestratorService()
+    ORCHESTRATOR_AVAILABLE = True
+    logger.info("Orchestrator service initialized successfully")
+except Exception as e:
+    ORCHESTRATOR_AVAILABLE = False
+    logger.warning(f"Orchestrator not available: {e}")
+
 
 @router.post("/unified")
 async def analyze_files(
-    technical_files: Optional[List[UploadFile]] = File(None),
-    quantities_files: Optional[List[UploadFile]] = File(None),
-    drawings_files: Optional[List[UploadFile]] = File(None)
+    project_documentation: Optional[List[UploadFile]] = File(None),
+    budget_estimate: Optional[List[UploadFile]] = File(None),
+    drawings: Optional[List[UploadFile]] = File(None)
 ):
     """Unified endpoint for file analysis"""
     
     # Combine all files into a single list with category tracking
     all_files = []
     
-    if technical_files:
-        for file in technical_files:
-            all_files.append((file, "technical"))
+    if project_documentation:
+        for file in project_documentation:
+            all_files.append((file, "project_documentation"))
     
-    if quantities_files:
-        for file in quantities_files:
-            all_files.append((file, "quantities"))
+    if budget_estimate:
+        for file in budget_estimate:
+            all_files.append((file, "budget_estimate"))
     
-    if drawings_files:
-        for file in drawings_files:
+    if drawings:
+        for file in drawings:
             all_files.append((file, "drawings"))
     
-    logger.info(f"Received {len(all_files)} files for analysis (technical: {len(technical_files or [])}, quantities: {len(quantities_files or [])}, drawings: {len(drawings_files or [])})")
+    logger.info(f"Received {len(all_files)} files for analysis (project_documentation: {len(project_documentation or [])}, budget_estimate: {len(budget_estimate or [])}, drawings: {len(drawings or [])})")
     
     results = {
         "status": "success",
@@ -88,11 +100,39 @@ async def analyze_files(
                 tmp.write(content)
                 tmp_path = tmp.name
             
-            # TODO: Process file with orchestrator
-            # For now, just mark as success
-            file_result["success"] = True
-            results["summary"]["successful"] += 1
-            logger.info(f"Successfully processed {file.filename}")
+            # Process file with orchestrator
+            if ORCHESTRATOR_AVAILABLE:
+                try:
+                    analysis_result = await orchestrator.process_file(tmp_path)
+                    
+                    if analysis_result.success:
+                        file_result["success"] = True
+                        file_result["result"] = {
+                            "agent_used": analysis_result.agent_used,
+                            "detected_type": analysis_result.detected_type,
+                            "data": analysis_result.result
+                        }
+                        results["summary"]["successful"] += 1
+                        logger.info(f"Successfully processed {file.filename} with agent '{analysis_result.agent_used}'")
+                    else:
+                        file_result["error"] = analysis_result.error or "Processing failed"
+                        results["summary"]["failed"] += 1
+                        logger.warning(f"Processing failed for {file.filename}: {file_result['error']}")
+                        
+                except Exception as e:
+                    file_result["error"] = f"Processing error: {str(e)}"
+                    results["summary"]["failed"] += 1
+                    logger.error(f"Exception processing {file.filename}: {e}")
+            else:
+                # Fallback if orchestrator not available
+                file_result["success"] = True
+                file_result["result"] = {
+                    "agent_used": "none",
+                    "detected_type": category,
+                    "data": {"message": "File uploaded but orchestrator not available"}
+                }
+                results["summary"]["successful"] += 1
+                logger.warning(f"Processed {file.filename} without orchestrator (fallback mode)")
             
             # Cleanup
             try:
