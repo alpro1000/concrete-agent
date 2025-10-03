@@ -26,10 +26,11 @@ except ImportError:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    logger.info("TZD Reader API starting...")
+    logger.info("Stav Agent API starting...")
     
     os.makedirs("uploads", exist_ok=True)
     os.makedirs("logs", exist_ok=True)
+    os.makedirs("storage", exist_ok=True)
     
     deps = check_dependencies()
     logger.info(f"Dependencies: {deps}")
@@ -44,9 +45,9 @@ async def lifespan(app: FastAPI):
     logger.info("Server stopping...")
 
 app = FastAPI(
-    title="TZD Reader API",
-    description="Technical Assignment Reader for construction documents",
-    version="2.0.0",
+    title="Stav Agent API",
+    description="API for intelligent construction document analysis",
+    version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan
@@ -124,8 +125,8 @@ else:
     @app.get("/")
     async def root():
         return {
-            "service": "TZD Reader API",
-            "version": "2.0.0",
+            "service": "Stav Agent API",
+            "version": "1.0.0",
             "status": "running",
             "endpoints": {
                 "docs": "/docs",
