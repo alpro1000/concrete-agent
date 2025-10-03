@@ -1,7 +1,8 @@
-// Unified API base for frontend (Vite or Next.js)
+// Unified API base for Vite (primary) or Next.js (fallback).
+// Важно: НЕ использовать process.env в Vite-сборке, чтобы не ловить TS2591.
 export const API_BASE =
   (typeof import.meta !== "undefined" && (import.meta as any).env?.VITE_API_URL) ||
-  (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_URL) ||
+  (typeof window !== "undefined" && (window as any).__API_BASE__) ||
   "";
 
 // Generic fetch wrapper
