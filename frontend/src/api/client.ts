@@ -36,11 +36,7 @@ export const api = {
   
   // File upload
   uploadFiles: (formData: FormData) => 
-    apiClient.post('/api/v1/analysis/unified', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    }),
+    apiClient.post('/api/v1/analysis/unified', formData),
 };
 
 export default apiClient;
