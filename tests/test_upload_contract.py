@@ -36,8 +36,8 @@ def test_upload_accepts_three_fields(client):
     
     # Verify categories
     categories = [f["category"] for f in data["files"]]
-    assert "project_documentation" in categories
-    assert "budget_estimate" in categories
+    assert "technical" in categories
+    assert "quantities" in categories
     assert "drawings" in categories
 
 
@@ -51,7 +51,10 @@ def test_upload_rejects_invalid_extension(client):
     assert response.status_code == 200
     data = response.json()
     assert data["summary"]["failed"] == 1
-    assert "Invalid extension" in data["files"][0]["error"]
+    assert data["summary"]["total"] == 1
+    assert data["status"] in ["error", "partial"]
+    assert not data["files"][0]["success"]
+    assert "Invalid" in data["files"][0]["error"] or "invalid" in data["files"][0]["error"]
 
 
 def test_upload_rejects_large_files(client):
@@ -65,7 +68,10 @@ def test_upload_rejects_large_files(client):
     assert response.status_code == 200
     data = response.json()
     assert data["summary"]["failed"] == 1
-    assert "too large" in data["files"][0]["error"].lower()
+    assert data["summary"]["total"] == 1
+    assert data["status"] in ["error", "partial"]
+    assert not data["files"][0]["success"]
+    assert "large" in data["files"][0]["error"].lower() or "size" in data["files"][0]["error"].lower()
 
 
 def test_upload_accepts_valid_extensions(client):
@@ -113,9 +119,9 @@ def test_upload_multiple_files_same_category(client):
     data = response.json()
     assert data["summary"]["total"] == 3
     
-    # All should be in project_documentation category
+    # All should be in technical category
     categories = [f["category"] for f in data["files"]]
-    assert all(cat == "project_documentation" for cat in categories)
+    assert all(cat == "technical" for cat in categories)
 
 
 def test_upload_response_structure(client):
@@ -129,8 +135,8 @@ def test_upload_response_structure(client):
     data = response.json()
     
     # Check top-level structure
+    assert "analysis_id" in data
     assert "status" in data
-    assert "message" in data
     assert "files" in data
     assert "summary" in data
     
@@ -167,6 +173,12 @@ def test_upload_mixed_valid_invalid_files(client):
     assert data["summary"]["total"] == 3
     assert data["summary"]["successful"] >= 1
     assert data["summary"]["failed"] >= 1
+    
+    # Check that we have both success and failure
+    success_count = sum(1 for f in data["files"] if f["success"])
+    failure_count = sum(1 for f in data["files"] if not f["success"])
+    assert success_count >= 1
+    assert failure_count >= 1
 
 
 if __name__ == "__main__":

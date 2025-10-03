@@ -143,9 +143,24 @@ async def analyze_files(
     - drawings_files or drawings (List[UploadFile])
     
     Returns:
-        analysis_id: UUID for this analysis
-        status: 'processing'
-        files: Dictionary with technical_files, quantities_files, drawings_files arrays
+        {
+            "analysis_id": "uuid-string",
+            "status": "success" | "error" | "partial" | "processing",
+            "files": [
+                {
+                    "name": "filename.pdf",
+                    "type": "pdf",
+                    "category": "technical" | "quantities" | "drawings",
+                    "success": true,
+                    "error": null
+                }
+            ],
+            "summary": {
+                "total": 2,
+                "successful": 1,
+                "failed": 1
+            }
+        }
     """
     # Get user ID from token (1 for valid token, 0 otherwise)
     user_id = get_user_id_from_token(authorization)
@@ -169,82 +184,101 @@ async def analyze_files(
         f"drawings={len(draw_files or [])}"
     )
     
-    # Validate and save files
+    # Process files with validation - collect results for each file
+    file_results = []
     saved_files = {
         "technical_files": [],
         "quantities_files": [],
         "drawings_files": []
     }
     
-    try:
-        # Validate technical files
-        if tech_files:
-            await validate_files(tech_files, "technical")
-            saved = await save_files(tech_files, user_id, analysis_id, "technical")
-            saved_files["technical_files"] = saved
+    # Helper function to process a category of files
+    async def process_category(files: List[UploadFile], category: str, category_key: str):
+        if not files:
+            return
         
-        # Validate quantities files
-        if quant_files:
-            await validate_files(quant_files, "quantities")
-            saved = await save_files(quant_files, user_id, analysis_id, "quantities")
-            saved_files["quantities_files"] = saved
-        
-        # Validate drawings files
-        if draw_files:
-            await validate_files(draw_files, "drawings")
-            saved = await save_files(draw_files, user_id, analysis_id, "drawings")
-            saved_files["drawings_files"] = saved
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error processing files: {e}")
-        raise HTTPException(
-            status_code=400,
-            detail=f"Error processing files: {str(e)}"
-        )
+        for file in files:
+            try:
+                # Validate single file
+                await validate_files([file], category)
+                # Save single file
+                saved = await save_files([file], user_id, analysis_id, category)
+                saved_files[category_key].extend(saved)
+                
+                # Add success result
+                file_results.append({
+                    "name": file.filename,
+                    "type": file.filename.split('.')[-1] if '.' in file.filename else 'unknown',
+                    "category": category,
+                    "success": True,
+                    "error": None
+                })
+            except HTTPException as e:
+                # Add failure result
+                file_results.append({
+                    "name": file.filename,
+                    "type": file.filename.split('.')[-1] if '.' in file.filename else 'unknown',
+                    "category": category,
+                    "success": False,
+                    "error": e.detail
+                })
+                logger.warning(f"File {file.filename} failed validation: {e.detail}")
+            except Exception as e:
+                # Add failure result
+                file_results.append({
+                    "name": file.filename,
+                    "type": file.filename.split('.')[-1] if '.' in file.filename else 'unknown',
+                    "category": category,
+                    "success": False,
+                    "error": str(e)
+                })
+                logger.error(f"Error processing file {file.filename}: {e}")
+    
+    # Process all categories
+    await process_category(tech_files, "technical", "technical_files")
+    await process_category(quant_files, "quantities", "quantities_files")
+    await process_category(draw_files, "drawings", "drawings_files")
+    
+    # Calculate summary
+    total = len(file_results)
+    successful = sum(1 for f in file_results if f["success"])
+    failed = total - successful
+    
+    # Determine overall status
+    if successful == 0 and failed > 0:
+        status = "error"
+    elif successful > 0 and failed > 0:
+        status = "partial"
+    elif successful > 0 and failed == 0:
+        status = "success"
+    else:
+        status = "processing"
     
     # Schedule background processing with orchestrator using asyncio.create_task
-    # This allows the processing to happen asynchronously after the response is sent
-    asyncio.create_task(
-        process_files_background(
-            user_id,
-            analysis_id,
-            saved_files
+    # Only if we have successfully saved files
+    if any(saved_files.values()):
+        asyncio.create_task(
+            process_files_background(
+                user_id,
+                analysis_id,
+                saved_files
+            )
         )
-    )
     
-    # Return response with simplified file info (without full paths)
+    # Return unified response format
     response = {
         "analysis_id": analysis_id,
-        "status": "processing",
-        "files": {
-            "technical_files": [
-                {
-                    "filename": f["saved_filename"],
-                    "original_filename": f["original_filename"],
-                    "size": f["size"]
-                }
-                for f in saved_files["technical_files"]
-            ],
-            "quantities_files": [
-                {
-                    "filename": f["saved_filename"],
-                    "original_filename": f["original_filename"],
-                    "size": f["size"]
-                }
-                for f in saved_files["quantities_files"]
-            ],
-            "drawings_files": [
-                {
-                    "filename": f["saved_filename"],
-                    "original_filename": f["original_filename"],
-                    "size": f["size"]
-                }
-                for f in saved_files["drawings_files"]
-            ]
+        "status": status,
+        "files": file_results,
+        "summary": {
+            "total": total,
+            "successful": successful,
+            "failed": failed
         }
     }
     
-    logger.info(f"Analysis {analysis_id} created successfully, background processing scheduled")
+    logger.info(
+        f"Analysis {analysis_id} created: "
+        f"status={status}, total={total}, successful={successful}, failed={failed}"
+    )
     return response
