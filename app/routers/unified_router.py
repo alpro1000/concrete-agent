@@ -9,10 +9,13 @@ Supports multipart/form-data with both old and new field names for compatibility
 """
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, Header
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import os
 import logging
+import json
+import asyncio
 from datetime import datetime
+from pathlib import Path
 
 from app.services.validation import validate_files
 from app.services.storage import save_files, create_analysis_id
@@ -49,6 +52,73 @@ def get_user_id_from_token(authorization: Optional[str]) -> int:
         return 1
     
     return 0
+
+
+async def process_files_background(
+    user_id: int,
+    analysis_id: str,
+    saved_files: Dict[str, List[dict]]
+):
+    """
+    Background task to process files with orchestrator and save results
+    
+    Args:
+        user_id: User ID
+        analysis_id: Analysis ID (UUID)
+        saved_files: Dictionary of saved files with their paths
+    """
+    try:
+        logger.info(f"Starting background processing for analysis {analysis_id}")
+        
+        if not ORCHESTRATOR_AVAILABLE:
+            logger.warning(f"Orchestrator not available for analysis {analysis_id}")
+            return
+        
+        # Collect all file paths from saved files
+        file_paths = []
+        for category in ["technical_files", "quantities_files", "drawings_files"]:
+            for file_info in saved_files.get(category, []):
+                if "path" in file_info:
+                    file_paths.append(file_info["path"])
+        
+        if not file_paths:
+            logger.warning(f"No file paths found for analysis {analysis_id}")
+            return
+        
+        logger.info(f"Processing {len(file_paths)} files for analysis {analysis_id}")
+        
+        # Process files with orchestrator
+        results = await orchestrator.run_project(file_paths)
+        
+        # Save results to storage
+        results_dir = Path(os.getenv("STORAGE_BASE", "storage")) / str(user_id) / "results" / analysis_id
+        results_dir.mkdir(parents=True, exist_ok=True)
+        
+        results_file = results_dir / "result.json"
+        with open(results_file, 'w') as f:
+            json.dump(results, f, indent=2)
+        
+        logger.info(f"Successfully saved results for analysis {analysis_id} to {results_file}")
+        
+    except Exception as e:
+        logger.error(f"Error processing files in background for analysis {analysis_id}: {e}")
+        
+        # Save error to results
+        try:
+            error_result = {
+                "error": str(e),
+                "analysis_id": analysis_id,
+                "timestamp": datetime.now().isoformat(),
+                "status": "failed"
+            }
+            results_dir = Path(os.getenv("STORAGE_BASE", "storage")) / str(user_id) / "results" / analysis_id
+            results_dir.mkdir(parents=True, exist_ok=True)
+            
+            with open(results_dir / "result.json", 'w') as f:
+                json.dump(error_result, f, indent=2)
+        except Exception as save_error:
+            logger.error(f"Failed to save error result: {save_error}")
+
 
 
 @router.post("/unified")
@@ -111,40 +181,19 @@ async def analyze_files(
         if tech_files:
             await validate_files(tech_files, "technical")
             saved = await save_files(tech_files, user_id, analysis_id, "technical")
-            saved_files["technical_files"] = [
-                {
-                    "filename": f["saved_filename"],
-                    "original_filename": f["original_filename"],
-                    "size": f["size"]
-                }
-                for f in saved
-            ]
+            saved_files["technical_files"] = saved
         
         # Validate quantities files
         if quant_files:
             await validate_files(quant_files, "quantities")
             saved = await save_files(quant_files, user_id, analysis_id, "quantities")
-            saved_files["quantities_files"] = [
-                {
-                    "filename": f["saved_filename"],
-                    "original_filename": f["original_filename"],
-                    "size": f["size"]
-                }
-                for f in saved
-            ]
+            saved_files["quantities_files"] = saved
         
         # Validate drawings files
         if draw_files:
             await validate_files(draw_files, "drawings")
             saved = await save_files(draw_files, user_id, analysis_id, "drawings")
-            saved_files["drawings_files"] = [
-                {
-                    "filename": f["saved_filename"],
-                    "original_filename": f["original_filename"],
-                    "size": f["size"]
-                }
-                for f in saved
-            ]
+            saved_files["drawings_files"] = saved
         
     except HTTPException:
         raise
@@ -155,12 +204,47 @@ async def analyze_files(
             detail=f"Error processing files: {str(e)}"
         )
     
-    # Return response
+    # Schedule background processing with orchestrator using asyncio.create_task
+    # This allows the processing to happen asynchronously after the response is sent
+    asyncio.create_task(
+        process_files_background(
+            user_id,
+            analysis_id,
+            saved_files
+        )
+    )
+    
+    # Return response with simplified file info (without full paths)
     response = {
         "analysis_id": analysis_id,
         "status": "processing",
-        "files": saved_files
+        "files": {
+            "technical_files": [
+                {
+                    "filename": f["saved_filename"],
+                    "original_filename": f["original_filename"],
+                    "size": f["size"]
+                }
+                for f in saved_files["technical_files"]
+            ],
+            "quantities_files": [
+                {
+                    "filename": f["saved_filename"],
+                    "original_filename": f["original_filename"],
+                    "size": f["size"]
+                }
+                for f in saved_files["quantities_files"]
+            ],
+            "drawings_files": [
+                {
+                    "filename": f["saved_filename"],
+                    "original_filename": f["original_filename"],
+                    "size": f["size"]
+                }
+                for f in saved_files["drawings_files"]
+            ]
+        }
     }
     
-    logger.info(f"Analysis {analysis_id} created successfully")
+    logger.info(f"Analysis {analysis_id} created successfully, background processing scheduled")
     return response
