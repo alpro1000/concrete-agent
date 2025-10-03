@@ -11,3 +11,7 @@ jobs:
     - uses: actions/checkout@v4
     - name: Create analysis PR
       # Автоматическое создание PR для анализа
+      run: |
+        echo "⚠️ Qodo analysis workflow is not yet configured"
+        echo "This is a placeholder workflow that will be configured later"
+        echo "Workflow completed successfully without errors"
