@@ -4,13 +4,6 @@
 [![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-D71F00.svg?style=for-the-badge&logo=SQLAlchemy&logoColor=white)](https://www.sqlalchemy.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192.svg?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 
-> **📋 Latest Audit Report Available!**  
-> Comprehensive audit completed on 2025-10-03. See [COMPREHENSIVE_AUDIT_REPORT.md](COMPREHENSIVE_AUDIT_REPORT.md) for detailed findings and [AUDIT_CHECKLIST.md](AUDIT_CHECKLIST.md) for action items.
->
-> **System Readiness:** 75% (improved from 60% after P0+P1 fixes)  
-> **Test Coverage:** 40% (8 contract tests passing)  
-> **Status:** ✅ Core functionality working with orchestrator integration
-
 ## 🚀 Features
 
 - **Database Storage**: PostgreSQL with SQLAlchemy ORM and Alembic migrations
@@ -103,39 +96,45 @@ Upload files for analysis using multipart/form-data format. Supports both new an
 ```json
 {
   "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "processing",
-  "files": {
-    "technical_files": [
-      {
-        "filename": "technical_document.pdf",
-        "original_filename": "technical document.pdf",
-        "size": 123456
-      }
-    ],
-    "quantities_files": [
-      {
-        "filename": "budget.xlsx",
-        "original_filename": "budget.xlsx",
-        "size": 234567
-      }
-    ],
-    "drawings_files": [
-      {
-        "filename": "drawing_1.pdf",
-        "original_filename": "drawing 1.pdf",
-        "size": 345678
-      }
-    ]
+  "status": "success",
+  "files": [
+    {
+      "name": "technical_document.pdf",
+      "type": "pdf",
+      "category": "technical",
+      "success": true,
+      "error": null
+    },
+    {
+      "name": "budget.xlsx",
+      "type": "xlsx",
+      "category": "quantities",
+      "success": true,
+      "error": null
+    },
+    {
+      "name": "invalid.exe",
+      "type": "exe",
+      "category": "technical",
+      "success": false,
+      "error": "Invalid file type 'application/x-msdownload' for technical"
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "successful": 2,
+    "failed": 1
   }
 }
 ```
 
-**Error Response (400):**
-```json
-{
-  "detail": "Invalid file type 'application/exe' for technical. Allowed: application/pdf, ..."
-}
-```
+**Status Values:**
+- `"success"`: All files processed successfully
+- `"partial"`: Some files succeeded, some failed
+- `"error"`: All files failed
+- `"processing"`: Files accepted and being processed asynchronously (future use)
+
+**Note:** The endpoint now returns 200 OK even when some files fail validation. Individual file results are returned in the `files` array with `success` and `error` fields.
 
 **Storage:**
 Files are saved to: `storage/{user_id}/uploads/{analysis_id}/`
