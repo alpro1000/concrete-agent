@@ -23,15 +23,14 @@ export interface AnalysisResult {
 export interface FileUploadResult {
   name: string;
   type: string;
-  category: string;
+  category: 'technical' | 'quantities' | 'drawings';
   success: boolean;
-  error?: string;
-  analysis?: any;
+  error?: string | null;
 }
 
 export interface AnalysisResponse {
-  status: string;
-  message?: string;
+  analysis_id: string;
+  status: 'success' | 'error' | 'partial' | 'processing';
   files: FileUploadResult[];
   summary: {
     total: number;
