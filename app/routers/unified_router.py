@@ -124,13 +124,13 @@ async def process_files_background(
 @router.post("/unified")
 async def analyze_files(
     # New field names (primary)
-    technical_files: Optional[List[UploadFile]] = File(None),
-    quantities_files: Optional[List[UploadFile]] = File(None),
-    drawings_files: Optional[List[UploadFile]] = File(None),
+    technical_files: List[UploadFile] = File(default=[]),
+    quantities_files: List[UploadFile] = File(default=[]),
+    drawings_files: List[UploadFile] = File(default=[]),
     # Old field names (compatibility)
-    project_documentation: Optional[List[UploadFile]] = File(None),
-    budget_estimate: Optional[List[UploadFile]] = File(None),
-    drawings: Optional[List[UploadFile]] = File(None),
+    project_documentation: List[UploadFile] = File(default=[]),
+    budget_estimate: List[UploadFile] = File(default=[]),
+    drawings: List[UploadFile] = File(default=[]),
     # Authorization header
     authorization: Optional[str] = Header(None)
 ):
