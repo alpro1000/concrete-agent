@@ -57,24 +57,20 @@ Frontend will be available at: http://localhost:5173
 ## 🧪 Test the API
 
 ```bash
-# Login (get mock user)
-curl http://localhost:8000/api/v1/user/login
-
-# Get user history (requires auth token)
-curl -H "Authorization: Bearer mock_jwt_token_12345" \
-  http://localhost:8000/api/v1/user/history
+# Upload files for analysis
+curl -X POST http://localhost:8000/api/v1/analysis/unified \
+  -F "technical_files=@document.pdf" \
+  -F "quantities_files=@budget.xlsx"
 
 # Health check
 curl http://localhost:8000/health
 ```
 
-## 🔑 Mock Credentials
+## 🔑 Authentication
 
-**User:**
-- Email: demo@stav-agent.com
-- Token: mock_jwt_token_12345
+The unified endpoint accepts an optional `Authorization: Bearer <token>` header for user identification. If not provided, files are stored under user_id=0.
 
-**Auto-login:** The frontend automatically logs in on first visit.
+**Mock Token:** `mock_jwt_token_12345`
 
 ## 🌍 Available Languages
 

@@ -35,23 +35,29 @@
 │     d) Process with orchestrator                               │
 │     e) Build file result object                                │
 │                                                                 │
-│  5. Determine HTTP status code:                                │
-│     - All success → 200                                        │
-│     - Partial success → 207                                    │
-│     - All failed → 400                                         │
-│     - Server error → 500                                       │
+│  5. Determine overall status:                                  │
+│     - All success → "success"                                  │
+│     - Partial success → "partial"                              │
+│     - All failed → "error"                                     │
+│     - Async processing → "processing"                          │
 │                                                                 │
-│  6. Clean up /tmp files (finally block)                        │
-│                                                                 │
-│  7. Return structured JSON:                                    │
+│  6. Return JSON response (always 200 OK unless no files):      │
 │     {                                                           │
-│       "status": "success" | "error",                           │
-│       "message": "...",                                        │
-│       "files": [{...}],                                        │
+│       "analysis_id": "uuid",                                   │
+│       "status": "success" | "partial" | "error",               │
+│       "files": [                                               │
+│         {                                                       │
+│           "name": "file.pdf",                                  │
+│           "type": "pdf",                                       │
+│           "category": "technical" | "quantities" | "drawings", │
+│           "success": true,                                     │
+│           "error": null                                        │
+│         }                                                       │
+│       ],                                                        │
 │       "summary": {                                             │
-│         "total": n,                                            │
-│         "successful": m,                                       │
-│         "failed": k                                            │
+│         "total": 3,                                            │
+│         "successful": 2,                                       │
+│         "failed": 1                                            │
 │       }                                                         │
 │     }                                                           │
 │                                                                 │
@@ -63,12 +69,12 @@
 │                    Frontend Response Handler                    │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  8. ProjectAnalysis.tsx receives response                      │
-│     - Handle status codes (200, 207, 400, 500)                │
-│     - Show appropriate message/toast                           │
-│     - Set analysisResult state                                 │
+│  8. UploadPage.tsx receives response                           │
+│     - Always expects 200 OK (unless no files)                  │
+│     - Check status field for success/partial/error             │
+│     - Display results with summary stats                       │
 │                                                                 │
-│  9. ResultsPanel.tsx displays results                          │
+│  9. Results displayed in tabs:                                 │
 │     ┌─────────────────────────────────────────┐               │
 │     │  Formatted View          JSON View      │               │
 │     ├─────────────────────────────────────────┤               │
