@@ -23,6 +23,39 @@ except ImportError:
     USE_APP_FACTORY = False
     logger.warning("app_factory not found, using inline endpoints")
 
+def setup_routers():
+    """Auto-discover and setup routers from app/routers/"""
+    try:
+        sys.path.append('/home/runner/work/concrete-agent/concrete-agent')
+        
+        from app.core.router_registry import router_registry
+        
+        # Auto-discover all routers
+        discovered_routers = router_registry.discover_routers("app/routers")
+        
+        # Register discovered routers
+        for router_info in discovered_routers:
+            try:
+                router = router_info['router']
+                # Don't pass prefix again - router already has it
+                tags = router_info.get('tags', [router_info['name']])
+                
+                app.include_router(router, tags=tags)
+                logger.info(f"✅ Router '{router_info['name']}' registered successfully")
+            except Exception as e:
+                logger.error(f"❌ Failed to register router '{router_info['name']}': {e}")
+        
+        # Log registry status
+        status = router_registry.get_registry_status()
+        logger.info(f"Router registry: {status['successful']}/{status['total_discovered']} routers loaded")
+        
+        if status['failed']:
+            logger.warning(f"Failed routers: {status['failed_routers']}")
+        
+    except Exception as e:
+        logger.error(f"Router setup error: {e}")
+        # Don't raise - continue running without routers if necessary
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -34,8 +67,6 @@ async def lifespan(app: FastAPI):
     
     deps = check_dependencies()
     logger.info(f"Dependencies: {deps}")
-    
-    setup_routers()
     
     logger.info("Server started successfully")
     
@@ -83,40 +114,10 @@ def check_dependencies():
     
     return dependencies
 
-def setup_routers():
-    """Auto-discover and setup routers from app/routers/"""
-    try:
-        sys.path.append('/home/runner/work/concrete-agent/concrete-agent')
-        
-        from app.core.router_registry import router_registry
-        
-        # Auto-discover all routers
-        discovered_routers = router_registry.discover_routers("app/routers")
-        
-        # Register discovered routers
-        for router_info in discovered_routers:
-            try:
-                router = router_info['router']
-                # Don't pass prefix again - router already has it
-                tags = router_info.get('tags', [router_info['name']])
-                
-                app.include_router(router, tags=tags)
-                logger.info(f"✅ Router '{router_info['name']}' registered successfully")
-            except Exception as e:
-                logger.error(f"❌ Failed to register router '{router_info['name']}': {e}")
-        
-        # Log registry status
-        status = router_registry.get_registry_status()
-        logger.info(f"Router registry: {status['successful']}/{status['total_discovered']} routers loaded")
-        
-        if status['failed']:
-            logger.warning(f"Failed routers: {status['failed_routers']}")
-        
-    except Exception as e:
-        logger.error(f"Router setup error: {e}")
-        # Don't raise - continue running without routers if necessary
+# Setup routers immediately after app creation
+setup_routers()
 
-# Setup endpoints - use app_factory if available, otherwise inline
+# Setup core endpoints - use app_factory if available, otherwise inline
 if USE_APP_FACTORY:
     setup_core_endpoints(app)
 else:
