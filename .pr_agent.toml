@@ -1,49 +1,114 @@
+# PR-Agent / Qodo Merge configuration for alpro1000/concrete-agent
+# Фокус: модульная «бусинная» архитектура, конвейер Upload→Parsing→Extraction→Orchestration/LLM→TOV→Knowledge→Reports,
+# строгие FE/BE контракты (имена полей upload), i18n, CORS/Render, тестируемость и деградация при отключении модулей.
+
+[config]
+model = "gpt-4o"
+temperature = 0.2
+max_model_tokens = 32000
+default_language = "ru"
+publish_labels = true
+
+[github_app]
+pr_commands = ["/describe", "/review", "/improve"]
+feedback_on_draft_pr = true
+handle_push_trigger = true
+push_commands = ["/describe", "/review"]
+
+[pr_description]
+generate_ai_title = true
+publish_labels = false
+extra_instructions = """
+Кратко опиши изменения в разрезе конвейера и модульности:
+- Какие «бусины» (модули) затронуты: parsers/extractors/orchestrator/LLM/planning/knowledge/services/routers/frontend.
+- Контракты I/O: какие схемы изменены, совместимость (backward/forward).
+- FE/BE контракт загрузки: поля 'project_documentation' (required), 'budget_estimate', 'drawings'.
+- Влияние на i18n (новые ключи), CORS/Render, storage, безопасность.
+- Риски и деградации при выключенных модулях.
+"""
+
 [pr_reviewer]
-# Требования к ревью
 require_score_review = true
 require_tests_review = true
 require_security_review = true
-
-# Ограничения
-max_files_to_review = 150
-max_lines_to_review = 15000
-
-# Доп. инструкции
+allow_large_refactors = true
+max_files_to_review = 250
+max_lines_to_review = 25000
+publish_labels = true
 extra_instructions = """
-СТРОИТЕЛЬНЫЙ ПРОЕКТ - ЭТАП 1 (ФОКУС НА TZDReader):
+Проверяй строгое соответствие модульной архитектуре «бусы»:
 
-✅ ОСТАВИТЬ:
-- app/agents/tzd_reader/ (единственный агент)
-- app/parsers/ (документные парсеры)
-- app/core/ (базовые сервисы, orchestrator, llm_service)
-- knowledge/ (база знаний)
-- prompts/ (промпты для TZDReader)
+1) FE/BE контракт загрузки (CRITICAL):
+   - /api/v1/upload принимает: project_documentation (required), budget_estimate, drawings.
+   - Frontend FormData использует ТЕ ЖЕ имена полей.
+   - Валидация типов/MIME и размера (≤ 50MB), корректный ответ ошибок (400/401/…).
 
-❌ УДАЛИТЬ:
-- Все остальные агенты кроме tzd_reader/
-- Хвосты от удалённых агентов (imports, тесты, ссылки)
-- Любые неиспользуемые файлы и зависимости
-- Старые роутеры, сервисы или код, который не связан с TZDReader
+2) Конвейер и контракты:
+   - Parsers→Raw JSON (provenance), затем Canonical JSON с единицами (SI).
+   - Extractors (Concrete/Material/DrawingVolume/TZD/Diff) — строго по схемам I/O.
+   - OrchestratorAgent читает registry и устойчив к отключению любого шага.
+   - LLMService провайдер-независим, промпты грузятся из prompts/, лимиты/ретраи/таймауты.
+   - TOVAgent формирует захватки/ресурсы/график/стоимость с единицами и источниками.
 
-⚙️ ЦЕЛЬ:
-- Чистая архитектура вокруг одного агента TZDReader
-- Подготовка базы для будущих агентов (beads-архитектура)
-- Код должен быть лёгким для расширения
+3) Реестр и манифесты:
+   - У каждого агента есть manifest.toml (inputs_schema, outputs_schema, entrypoint).
+   - Есть registry.json с порядком и flags enabled/disabled. Деградация документирована и покрыта тестами.
+
+4) База знаний:
+   - knowledge/* пакеты с manifest.json: id, version, provenance, update_policy.
+   - Согласование норм (NORMS), материалов, технологий. Разрешение конфликтов по приоритетам (B1/B2/B3).
+
+5) i18n и UI:
+   - Строки вынесены в frontend/src/i18n/{cs,ru,en}.json.
+   - Добавлена вкладка «Ведомость ресурсов и работ».
+   - Переключатель языка, сохранение выбора, отсутствие хардкода строк.
+
+6) Интеграция с Render:
+   - CORSMiddleware: allow_origins включает https://stav-agent.onrender.com, OPTIONS, allow_credentials как нужно.
+   - FE использует PROD API URL через env (VITE_API_URL/NEXT_PUBLIC_API_URL).
+
+7) Безопасность и качество:
+   - Не логируются секреты. Файлы сохраняются под UUID-папками, безопасные имена.
+   - Тесты: unit/contract/integration/e2e-smoke. Проверь, что новая логика покрыта.
+   - Swagger заголовок: "Stav Agent API". Ошибки возвращаются в согласованном формате.
+
+Если изменение нарушает контракт/модульность — укажи конкретные места, предложи патчи.
 """
 
-[pr_improve]
-# Предложения улучшений
-max_suggestions = 15
-include_security_suggestions = true
+[pr_code_suggestions]
+committable_code_suggestions = true
+suggestions_score_threshold = 7
 extra_instructions = """
-Оптимизация и улучшения должны касаться только TZDReader и базовой инфраструктуры.
-Запрещено предлагать улучшения для удалённых агентов или legacy-кода.
+Предлагай патчи:
+- Добавление/правка manifest.toml в модулях агентов.
+- Дополнение registry.json и graceful-degrade кода оркестратора.
+- Исправления FE FormData имён полей и бэкенд-валидации.
+- Включение CORSMiddleware для Render.
+- Вынесение строк в i18n и добавление вкладки «Ведомость ресурсов и работ».
+- Схемы pydantic/JSON Schema для I/O, контрактные тесты.
 """
 
 [pr_test]
-# Настройки тестов
 testing_framework = "pytest"
 extra_instructions = """
-Добавлять и поддерживать тесты только для агента TZDReader и его зависимостей.
-Удалить или переписать тесты, которые ссылаются на другие агенты.
+Запроси/добавь тесты:
+- Контрактные: схемы I/O агентов, проверки на null/disabled-модули.
+- Интеграционные: upload→parsing→extraction→TOV→reports (минимальный happy path).
+- FE/BE: соответствие имён полей, CORS, OPTIONS.
+- Регрессия: сохранение форматов результат-отчётов.
 """
+
+[pr_questions]
+number_of_questions = 2
+extra_instructions = """
+Если непонятен контракт или реестр модулей — спроси точечно: какой модуль/схема/маршрут является источником истины.
+"""
+
+[pr_improve]
+extra_instructions = """
+Улучшай читаемость, типизацию, обработку ошибок; предлагай унификацию схем и уменьшение связности между модулями.
+"""
+
+[limits]
+max_total_added_lines = 50000
+max_total_changed_files = 500
