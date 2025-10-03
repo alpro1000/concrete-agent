@@ -10,7 +10,7 @@ export default defineConfig({
     allowedHosts: ['stav-agent.onrender.com', 'localhost', '127.0.0.1'],
   },
   preview: {
-    port: 4173,
+    port: process.env.PORT ? parseInt(process.env.PORT) : 4173,
     host: true,
     allowedHosts: ['stav-agent.onrender.com', 'localhost', '127.0.0.1'],
   },
