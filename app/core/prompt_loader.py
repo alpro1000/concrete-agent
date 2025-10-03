@@ -115,6 +115,67 @@ class PromptLoader:
         
         with open(prompt_path, 'r', encoding='utf-8') as f:
             return f.read()
+    
+    def get_prompt_config(self, config_name: str) -> Dict[str, Any]:
+        """
+        Get configuration for a specific prompt.
+        
+        Args:
+            config_name (str): Name of the configuration (e.g., "tzd")
+        
+        Returns:
+            Dict[str, Any]: Configuration dictionary with model and other settings
+        """
+        # Default configurations for different use cases
+        default_configs = {
+            "tzd": {
+                "model": "claude-3-5-sonnet-20241022",
+                "max_tokens": 4000,
+                "temperature": 0.7
+            },
+            "default": {
+                "model": "gpt-4o-mini",
+                "max_tokens": 2000,
+                "temperature": 0.7
+            }
+        }
+        
+        # Check if config exists in loaded prompts
+        config_file = f"{config_name}_config.json"
+        if config_file in self.prompts:
+            return self.prompts[config_file]
+        
+        # Return default config if available
+        if config_name in default_configs:
+            logger.info(f"Using default config for '{config_name}'")
+            return default_configs[config_name]
+        
+        # Fallback to general default
+        logger.warning(f"Config '{config_name}' not found, using default")
+        return default_configs["default"]
+    
+    def get_system_prompt(self, prompt_name: str) -> str:
+        """
+        Get system prompt for a specific use case.
+        
+        Args:
+            prompt_name (str): Name of the prompt (e.g., "tzd")
+        
+        Returns:
+            str: System prompt text
+        """
+        # Try to load from txt file first
+        prompt = self.load_prompt(prompt_name)
+        if prompt:
+            return prompt
+        
+        # Try to find in JSON prompts
+        for file_name, content in self.prompts.items():
+            if f"{prompt_name}_system" in content:
+                return content[f"{prompt_name}_system"]
+        
+        logger.warning(f"System prompt '{prompt_name}' not found")
+        return ""
 
     def list_available_prompts(self) -> Dict[str, Any]:
         """
