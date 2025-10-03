@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Upload, Button, Card, message, Tabs, Space, Table, Tag } from 'antd';
 import { UploadOutlined, FilePdfOutlined, FileWordOutlined, FileExcelOutlined, FileTextOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
-import { api } from '../api/client';
+import { uploadFiles, exportResults } from '../lib/api';
 import type { UploadFile } from 'antd';
 import type { AnalysisResponse } from '../types';
 import './UploadPage.css';
@@ -27,6 +27,7 @@ const UploadPage: React.FC = () => {
     setLoading(true);
     const formData = new FormData();
 
+    // Use exact backend field names
     technicalFiles.forEach((file) => {
       if (file.originFileObj) {
         formData.append('project_documentation', file.originFileObj);
@@ -46,8 +47,8 @@ const UploadPage: React.FC = () => {
     });
 
     try {
-      const response = await api.uploadFiles(formData);
-      setResults(response.data);
+      const response = await uploadFiles(formData);
+      setResults(response as AnalysisResponse);
       message.success(t('upload.uploadSuccess'));
     } catch (error) {
       console.error('Upload error:', error);
@@ -75,7 +76,19 @@ const UploadPage: React.FC = () => {
       URL.revokeObjectURL(url);
       message.success('JSON exported successfully');
     } else {
-      message.info('Export feature will be available soon');
+      try {
+        const blob = await exportResults((results as any).analysis_id, format);
+        const url = URL.createObjectURL(blob as Blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `analysis_${Date.now()}.${format}`;
+        a.click();
+        URL.revokeObjectURL(url);
+        message.success(t('export.title') + ' ' + format.toUpperCase());
+      } catch (error) {
+        console.error('Export error:', error);
+        message.info('Export feature will be available soon');
+      }
     }
   };
 

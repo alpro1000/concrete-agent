@@ -11,9 +11,9 @@ export interface LanguageOption {
 }
 
 export const languageOptions: LanguageOption[] = [
-  { code: 'en', name: 'English', flag: '🇬🇧' },
   { code: 'cs', name: 'Čeština', flag: '🇨🇿' },
   { code: 'ru', name: 'Русский', flag: '🇷🇺' },
+  { code: 'en', name: 'English', flag: '🇬🇧' },
 ];
 
 const resources = {
@@ -25,14 +25,17 @@ const resources = {
 // Get saved language or detect browser language
 const savedLanguage = localStorage.getItem('language');
 const browserLanguage = navigator.language.split('-')[0];
-const defaultLanguage = savedLanguage || (browserLanguage in resources ? browserLanguage : 'en');
+const defaultLanguage = savedLanguage || 
+  (browserLanguage === 'cs' ? 'cs' : 
+   browserLanguage === 'ru' ? 'ru' : 
+   'cs'); // Fallback to Czech, not English!
 
 i18n
   .use(initReactI18next)
   .init({
     resources,
     lng: defaultLanguage,
-    fallbackLng: 'en',
+    fallbackLng: 'cs', // Fallback to Czech!
     interpolation: {
       escapeValue: false,
     },
