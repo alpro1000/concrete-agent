@@ -19,16 +19,15 @@ prompt_text = loader.get_prompt("gpt-4.1", "example_prompt")
 ```python
 # Success Response (HTTP 200)
 {
+    "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
     "status": "success",
-    "message": "All 3 file(s) processed successfully",
     "files": [
         {
             "name": "file.pdf",
             "type": "pdf",
             "category": "technical",
-            "success": True,
-            "error": None,
-            "result": {...}
+            "success": true,
+            "error": null
         }
     ],
     "summary": {
@@ -38,28 +37,56 @@ prompt_text = loader.get_prompt("gpt-4.1", "example_prompt")
     }
 }
 
-# Partial Success (HTTP 207)
+# Partial Success (HTTP 200)
 {
-    "status": "success",
-    "message": "Partial success: 2 succeeded, 1 failed",
-    "files": [...],
+    "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+    "status": "partial",
+    "files": [
+        {
+            "name": "valid.pdf",
+            "type": "pdf",
+            "category": "technical",
+            "success": true,
+            "error": null
+        },
+        {
+            "name": "invalid.exe",
+            "type": "exe",
+            "category": "technical",
+            "success": false,
+            "error": "Invalid file type 'application/x-msdownload' for technical"
+        }
+    ],
     "summary": {
-        "total": 3,
-        "successful": 2,
+        "total": 2,
+        "successful": 1,
         "failed": 1
     }
 }
 
-# Validation Error (HTTP 400)
+# All Failed (HTTP 200)
 {
+    "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
     "status": "error",
-    "message": "All 2 file(s) failed to process",
-    "files": [...],
+    "files": [
+        {
+            "name": "invalid.exe",
+            "type": "exe",
+            "category": "technical",
+            "success": false,
+            "error": "Invalid file type"
+        }
+    ],
     "summary": {
-        "total": 2,
+        "total": 1,
         "successful": 0,
-        "failed": 2
+        "failed": 1
     }
+}
+
+# No Files (HTTP 400)
+{
+    "detail": "No files uploaded"
 }
 ```
 
