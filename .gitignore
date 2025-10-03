@@ -18,6 +18,11 @@ logs/
 uploads/
 *.tmp
 
+# === Storage (keep structure, ignore content) ===
+storage/*/uploads/*
+storage/*/results/*
+!storage/*/history.json
+
 # === Environment ===
 .env
 .env.local
@@ -26,4 +31,10 @@ uploads/
 # === System ===
 .DS_Store
 Thumbs.db
-# Frontend\nnode_modules/\ndist/\n.vite/\n*.tsbuildinfo
+
+# === Frontend ===
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+

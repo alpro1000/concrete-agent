@@ -1,0 +1,30 @@
+.account-page {
+  padding: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.account-container h2 {
+  margin-bottom: 24px;
+  color: #003333;
+}
+
+.member-since {
+  color: #666;
+  font-size: 14px;
+  margin-left: 12px;
+}
+
+.settings-placeholder {
+  padding: 40px;
+  text-align: center;
+  background-color: #f9f9f9;
+  border-radius: 8px;
+  color: #666;
+}
+
+@media (max-width: 768px) {
+  .account-page {
+    padding: 12px;
+  }
+}
