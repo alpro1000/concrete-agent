@@ -1,0 +1,102 @@
+{
+  "app": {
+    "name": "Stav Agent",
+    "tagline": "Inteligentní analýza stavební dokumentace"
+  },
+  "nav": {
+    "upload": "Nahrát",
+    "account": "Můj účet",
+    "home": "Domů"
+  },
+  "dashboard": {
+    "profile": "Profil",
+    "analyses": "Moje analýzy",
+    "settings": "Nastavení",
+    "settingsPlaceholder": "Nastavení budou dostupná v budoucí verzi."
+  },
+  "tabs": {
+    "summary": "Přehled",
+    "byAgents": "Podle agentů",
+    "resources": "Věcná a pracovní náplň",
+    "chat": "Chat"
+  },
+  "profile": {
+    "name": "Jméno",
+    "email": "E-mail",
+    "language": "Jazyk",
+    "createdAt": "Člen od",
+    "saveChanges": "Uložit změny",
+    "saved": "Změny byly úspěšně uloženy"
+  },
+  "analyses": {
+    "title": "Moje analýzy",
+    "noAnalyses": "Zatím žádné analýzy. Nahrajte svůj první soubor!",
+    "uploadFirst": "Nahrajte svůj první soubor!",
+    "fileName": "Název souboru",
+    "uploadDate": "Datum nahrání",
+    "status": "Stav",
+    "actions": "Akce",
+    "viewResults": "Zobrazit výsledky",
+    "download": "Stáhnout",
+    "delete": "Smazat",
+    "deleteConfirm": "Opravdu chcete smazat tuto analýzu?",
+    "deleted": "Analýza byla úspěšně smazána",
+    "loading": "Načítání analýz..."
+  },
+  "status": {
+    "completed": "Dokončeno",
+    "processing": "Zpracovává se",
+    "failed": "Selhalo"
+  },
+  "upload": {
+    "title": "Nahrát dokumenty",
+    "dragDrop": "Přetáhněte soubory sem nebo klikněte pro procházení",
+    "uploading": "Nahrávání...",
+    "uploadSuccess": "Soubor byl úspěšně nahrán",
+    "uploadError": "Nahrávání selhalo"
+  },
+  "messages": {
+    "noAnalyses": "Zatím žádné analýzy...",
+    "uploadSuccess": "Soubor byl úspěšně nahrán",
+    "error": "Došlo k chybě",
+    "networkError": "Spojení ztraceno. Zkuste to prosím znovu.",
+    "fileTooLarge": "Soubor překračuje limit 50MB.",
+    "invalidFormat": "Podporovány jsou pouze soubory PDF, DOCX, XLSX, DWG.",
+    "serverError": "Chyba serveru. Kontaktujte prosím podporu."
+  },
+  "resources": {
+    "placeholder": "Sekce je připravena pro budoucí analýzu zdrojů a prací.",
+    "materials": "Materiály",
+    "labor": "Pracovní síla",
+    "technology": "Postup prací",
+    "schedule": "Harmonogram prací"
+  },
+  "export": {
+    "title": "Exportovat",
+    "pdf": "Exportovat PDF",
+    "docx": "Exportovat Word",
+    "xlsx": "Exportovat Excel",
+    "json": "Exportovat JSON"
+  },
+  "technical": {
+    "title": "Technické zadání a popisy projektu",
+    "formats": "PDF, DOCX, TXT"
+  },
+  "quantities": {
+    "title": "Výkaz výměr, rozpočet, soupis prací",
+    "formats": "Excel, XML, XC4"
+  },
+  "drawings": {
+    "title": "Výkresy",
+    "formats": "PDF, DWG, DXF, Obrázky"
+  },
+  "common": {
+    "loading": "Načítání...",
+    "cancel": "Zrušit",
+    "confirm": "Potvrdit",
+    "save": "Uložit",
+    "close": "Zavřít",
+    "yes": "Ano",
+    "no": "Ne"
+  }
+}
