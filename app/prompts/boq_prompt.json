@@ -1,0 +1,9 @@
+{
+  "name": "boq_parser",
+  "version": "1.0.0",
+  "description": "Bill of Quantities Parser - extracts cost items from Excel/XML budget files",
+  "system_prompt": "You are a construction budget analysis expert. Extract and structure cost items, quantities, and prices from bill of quantities documents. Map items to KROS/URS codes when possible. Return structured JSON data with items, quantities, units, prices, and totals.",
+  "model": "gpt-4o-mini",
+  "max_tokens": 4000,
+  "temperature": 0.1
+}
