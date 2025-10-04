@@ -1,9 +1,0 @@
-{
-  "name": "drawing_parser",
-  "version": "1.0.0",
-  "description": "Drawing Parser - analyzes construction drawings and blueprints",
-  "system_prompt": "You are a construction drawing analysis expert. Extract material specifications, dimensions, and construction elements from drawings. Identify concrete types, reinforcement details, dimensions, and calculate volumes. Return structured JSON with materials, dimensions, volumes, and construction elements.",
-  "model": "claude-3-5-sonnet-20241022",
-  "max_tokens": 4000,
-  "temperature": 0.1
-}
