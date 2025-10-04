@@ -1,0 +1,126 @@
+{
+  "version": "2025.01",
+  "description": "Základní katalog stavebních materiálů",
+  "source": "Standardní stavební materiály používané v ČR",
+  "categories": {
+    "concrete": {
+      "name": "Beton a betonové směsi",
+      "materials": [
+        {
+          "id": "C20_25",
+          "name": "Beton C20/25",
+          "type": "constructional_concrete",
+          "strength_class": "C20/25",
+          "density": "2400 kg/m³",
+          "typical_use": "Základy, podkladní betony",
+          "price_range": "1800-2200 Kč/m³"
+        },
+        {
+          "id": "C25_30",
+          "name": "Beton C25/30",
+          "type": "constructional_concrete",
+          "strength_class": "C25/30",
+          "density": "2400 kg/m³",
+          "typical_use": "Základy, zdi, sloupy",
+          "price_range": "2000-2400 Kč/m³"
+        },
+        {
+          "id": "C30_37",
+          "name": "Beton C30/37",
+          "type": "structural_concrete",
+          "strength_class": "C30/37",
+          "density": "2400 kg/m³",
+          "typical_use": "Nosné konstrukce, stropy",
+          "price_range": "2200-2600 Kč/m³"
+        }
+      ]
+    },
+    "masonry": {
+      "name": "Zdivo",
+      "materials": [
+        {
+          "id": "BRICK_PERFORATED",
+          "name": "Cihla děrovaná",
+          "type": "brick",
+          "dimensions": "290x140x65 mm",
+          "density": "800-1000 kg/m³",
+          "thermal_conductivity": "0.35-0.45 W/(m·K)",
+          "typical_use": "Obvodové a vnitřní zdivo",
+          "price_range": "8-12 Kč/ks"
+        },
+        {
+          "id": "BLOCK_CONCRETE",
+          "name": "Tvárnice betonová",
+          "type": "concrete_block",
+          "dimensions": "400x200x200 mm",
+          "density": "1400-1600 kg/m³",
+          "thermal_conductivity": "0.8-1.0 W/(m·K)",
+          "typical_use": "Konstrukční zdivo",
+          "price_range": "30-45 Kč/ks"
+        },
+        {
+          "id": "BLOCK_YTONG",
+          "name": "Tvárnice z pórobetonu (Ytong)",
+          "type": "aac_block",
+          "dimensions": "600x250x400 mm",
+          "density": "400-600 kg/m³",
+          "thermal_conductivity": "0.10-0.15 W/(m·K)",
+          "typical_use": "Obvodové zdivo s izolací",
+          "price_range": "80-120 Kč/ks"
+        }
+      ]
+    },
+    "steel": {
+      "name": "Ocel a výztuž",
+      "materials": [
+        {
+          "id": "REBAR_B500B",
+          "name": "Betonářská výztuž B500B",
+          "type": "reinforcement_steel",
+          "grade": "B500B",
+          "yield_strength": "500 MPa",
+          "diameters": "6, 8, 10, 12, 14, 16, 20, 25, 32 mm",
+          "typical_use": "Železobetonové konstrukce",
+          "price_range": "18-25 Kč/kg"
+        },
+        {
+          "id": "STRUCTURAL_STEEL",
+          "name": "Konstrukční ocel S235",
+          "type": "structural_steel",
+          "grade": "S235",
+          "yield_strength": "235 MPa",
+          "typical_use": "Ocelové konstrukce, nosníky",
+          "price_range": "25-35 Kč/kg"
+        }
+      ]
+    },
+    "insulation": {
+      "name": "Izolace",
+      "materials": [
+        {
+          "id": "EPS_POLYSTYRENE",
+          "name": "Polystyren EPS 100",
+          "type": "thermal_insulation",
+          "thermal_conductivity": "0.037 W/(m·K)",
+          "density": "15-20 kg/m³",
+          "typical_use": "Zateplení fasád, podlah",
+          "price_range": "800-1200 Kč/m³"
+        },
+        {
+          "id": "MINERAL_WOOL",
+          "name": "Minerální vata",
+          "type": "thermal_insulation",
+          "thermal_conductivity": "0.035-0.040 W/(m·K)",
+          "density": "30-150 kg/m³",
+          "typical_use": "Zateplení střech, fasád",
+          "price_range": "1000-1800 Kč/m³"
+        }
+      ]
+    }
+  },
+  "usage_notes": [
+    "Ceny jsou orientační a mění se podle aktuální tržní situace",
+    "Pro přesné kalkulace použijte aktuální ceníky dodavatelů",
+    "Tepelně-technické vlastnosti ověřte v technických listech výrobků"
+  ]
+}

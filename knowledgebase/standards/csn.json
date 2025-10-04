@@ -1,0 +1,78 @@
+{
+  "version": "2025.01",
+  "description": "České stavební normy (ČSN) a související standardy",
+  "source": "ČSN, ČSN EN, ISO standards",
+  "standards": [
+    {
+      "id": "csn_en_206",
+      "code": "ČSN EN 206",
+      "name": "Beton - Specifikace, vlastnosti, výroba a shoda",
+      "category": "concrete",
+      "year": 2021,
+      "description": "Norma pro beton, jeho složení, vlastnosti a kontrolu kvality",
+      "key_parameters": [
+        "Pevnostní třída betonu (C12/15 až C90/105)",
+        "Stupeň vlivu prostředí (XC, XD, XF, XA, XS)",
+        "Konzistence (S1-S5)",
+        "Maximální velikost zrna kameniva"
+      ]
+    },
+    {
+      "id": "csn_73_1001",
+      "code": "ČSN 73 1001",
+      "name": "Zakládání staveb - Základová půda pod plošnými základy",
+      "category": "foundations",
+      "year": 1987,
+      "description": "Norma pro navrhování základů",
+      "key_parameters": [
+        "Únosnost základové půdy",
+        "Sedání základů",
+        "Minimální hloubka založení"
+      ]
+    },
+    {
+      "id": "csn_73_0540",
+      "code": "ČSN 73 0540",
+      "name": "Tepelná ochrana budov",
+      "category": "thermal_protection",
+      "year": 2011,
+      "description": "Požadavky na tepelnou ochranu budov",
+      "key_parameters": [
+        "Součinitel prostupu tepla U [W/(m²·K)]",
+        "Klasifikace budov podle energetické náročnosti",
+        "Minimální požadavky na izolaci"
+      ]
+    },
+    {
+      "id": "csn_en_1992",
+      "code": "ČSN EN 1992-1-1 (Eurocode 2)",
+      "name": "Navrhování betonových konstrukcí",
+      "category": "structural_design",
+      "year": 2011,
+      "description": "Evropská norma pro navrhování železobetonových a předpjatých konstrukcí",
+      "key_parameters": [
+        "Mezní stavy únosnosti a použitelnosti",
+        "Návrhové třídy konstrukcí",
+        "Krycí vrstva výztuže"
+      ]
+    },
+    {
+      "id": "csn_en_10080",
+      "code": "ČSN EN 10080",
+      "name": "Ocel pro výztuž do betonu",
+      "category": "reinforcement",
+      "year": 2005,
+      "description": "Technické dodací podmínky pro betonářskou ocel",
+      "key_parameters": [
+        "Pevnostní třídy (B500A, B500B, B500C)",
+        "Průměry prutů",
+        "Mechanické vlastnosti"
+      ]
+    }
+  ],
+  "usage_notes": [
+    "Tato data jsou příkladová a měla by být pravidelně aktualizována",
+    "Pro produkční použití je nutné ověřit platnost norem",
+    "Některé normy mohou být nahrazeny novějšími verzemi"
+  ]
+}

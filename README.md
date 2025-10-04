@@ -305,11 +305,19 @@ pytest tests/ --cov=app --cov-report=html
 
 ## 📚 Documentation
 
-- **[COMPREHENSIVE_AUDIT_REPORT.md](COMPREHENSIVE_AUDIT_REPORT.md)** - Complete system audit (850+ lines)
-- **[AUDIT_CHECKLIST.md](AUDIT_CHECKLIST.md)** - Actionable tasks and priorities
-- **[AUDIT_VISUAL_SUMMARY.md](AUDIT_VISUAL_SUMMARY.md)** - Quick reference guide
+### System Architecture & Specifications
+- **[docs/QODO_SYSTEM_PROMPT.md](docs/QODO_SYSTEM_PROMPT.md)** - System specification and AI development prompt
+- **[docs/architecture/stav-agent-modular-arch.md](docs/architecture/stav-agent-modular-arch.md)** - Modular "beads" architecture
+- **[ARCHITECTURE_FLOW.md](ARCHITECTURE_FLOW.md)** - Visual flow diagrams
+- **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - Quick reference guide
+
+### Agent Documentation
 - **[TZD_READER_README.md](TZD_READER_README.md)** - TZD Reader agent documentation
-- **[502_FIX_SUMMARY.md](502_FIX_SUMMARY.md)** - Deployment fixes summary
+
+### Implementation Reports
+- **[UNIFIED_CONTRACT_IMPLEMENTATION.md](UNIFIED_CONTRACT_IMPLEMENTATION.md)** - Upload contract implementation
+- **[PR_SUMMARY.md](PR_SUMMARY.md)** - Pull request summary
+- **[BEFORE_AFTER_CONTRACT.md](BEFORE_AFTER_CONTRACT.md)** - Contract comparison
 
 ---
 
