@@ -306,6 +306,7 @@ pytest tests/ --cov=app --cov-report=html
 ## 📚 Documentation
 
 ### System Architecture & Specifications
+- **[IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)** - Current implementation status (60% complete)
 - **[docs/QODO_SYSTEM_PROMPT.md](docs/QODO_SYSTEM_PROMPT.md)** - System specification and AI development prompt
 - **[docs/architecture/stav-agent-modular-arch.md](docs/architecture/stav-agent-modular-arch.md)** - Modular "beads" architecture
 - **[ARCHITECTURE_FLOW.md](ARCHITECTURE_FLOW.md)** - Visual flow diagrams
