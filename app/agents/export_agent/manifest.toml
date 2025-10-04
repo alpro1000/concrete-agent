@@ -1,0 +1,17 @@
+[agent]
+name = "ExportAgent"
+version = "1.0.0"
+enabled = true
+description = "Export agent - generates PDF/DOCX/XLSX reports"
+
+[contracts]
+inputs_schema = "Analysis data and export format specification"
+outputs_schema = "Generated document files (PDF/DOCX/XLSX)"
+
+[capabilities]
+extracts = ["pdf_reports", "docx_documents", "xlsx_spreadsheets"]
+depends_on = []
+
+[runtime]
+entrypoint = "app/agents/export_agent/agent.py:ExportAgent"
+timeout_seconds = 120

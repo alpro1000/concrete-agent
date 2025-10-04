@@ -1,0 +1,17 @@
+[agent]
+name = "ChatAgent"
+version = "1.0.0"
+enabled = true
+description = "Chat agent - conversational interface for project assistance"
+
+[contracts]
+inputs_schema = "Chat message with optional conversation ID and project context"
+outputs_schema = "JSON with AI response and conversation metadata"
+
+[capabilities]
+extracts = ["chat_responses", "project_assistance", "qa_answers"]
+depends_on = ["llm_service"]
+
+[runtime]
+entrypoint = "app/agents/chat_agent/agent.py:ChatAgent"
+timeout_seconds = 60
