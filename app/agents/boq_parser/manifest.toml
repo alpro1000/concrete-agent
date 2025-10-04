@@ -1,0 +1,17 @@
+[agent]
+name = "BOQParserAgent"
+version = "1.0.0"
+enabled = true
+description = "Bill of Quantities parser - extracts cost items from Excel/XML budget files"
+
+[contracts]
+inputs_schema = "Excel or XML file with budget data"
+outputs_schema = "JSON with items, quantities, units, prices, and totals"
+
+[capabilities]
+extracts = ["cost_items", "quantities", "prices", "kros_codes"]
+depends_on = ["knowledge.KROS_CODES", "knowledge.URS_CODES"]
+
+[runtime]
+entrypoint = "app/agents/boq_parser/agent.py:BOQParserAgent"
+timeout_seconds = 60

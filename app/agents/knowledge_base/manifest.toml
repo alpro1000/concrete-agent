@@ -1,0 +1,17 @@
+[agent]
+name = "KnowledgeBaseAgent"
+version = "1.0.0"
+enabled = true
+description = "Knowledge base - provides access to Czech standards, materials, and codes"
+
+[contracts]
+inputs_schema = "Query with search term and type (standards/materials/codes)"
+outputs_schema = "JSON with search results from knowledge base"
+
+[capabilities]
+extracts = ["standards", "materials", "codes", "norms"]
+depends_on = []
+
+[runtime]
+entrypoint = "app/agents/knowledge_base/agent.py:KnowledgeBaseAgent"
+timeout_seconds = 30

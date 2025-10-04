@@ -1,0 +1,17 @@
+[agent]
+name = "ResourceEstimatorAgent"
+version = "1.0.0"
+enabled = true
+description = "Resource estimator - calculates material quantities and labor requirements"
+
+[contracts]
+inputs_schema = "Project data with BOQ and/or drawing results"
+outputs_schema = "JSON with materials, labor hours by category, and equipment needs"
+
+[capabilities]
+extracts = ["material_quantities", "labor_hours", "equipment_requirements"]
+depends_on = ["knowledge.LABOR_NORMS", "knowledge.MATERIALS"]
+
+[runtime]
+entrypoint = "app/agents/resource_estimator/agent.py:ResourceEstimatorAgent"
+timeout_seconds = 60

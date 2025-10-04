@@ -1,0 +1,17 @@
+[agent]
+name = "UserManagerAgent"
+version = "1.0.0"
+enabled = true
+description = "User manager - handles authentication and user preferences"
+
+[contracts]
+inputs_schema = "User action (authenticate/create/history/preferences) with parameters"
+outputs_schema = "JSON with action result"
+
+[capabilities]
+extracts = ["user_authentication", "user_preferences", "analysis_history"]
+depends_on = []
+
+[runtime]
+entrypoint = "app/agents/user_manager/agent.py:UserManagerAgent"
+timeout_seconds = 30

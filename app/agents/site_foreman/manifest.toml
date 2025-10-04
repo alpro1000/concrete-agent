@@ -1,0 +1,17 @@
+[agent]
+name = "SiteForemanAgent"
+version = "1.0.0"
+enabled = true
+description = "Site foreman - construction planning and TOV generation"
+
+[contracts]
+inputs_schema = "Resource data with materials, labor, and equipment"
+outputs_schema = "JSON with schedule, TOV plan, resource allocation, and risk assessment"
+
+[capabilities]
+extracts = ["schedule", "tov_plan", "resource_allocation", "risk_assessment"]
+depends_on = ["knowledge.TECHNOLOGIES", "knowledge.LABOR_NORMS"]
+
+[runtime]
+entrypoint = "app/agents/site_foreman/agent.py:SiteForemanAgent"
+timeout_seconds = 90

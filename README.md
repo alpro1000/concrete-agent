@@ -1,18 +1,47 @@
-# Construction Analysis API v2.0 🏗️
+# Stav Agent - Construction Analysis API v2.0 🏗️
 
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688.svg?style=for-the-badge&logo=FastAPI&logoColor=white)](https://fastapi.tiangolo.com/)
-[![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-D71F00.svg?style=for-the-badge&logo=SQLAlchemy&logoColor=white)](https://www.sqlalchemy.org/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192.svg?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![React](https://img.shields.io/badge/React-18-61DAFB.svg?style=for-the-badge&logo=react&logoColor=black)](https://reactjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+
+> **🎉 Full Service Rebuilt!** All 10 agents implemented. See [FULL_SERVICE_REBUILD.md](FULL_SERVICE_REBUILD.md) for details.
 
 ## 🚀 Features
 
-- **Database Storage**: PostgreSQL with SQLAlchemy ORM and Alembic migrations
+### Multi-Agent Architecture
+- **10 Specialized Agents**: Complete pipeline from document analysis to report generation
+- **Modular Design**: "Beads" architecture - agents can be added/removed independently
+- **Agent Discovery**: Automatic agent discovery and registration
+- **Manifest System**: Each agent has a manifest defining capabilities and dependencies
+
+### Core Capabilities
 - **Multi-file Upload**: Support for simultaneous upload of multiple files
 - **ZIP Support**: Automatic extraction and processing of ZIP archives
-- **Self-learning Corrections**: AI agents learn from user feedback
 - **Document Versioning**: File versioning with SHA256 hash comparison
-- **JSON Diff**: Deep comparison of document extraction results
-- **Backward Compatibility**: All existing endpoints remain functional
+- **Knowledge Base**: Czech standards (ČSN), materials database, KROS/URS codes
+- **Conversational AI**: Chat interface for project assistance
+- **Export Reports**: Generate PDF/DOCX/XLSX reports
+- **Czech Interface**: Full Czech localization (cs.json)
+
+## 🤖 Agents
+
+### All 10 Agents Implemented
+
+| Agent | Description | Status |
+|-------|-------------|--------|
+| **TZDReaderAgent** | Technical specification reader (PDF/DOCX/TXT) | ✅ Operational |
+| **BOQParserAgent** | Bill of Quantities parser (Excel/XML) | ✅ Operational |
+| **DrawingParserAgent** | Drawing analyzer (DWG/DXF/PDF) | ✅ Operational |
+| **ResourceEstimatorAgent** | Material and labor estimation | ✅ Operational |
+| **SiteForemanAgent** | Construction planning and TOV | ✅ Operational |
+| **KnowledgeBaseAgent** | Standards and materials database | ✅ Operational |
+| **ExportAgent** | PDF/DOCX/XLSX report generation | ✅ Operational |
+| **UserManagerAgent** | Authentication and preferences | ✅ Operational |
+| **ChatAgent** | Conversational AI interface | ✅ Operational |
+| **OrchestratorAgent** | Pipeline orchestration | ✅ Operational |
+
+See [FULL_SERVICE_REBUILD.md](FULL_SERVICE_REBUILD.md) for complete details.
 
 ## 📊 Database Schema
 
