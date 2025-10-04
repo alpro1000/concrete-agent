@@ -1,0 +1,125 @@
+{
+  "version": "2025.01",
+  "description": "Kódy rozpočtových položek podle URS, KROS, RTS",
+  "source": "ÚRS Praha, KROS databáze",
+  "categories": [
+    {
+      "id": "HSV",
+      "name": "Hlavní stavební výroba",
+      "description": "Základní stavební konstrukce a práce"
+    },
+    {
+      "id": "PSV",
+      "name": "Pomocná stavební výroba",
+      "description": "Lešení, bednění, přesun hmot"
+    },
+    {
+      "id": "M",
+      "name": "Materiál",
+      "description": "Stavební materiály a hmoty"
+    }
+  ],
+  "codes": [
+    {
+      "code": "111",
+      "category": "HSV",
+      "name": "Zemní práce",
+      "description": "Výkopy, násypy, terénní úpravy",
+      "subcodes": [
+        {
+          "code": "111.01",
+          "name": "Hloubení jam a rýh nezapažených v hornině třídy 1-4",
+          "unit": "m³",
+          "typical_norm": "0.15-0.25 Nh/m³"
+        }
+      ]
+    },
+    {
+      "code": "21",
+      "category": "HSV",
+      "name": "Zakládání",
+      "description": "Základy, izolace proti vodě",
+      "subcodes": [
+        {
+          "code": "21.111",
+          "name": "Prostý beton základů",
+          "unit": "m³",
+          "typical_norm": "2.5-3.5 Nh/m³"
+        },
+        {
+          "code": "21.121",
+          "name": "Železobeton základů",
+          "unit": "m³",
+          "typical_norm": "8-12 Nh/m³"
+        }
+      ]
+    },
+    {
+      "code": "27",
+      "category": "HSV",
+      "name": "Svislé konstrukce",
+      "description": "Zdi, sloupy, pilíře",
+      "subcodes": [
+        {
+          "code": "27.11",
+          "name": "Zdivo cihelné",
+          "unit": "m³",
+          "typical_norm": "12-18 Nh/m³"
+        },
+        {
+          "code": "27.13",
+          "name": "Zdivo z tvárnic betonových",
+          "unit": "m³",
+          "typical_norm": "8-12 Nh/m³"
+        }
+      ]
+    },
+    {
+      "code": "28",
+      "category": "HSV",
+      "name": "Vodorovné konstrukce",
+      "description": "Stropy, stropní panely",
+      "subcodes": [
+        {
+          "code": "28.11",
+          "name": "Monolitické stropy železobetonové",
+          "unit": "m³",
+          "typical_norm": "15-25 Nh/m³"
+        }
+      ]
+    },
+    {
+      "code": "43",
+      "category": "HSV",
+      "name": "Podlahy",
+      "description": "Podkladní vrstvy a nášlapné vrstvy",
+      "subcodes": [
+        {
+          "code": "43.11",
+          "name": "Mazanina betonová",
+          "unit": "m³",
+          "typical_norm": "3-5 Nh/m³"
+        }
+      ]
+    },
+    {
+      "code": "99",
+      "category": "PSV",
+      "name": "Přesun hmot",
+      "description": "Přesun materiálu na stavbě",
+      "subcodes": [
+        {
+          "code": "99.01",
+          "name": "Přesun hmot pro objekty bytové do 6 m",
+          "unit": "t",
+          "typical_norm": "0.25-0.35 Nh/t"
+        }
+      ]
+    }
+  ],
+  "usage_notes": [
+    "Normy uvedené jsou orientační a liší se podle složitosti práce",
+    "KROS kódy se mohou měnit při aktualizacích systému",
+    "Pro cenové kalkulace je nutné použít aktuální ceníky ÚRS"
+  ]
+}

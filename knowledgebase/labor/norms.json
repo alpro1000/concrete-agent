@@ -1,0 +1,191 @@
+{
+  "version": "2025.01",
+  "description": "Pracovní normy podle ČSN a ÚRS",
+  "source": "ÚRS Praha, odvětvové normy",
+  "categories": {
+    "earthworks": {
+      "name": "Zemní práce",
+      "operations": [
+        {
+          "code": "111.01",
+          "operation": "Hloubení jam a rýh ručně",
+          "unit": "m³",
+          "norm_range": {
+            "min": "4.0 Nh/m³",
+            "avg": "5.5 Nh/m³",
+            "max": "7.0 Nh/m³"
+          },
+          "factors": [
+            "Třída horniny (1-4)",
+            "Hloubka výkopu",
+            "Dostupnost mechanizace"
+          ]
+        },
+        {
+          "code": "111.02",
+          "operation": "Hloubení rýh strojově (rypadlo)",
+          "unit": "m³",
+          "norm_range": {
+            "min": "0.10 Nh/m³",
+            "avg": "0.15 Nh/m³",
+            "max": "0.25 Nh/m³"
+          },
+          "equipment": "Rypadlo, nakládač"
+        }
+      ]
+    },
+    "foundations": {
+      "name": "Základy",
+      "operations": [
+        {
+          "code": "21.111",
+          "operation": "Prostý beton základů - ukládání",
+          "unit": "m³",
+          "norm_range": {
+            "min": "2.0 Nh/m³",
+            "avg": "2.8 Nh/m³",
+            "max": "3.5 Nh/m³"
+          },
+          "includes": [
+            "Příprava",
+            "Ukládání betonu",
+            "Zhutňování vibrací"
+          ]
+        },
+        {
+          "code": "21.121",
+          "operation": "Železobeton základů - výztuž a beton",
+          "unit": "m³",
+          "norm_range": {
+            "min": "8.0 Nh/m³",
+            "avg": "10.0 Nh/m³",
+            "max": "12.0 Nh/m³"
+          },
+          "includes": [
+            "Bednění",
+            "Vázání výztuže",
+            "Ukládání betonu",
+            "Odbedňování"
+          ]
+        }
+      ]
+    },
+    "masonry": {
+      "name": "Zdivo",
+      "operations": [
+        {
+          "code": "27.11",
+          "operation": "Zdivo cihelné na maltu",
+          "unit": "m³",
+          "norm_range": {
+            "min": "12.0 Nh/m³",
+            "avg": "15.0 Nh/m³",
+            "max": "18.0 Nh/m³"
+          },
+          "factors": [
+            "Tloušťka zdiva",
+            "Typ cihly (plná/děrovaná)",
+            "Výška zdiva"
+          ]
+        },
+        {
+          "code": "27.13",
+          "operation": "Zdivo z tvárnic betonových",
+          "unit": "m³",
+          "norm_range": {
+            "min": "8.0 Nh/m³",
+            "avg": "10.0 Nh/m³",
+            "max": "12.0 Nh/m³"
+          },
+          "factors": [
+            "Rozměr tvárnice",
+            "Lepidlo vs. malta"
+          ]
+        }
+      ]
+    },
+    "concrete_structures": {
+      "name": "Betonové konstrukce",
+      "operations": [
+        {
+          "code": "28.11",
+          "operation": "Strop železobetonový monolitický",
+          "unit": "m³",
+          "norm_range": {
+            "min": "15.0 Nh/m³",
+            "avg": "20.0 Nh/m³",
+            "max": "25.0 Nh/m³"
+          },
+          "includes": [
+            "Bednění stropů",
+            "Vázání výztuže",
+            "Ukládání betonu",
+            "Ošetřování betonu",
+            "Odbedňování"
+          ]
+        },
+        {
+          "code": "27.21",
+          "operation": "Sloupy železobetonové",
+          "unit": "m³",
+          "norm_range": {
+            "min": "18.0 Nh/m³",
+            "avg": "22.0 Nh/m³",
+            "max": "28.0 Nh/m³"
+          },
+          "includes": [
+            "Bednění sloupů",
+            "Vázání výztuže",
+            "Ukládání betonu",
+            "Odbedňování"
+          ]
+        }
+      ]
+    },
+    "finishing": {
+      "name": "Dokončovací práce",
+      "operations": [
+        {
+          "code": "43.11",
+          "operation": "Mazanina betonová",
+          "unit": "m²",
+          "norm_range": {
+            "min": "0.30 Nh/m²",
+            "avg": "0.40 Nh/m²",
+            "max": "0.50 Nh/m²"
+          },
+          "factors": [
+            "Tloušťka vrstvy",
+            "Druh povrchové úpravy"
+          ]
+        },
+        {
+          "code": "43.21",
+          "operation": "Obklad keramický",
+          "unit": "m²",
+          "norm_range": {
+            "min": "1.2 Nh/m²",
+            "avg": "1.5 Nh/m²",
+            "max": "1.8 Nh/m²"
+          },
+          "factors": [
+            "Velikost dlaždic",
+            "Složitost vzoru"
+          ]
+        }
+      ]
+    }
+  },
+  "legend": {
+    "Nh": "Normohodina - standardní hodina práce",
+    "m³": "Metr krychlový",
+    "m²": "Metr čtvereční",
+    "factors": "Faktory ovlivňující normy"
+  },
+  "usage_notes": [
+    "Normy jsou orientační a mohou se lišit podle podmínek stavby",
+    "Zahrnují čistý čas práce, ne přestávky a režii",
+    "Pro kalkulaci celkového času přičtěte 15-20% na organizaci práce",
+    "Normy platí pro průměrně kvalifikované pracovníky"
+  ]
+}
