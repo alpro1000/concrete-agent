@@ -3,8 +3,8 @@ Tests for TZD Reader Agent.
 """
 
 import pytest
-from app.agents.tzd_reader.agent import TZDReaderAgent
-from app.agents.base_agent import AgentResult
+from backend.app.agents.tzd_reader.agent import TZDReaderAgent
+from backend.app.agents.base_agent import AgentResult
 
 
 @pytest.mark.asyncio
@@ -39,7 +39,7 @@ async def test_tzd_reader_basic():
 @pytest.mark.asyncio
 async def test_tzd_reader_missing_document():
     """Test TZD reader with missing document."""
-    from app.core.exceptions import AgentException
+    from backend.app.core.exceptions import AgentException
     
     agent = TZDReaderAgent()
     input_data = {}

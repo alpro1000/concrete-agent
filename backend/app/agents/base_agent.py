@@ -7,10 +7,10 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, List
 from datetime import datetime
 from pydantic import BaseModel
-from app.core.llm_service import llm_service
-from app.core.prompt_loader import prompt_loader
-from app.core.logging_config import app_logger
-from app.core.exceptions import AgentException
+from backend.app.core.llm_service import llm_service
+from backend.app.core.prompt_loader import prompt_loader
+from backend.app.core.logging_config import app_logger
+from backend.app.core.exceptions import AgentException
 
 
 class ScientificMethodStep(BaseModel):

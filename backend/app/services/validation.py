@@ -4,8 +4,8 @@ Validation service for data validation and sanitization.
 
 import re
 from typing import Any, Dict, List, Optional
-from app.core.logging_config import app_logger
-from app.core.exceptions import ValidationException
+from backend.app.core.logging_config import app_logger
+from backend.app.core.exceptions import ValidationException
 
 
 class ValidationService:
