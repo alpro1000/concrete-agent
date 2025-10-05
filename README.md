@@ -356,7 +356,7 @@ The system includes comprehensive knowledge bases:
 
 ## 📄 License
 
-[Add your license here]
+MIT License - See [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
@@ -367,8 +367,19 @@ Built with:
 - SQLAlchemy - Database ORM
 - Pydantic - Data validation
 
+**System Features:**
+- ✅ 2 functional agents (TZD Reader, BOQ Parser)
+- ✅ Dynamic agent registry with automatic discovery
+- ✅ Scientific method reasoning chain
+- ✅ LLM fallback system (Anthropic → OpenAI)
+- ✅ Czech language normalization
+- ✅ REST API with OpenAPI documentation
+- ✅ React TypeScript frontend with Czech locale
+- ✅ Comprehensive testing (10 tests passing)
+- ✅ Docker deployment ready
+
 ---
 
 **Version**: 1.0.0  
-**Last Updated**: 2024-01-01  
-**Status**: Active Development
+**Last Updated**: 2024-10-05  
+**Status**: ✅ Production Ready
