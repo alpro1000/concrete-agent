@@ -8,7 +8,7 @@ on:
       - 'requirements.txt'
       - 'Dockerfile'
       - 'render.yaml'
-      - '.github/workflows/deploy-backend.yml'
+      - '.github/workflows/render_deploy.yml'
   workflow_dispatch:
 
 jobs:
