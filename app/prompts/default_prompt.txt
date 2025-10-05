@@ -1,9 +1,0 @@
-Please analyze the provided construction data according to your specialized role in the Concrete Agent system.
-
-Use the scientific method:
-1. Form a hypothesis about the problem
-2. Reason through the data systematically
-3. Verify your analysis
-4. Draw clear conclusions
-
-Provide your response in structured format that can be easily parsed and integrated with other system components.
