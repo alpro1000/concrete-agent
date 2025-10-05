@@ -27,8 +27,13 @@ jobs:
       - name: Validate backend imports
         run: |
           pip install -q -r requirements.txt
-          cd /home/runner/work/concrete-agent/concrete-agent
           python3 -c "from backend.app.main import app; print('✅ Backend imports successfully with full package path')"
+          
+      - name: Run import validation tests
+        run: |
+          echo "Running import validation tests..."
+          pytest backend/tests/test_imports.py -v --tb=short
+          echo "✅ All import tests passed"
 
       - name: Deploy to Render
         run: |
