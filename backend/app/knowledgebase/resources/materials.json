@@ -1,0 +1,92 @@
+{
+  "materials": [
+    {
+      "id": "concrete_c25_30",
+      "name": "Beton C25/30",
+      "category": "concrete",
+      "unit": "m³",
+      "properties": {
+        "strength_class": "C25/30",
+        "exposure_class": "XC1",
+        "consistency": "S3",
+        "max_aggregate_size": 16,
+        "cement_content_min": 280
+      },
+      "typical_price_czk": 2500
+    },
+    {
+      "id": "concrete_c30_37",
+      "name": "Beton C30/37",
+      "category": "concrete",
+      "unit": "m³",
+      "properties": {
+        "strength_class": "C30/37",
+        "exposure_class": "XC2",
+        "consistency": "S3",
+        "max_aggregate_size": 16,
+        "cement_content_min": 320
+      },
+      "typical_price_czk": 2700
+    },
+    {
+      "id": "steel_b500b",
+      "name": "Betonářská ocel B500B",
+      "category": "reinforcement",
+      "unit": "kg",
+      "properties": {
+        "grade": "B500B",
+        "yield_strength": 500,
+        "standard": "ČSN EN 10080"
+      },
+      "typical_price_czk": 25
+    },
+    {
+      "id": "formwork_panels",
+      "name": "Dřevěné bednící desky",
+      "category": "formwork",
+      "unit": "m²",
+      "properties": {
+        "material": "wood",
+        "thickness": 18,
+        "reusable": true
+      },
+      "typical_price_czk": 150
+    },
+    {
+      "id": "cement_42_5",
+      "name": "Cement CEM I 42,5 R",
+      "category": "cement",
+      "unit": "t",
+      "properties": {
+        "type": "CEM I",
+        "strength_class": "42.5 R",
+        "standard": "ČSN EN 197-1"
+      },
+      "typical_price_czk": 3500
+    },
+    {
+      "id": "aggregate_0_4",
+      "name": "Kamenivo 0-4 mm",
+      "category": "aggregate",
+      "unit": "t",
+      "properties": {
+        "size_range": "0-4",
+        "type": "sand",
+        "standard": "ČSN EN 12620"
+      },
+      "typical_price_czk": 400
+    },
+    {
+      "id": "aggregate_8_16",
+      "name": "Kamenivo 8-16 mm",
+      "category": "aggregate",
+      "unit": "t",
+      "properties": {
+        "size_range": "8-16",
+        "type": "gravel",
+        "standard": "ČSN EN 12620"
+      },
+      "typical_price_czk": 450
+    }
+  ]
+}

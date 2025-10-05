@@ -1,0 +1,2 @@
+# Main requirements file - references backend requirements
+-r backend/requirements.txt

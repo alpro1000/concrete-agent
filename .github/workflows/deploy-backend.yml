@@ -4,9 +4,9 @@ on:
   push:
     branches: [main]
     paths:
-      - 'app/**'
+      - 'backend/**'
       - 'requirements.txt'
-      - 'Dockerfile'
+      - 'backend/Dockerfile'
       - 'render.yaml'
       - '.github/workflows/deploy-backend.yml'
   workflow_dispatch:
@@ -26,8 +26,8 @@ jobs:
 
       - name: Validate backend imports
         run: |
-          pip install -q fastapi uvicorn python-multipart
-          python3 -c "from app.main import app; print('✅ Backend imports successfully')"
+          pip install -q -r backend/requirements.txt
+          cd backend && python3 -c "from app.main import app; print('✅ Backend imports successfully')"
 
       - name: Deploy to Render
         run: |
