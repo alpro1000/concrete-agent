@@ -1,0 +1,54 @@
+{
+  "labor_rates": {
+    "foreman": {
+      "name": "Stavbyvedoucí",
+      "hourly_rate_czk": 450,
+      "daily_rate_czk": 3600,
+      "monthly_rate_czk": 72000
+    },
+    "concrete_worker": {
+      "name": "Betonář",
+      "hourly_rate_czk": 280,
+      "daily_rate_czk": 2240,
+      "monthly_rate_czk": 44800
+    },
+    "steel_fixer": {
+      "name": "Železář",
+      "hourly_rate_czk": 260,
+      "daily_rate_czk": 2080,
+      "monthly_rate_czk": 41600
+    },
+    "carpenter": {
+      "name": "Tesař/bednář",
+      "hourly_rate_czk": 270,
+      "daily_rate_czk": 2160,
+      "monthly_rate_czk": 43200
+    },
+    "laborer": {
+      "name": "Pomocný dělník",
+      "hourly_rate_czk": 180,
+      "daily_rate_czk": 1440,
+      "monthly_rate_czk": 28800
+    }
+  },
+  "overhead_rates": {
+    "site_overhead": {
+      "name": "Režie staveniště",
+      "percentage": 12,
+      "description": "Náklady na provoz staveniště"
+    },
+    "company_overhead": {
+      "name": "Režie firmy",
+      "percentage": 8,
+      "description": "Správní režie stavební firmy"
+    },
+    "profit_margin": {
+      "name": "Zisk",
+      "percentage": 10,
+      "description": "Zisková marže"
+    }
+  },
+  "currency": "CZK",
+  "last_updated": "2024-01-01",
+  "notes": "Ceny jsou orientační a liší se podle regionu a rozsahu zakázky"
+}
