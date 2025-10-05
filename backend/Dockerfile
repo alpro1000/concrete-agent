@@ -1,40 +1,43 @@
-FROM python:3.11-slim
+# ===============================================
+# Concrete Agent — Backend Dockerfile (Stable)
+# Environment: Python 3.11 / FastAPI / Render
+# ===============================================
 
-# DEPRECATED: This Dockerfile is kept for backward compatibility only.
-# For production deployments, use /Dockerfile.backend from the project root
-# with build context set to project root.
-#
-# If you must use this file, it assumes the build context is the backend/ directory
-# and will create a structure where backend becomes the package root.
+FROM python:3.11-slim AS base
 
-# Set working directory
+# Рабочая директория
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Установка системных зависимостей
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
-    postgresql-client \
+    libpq-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements from project root (one level up from backend/)
-COPY ../requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Копируем requirements из текущего контекста (backend/)
+COPY requirements.txt /app/requirements.txt
 
-# Copy backend contents to /app/backend to maintain package structure
-COPY . /app/backend
+# Устанавливаем зависимости Python
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# Create necessary directories
-RUN mkdir -p /app/logs /tmp/uploads
+# Копируем приложение
+COPY app /app/app
 
-# Expose port
+# Создаем нужные директории
+RUN mkdir -p /app/logs /app/storage /app/uploads
+
+# Настройка переменных окружения
+ENV PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1 \
+    PORT=8000
+
+# Открываем порт
 EXPOSE 8000
 
-# Health check using the full package path
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8000/health')"
+# Проверка здоровья приложения
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
 
-# Run the application using full package path from project root
-CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-
-
-
+# Запускаем сервер
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
