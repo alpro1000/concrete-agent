@@ -143,7 +143,7 @@ app.include_router(status_router.router, prefix="/api", tags=["status"])
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "app.main:app",
+        "backend.app.main:app",
         host=settings.api_host,
         port=settings.api_port,
         reload=settings.debug
