@@ -128,12 +128,15 @@ async def root():
 
 
 # Import and include routers
-# NOTE: Routers will be imported here once they are created
-# from app.routers import user_router, unified_router, results_router, status_router, admin_router
+from app.routers import unified_router, status_router
+
+app.include_router(unified_router.router, prefix="/api/agents", tags=["agents"])
+app.include_router(status_router.router, prefix="/api", tags=["status"])
+
+# NOTE: Additional routers can be added as they are created
+# from app.routers import user_router, results_router, admin_router
 # app.include_router(user_router.router, prefix="/api/users", tags=["users"])
-# app.include_router(unified_router.router, prefix="/api/agents", tags=["agents"])
 # app.include_router(results_router.router, prefix="/api/results", tags=["results"])
-# app.include_router(status_router.router, prefix="/api/status", tags=["status"])
 # app.include_router(admin_router.router, prefix="/api/admin", tags=["admin"])
 
 
