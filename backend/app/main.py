@@ -5,18 +5,23 @@ Main FastAPI application for Concrete Agent system.
 import os
 import sys
 import time
+from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-# --- Dynamic path fix for Render or local runs ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(BASE_DIR)
-if PROJECT_ROOT not in sys.path:
-    sys.path.append(PROJECT_ROOT)
+# --- CRITICAL: Fix imports for Render ---
+# Add parent directory to path to find 'app' module
+current_file = Path(__file__).resolve()
+backend_dir = current_file.parent.parent  # Points to /backend
+project_root = backend_dir.parent         # Points to project root
 
-# --- Core imports ---
+# Add backend directory to Python path
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
+
+# Now imports will work
 from app.core import (
     settings,
     init_db,
@@ -126,21 +131,12 @@ from app.routers import unified_router, status_router
 app.include_router(unified_router.router, prefix="/api/agents", tags=["agents"])
 app.include_router(status_router.router, prefix="/api", tags=["status"])
 
-# Future extensions:
-# from app.routers import user_router, results_router, admin_router
-# app.include_router(user_router.router, prefix="/api/users", tags=["users"])
-# app.include_router(results_router.router, prefix="/api/results", tags=["results"])
-# app.include_router(admin_router.router, prefix="/api/admin", tags=["admin"])
-
 
 if __name__ == "__main__":
     import uvicorn
 
-    # 🧩 Automatically detect correct app path for Render or local
-    app_module = "backend.app.main:app" if os.path.isdir("backend") else "app.main:app"
-
     uvicorn.run(
-        app_module,
+        "app.main:app",  # Simplified - always use same path
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", 8000)),
         reload=settings.debug,
