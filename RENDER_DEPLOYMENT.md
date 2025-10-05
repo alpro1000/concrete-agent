@@ -41,6 +41,31 @@ COPY app /app/app
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
+### Frontend Service Configuration
+
+**Service Name:** concrete-agent-frontend (or your service name)
+
+**Build Settings:**
+- **Build Command:** 
+  ```bash
+  cd frontend && npm install && npm run build
+  ```
+- **Start Command:** 
+  ```bash
+  cd frontend && npm run preview
+  ```
+- **Root Directory:** `/` (project root)
+
+**Important:** The frontend's `vite.config.ts` is configured to bind to `0.0.0.0` and use the `$PORT` environment variable, which is required for Render to detect the open port.
+
+**Preview Configuration (already set in vite.config.ts):**
+```typescript
+preview: {
+  host: '0.0.0.0',
+  port: Number(process.env.PORT) || 4173,
+}
+```
+
 ## Verification Steps
 
 After deployment, verify the following endpoints:
@@ -83,6 +108,30 @@ uvicorn app.main:app --host 0.0.0.0 --port $PORT
 1. `requirements.txt` is at root level
 2. Build command is correct
 3. Check build logs for specific package errors
+
+### Issue: Frontend - "No open ports detected on 0.0.0.0"
+
+**Symptoms:**
+- Deployment logs show: "Port scan timeout reached, no open ports detected on 0.0.0.0"
+- Preview server shows: "Local: http://localhost:4173/" and "Network: use --host to expose"
+
+**Solution:** 
+This has been fixed in `frontend/vite.config.ts` with:
+```typescript
+preview: {
+  host: '0.0.0.0',
+  port: Number(process.env.PORT) || 4173,
+}
+```
+
+**Verification:**
+After deployment, the preview server should show:
+```
+➜  Local:   http://localhost:10000/
+➜  Network: http://[IP_ADDRESS]:10000/
+```
+
+The presence of a Network address confirms the server is binding to 0.0.0.0.
 
 ## Rollback Plan
 
