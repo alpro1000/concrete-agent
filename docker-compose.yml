@@ -23,7 +23,7 @@ services:
   backend:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.backend
     container_name: concrete_agent_backend
     ports:
       - "8000:8000"
@@ -36,12 +36,12 @@ services:
     env_file:
       - .env
     volumes:
-      - ./app:/app/app
+      - ./backend:/app/backend
       - ./logs:/app/logs
     depends_on:
       db:
         condition: service_healthy
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
 
   # Frontend (optional for development)
   # frontend:
