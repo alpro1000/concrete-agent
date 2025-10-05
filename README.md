@@ -133,25 +133,27 @@ concrete-agent/
 ### Backend Setup
 
 ```bash
-cd backend
+# Navigate to project root (not backend/)
+cd concrete-agent
 
 # Install dependencies
 pip install -r requirements.txt
 
 # Set up environment
-cp ../.env.example .env
+cp .env.example .env
 # Edit .env with your API keys and configuration
 
-# Run the application
-python -m app.main
-
-# Or with uvicorn
-uvicorn app.main:app --reload
+# Run the application (from project root)
+uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 The API will be available at `http://localhost:8000`
 - API Documentation: `http://localhost:8000/docs`
 - Health Check: `http://localhost:8000/health`
+- Status & Agents: `http://localhost:8000/status`
+
+> **Note:** The application now uses proper Python package imports (`backend.app.*`).
+> Always run from the project root directory. See [DEPLOYMENT.md](DEPLOYMENT.md) for details.
 
 ### Frontend Setup
 
@@ -168,16 +170,23 @@ npm run dev
 ### Running Tests
 
 ```bash
-cd backend
-
-# Run all tests
-pytest
+# Run all tests from project root
+pytest backend/tests/test_imports.py backend/app/tests/ -v
 
 # Run with coverage
-pytest --cov=app --cov-report=html
+pytest backend/app/tests/ --cov=backend.app --cov-report=html
 
-# Run specific test
-pytest app/tests/test_registry.py
+# Run specific test file
+pytest backend/app/tests/test_registry.py -v
+
+# Run new import validation tests
+pytest backend/tests/test_imports.py -v
+```
+
+**Test Suite:**
+- 26 tests total (9 import validation + 17 functional tests)
+- Import tests ensure proper module resolution
+- All tests run from project root
 ```
 
 ## 🔧 Configuration
@@ -323,18 +332,45 @@ All agents produce traceable reasoning chains:
 
 ## 🌍 Deployment
 
-### Docker
+### Docker (Local Development)
 
 ```bash
+# Run with docker-compose (from project root)
 docker-compose up -d
 ```
 
-### Render
+### Docker (Production Build)
 
-The project includes GitHub Actions workflows for automatic deployment to Render:
-- `deploy-backend.yml` - Backend deployment
+```bash
+# Build from project root using production Dockerfile
+docker build -f Dockerfile.backend -t concrete-agent-backend .
+
+# Run
+docker run -p 8000:8000 \
+  -e DATABASE_URL=postgresql://user:pass@localhost/db \
+  -e ANTHROPIC_API_KEY=your_key \
+  concrete-agent-backend
+```
+
+### Render Deployment
+
+The project uses proper Python package structure for reliable Render deployments.
+
+**Configuration:**
+- **Build Command:** `pip install -r requirements.txt`
+- **Start Command:** `uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT`
+- **Root Directory:** `/` (project root)
+
+**GitHub Actions Workflows:**
+- `deploy-backend.yml` - Automated backend deployment with import validation
 - `deploy-frontend.yml` - Frontend deployment
 - `render_purge.yml` - Cache management
+
+**✅ Key Features:**
+- No sys.path manipulation required
+- Same command works locally and in production
+- Comprehensive import validation tests
+- Full deployment guide in [DEPLOYMENT.md](DEPLOYMENT.md)
 
 ## 📚 Knowledge Base
 
