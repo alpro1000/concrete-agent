@@ -3,10 +3,10 @@ Orchestrator for coordinating agent execution and workflow.
 """
 
 from typing import Dict, Any, Optional, List
-from app.core.logging_config import app_logger
-from app.core.exceptions import AgentException, RegistryException
-from app.services.registry import agent_registry
-from app.agents.base_agent import BaseAgent, AgentResult
+from backend.app.core.logging_config import app_logger
+from backend.app.core.exceptions import AgentException, RegistryException
+from backend.app.services.registry import agent_registry
+from backend.app.agents.base_agent import BaseAgent, AgentResult
 
 
 class Orchestrator:

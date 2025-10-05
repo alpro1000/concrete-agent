@@ -6,7 +6,7 @@ from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
-from app.core.database import Base
+from backend.app.core.database import Base
 
 
 class AnalysisStatus(enum.Enum):

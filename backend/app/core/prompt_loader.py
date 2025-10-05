@@ -5,9 +5,9 @@ Prompt loader for managing system and agent prompts.
 import os
 from pathlib import Path
 from typing import Dict, Optional
-from app.core.config import settings
-from app.core.logging_config import app_logger
-from app.core.exceptions import ConfigurationException
+from backend.app.core.config import settings
+from backend.app.core.logging_config import app_logger
+from backend.app.core.exceptions import ConfigurationException
 
 
 class PromptLoader:

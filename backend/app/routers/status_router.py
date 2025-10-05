@@ -3,9 +3,9 @@ Status router for system monitoring and health checks.
 """
 
 from fastapi import APIRouter, HTTPException
-from app.core import check_db_connection, settings, llm_service
-from app.services.registry import agent_registry
-from app.core.logging_config import app_logger
+from backend.app.core import check_db_connection, settings, llm_service
+from backend.app.services.registry import agent_registry
+from backend.app.core.logging_config import app_logger
 
 router = APIRouter()
 
@@ -59,7 +59,7 @@ async def get_metrics():
         System metrics
     """
     try:
-        from app.core.orchestrator import orchestrator
+        from backend.app.core.orchestrator import orchestrator
         
         history = orchestrator.get_execution_history(limit=1000)
         

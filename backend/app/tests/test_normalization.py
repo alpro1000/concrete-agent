@@ -3,7 +3,7 @@ Test for Czech normalization service.
 """
 
 import pytest
-from app.services.normalization import (
+from backend.app.services.normalization import (
     remove_diacritics,
     normalize_to_ascii,
     is_czech_text,

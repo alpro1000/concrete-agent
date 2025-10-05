@@ -4,16 +4,16 @@ Unified router for agent orchestration and execution.
 
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict, Any
-from app.core.orchestrator import orchestrator
-from app.services.registry import agent_registry
-from app.schemas.response_schema import (
+from backend.app.core.orchestrator import orchestrator
+from backend.app.services.registry import agent_registry
+from backend.app.schemas.response_schema import (
     AgentExecuteRequest,
     AgentExecuteResponse,
     WorkflowExecuteRequest,
     WorkflowExecuteResponse,
     SuccessResponse
 )
-from app.core.logging_config import app_logger
+from backend.app.core.logging_config import app_logger
 
 router = APIRouter()
 

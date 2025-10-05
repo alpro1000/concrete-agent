@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 from jose import jwt
-from app.core.config import settings
+from backend.app.core.config import settings
 
 
 def generate_uuid() -> str:

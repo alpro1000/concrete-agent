@@ -1,36 +1,28 @@
 """
 Main FastAPI application for Concrete Agent system.
+
+This module uses absolute imports with the full package path (backend.app.*)
+to ensure proper module resolution in all environments (local, Docker, Render).
+No sys.path manipulation is needed when running from the project root.
 """
 
 import os
-import sys
 import time
-from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-# --- CRITICAL: Fix imports for Render ---
-# Add parent directory to path to find 'app' module
-current_file = Path(__file__).resolve()
-backend_dir = current_file.parent.parent  # Points to /backend
-project_root = backend_dir.parent         # Points to project root
-
-# Add backend directory to Python path
-if str(backend_dir) not in sys.path:
-    sys.path.insert(0, str(backend_dir))
-
-# Now imports will work
-from app.core import (
+# Import using full package paths for proper module resolution
+from backend.app.core import (
     settings,
     init_db,
     check_db_connection,
     app_logger,
     ConcreteAgentException,
 )
-from app.services import agent_registry
-from app.core.orchestrator import orchestrator
+from backend.app.services import agent_registry
+from backend.app.core.orchestrator import orchestrator
 
 
 @asynccontextmanager
@@ -126,7 +118,8 @@ async def root():
 
 
 # --- Routers ---
-from app.routers import unified_router, status_router
+# Import routers using full package paths
+from backend.app.routers import unified_router, status_router
 
 app.include_router(unified_router.router, prefix="/api/agents", tags=["agents"])
 app.include_router(status_router.router, prefix="/api", tags=["status"])
@@ -135,8 +128,9 @@ app.include_router(status_router.router, prefix="/api", tags=["status"])
 if __name__ == "__main__":
     import uvicorn
 
+    # Use full package path that works from project root
     uvicorn.run(
-        "app.main:app",  # Simplified - always use same path
+        "backend.app.main:app",
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", 8000)),
         reload=settings.debug,

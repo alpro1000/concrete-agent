@@ -6,8 +6,8 @@ import importlib
 import inspect
 from pathlib import Path
 from typing import Dict, Type, Optional, List
-from app.core.logging_config import app_logger
-from app.core.exceptions import RegistryException
+from backend.app.core.logging_config import app_logger
+from backend.app.core.exceptions import RegistryException
 
 
 class AgentRegistry:
@@ -88,8 +88,8 @@ class AgentRegistry:
                 continue
             
             try:
-                # Import the agent module
-                module_path = f"app.agents.{agent_dir.name}.agent"
+                # Import the agent module using full package path
+                module_path = f"backend.app.agents.{agent_dir.name}.agent"
                 module = importlib.import_module(module_path)
                 
                 # Find agent classes in the module

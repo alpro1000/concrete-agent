@@ -6,8 +6,8 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 from typing import Generator
-from app.core.config import settings
-from app.core.logging_config import app_logger
+from backend.app.core.config import settings
+from backend.app.core.logging_config import app_logger
 
 
 # Create engine

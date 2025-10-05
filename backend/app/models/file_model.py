@@ -5,7 +5,7 @@ File database model.
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, BigInteger
 from sqlalchemy.orm import relationship
 from datetime import datetime
-from app.core.database import Base
+from backend.app.core.database import Base
 
 
 class File(Base):

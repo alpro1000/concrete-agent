@@ -1,10 +1,12 @@
 """
 Models package initialization.
+
+All imports use full package paths (backend.app.*) for proper module resolution.
 """
 
-from app.models.user_model import User
-from app.models.analysis_model import Analysis, AnalysisStatus
-from app.models.file_model import File
+from backend.app.models.user_model import User
+from backend.app.models.analysis_model import Analysis, AnalysisStatus
+from backend.app.models.file_model import File
 
 __all__ = [
     "User",

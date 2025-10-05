@@ -5,9 +5,9 @@ LLM Service with automatic fallback between Anthropic and OpenAI.
 from typing import Dict, List, Optional, Any
 from anthropic import Anthropic
 from openai import OpenAI
-from app.core.config import settings
-from app.core.logging_config import app_logger
-from app.core.exceptions import LLMException
+from backend.app.core.config import settings
+from backend.app.core.logging_config import app_logger
+from backend.app.core.exceptions import LLMException
 
 
 class LLMService:

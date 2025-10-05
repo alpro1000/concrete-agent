@@ -7,10 +7,10 @@ import shutil
 from pathlib import Path
 from typing import Optional
 from fastapi import UploadFile
-from app.core.config import settings
-from app.core.logging_config import app_logger
-from app.core.exceptions import StorageException
-from app.core.utils import generate_uuid
+from backend.app.core.config import settings
+from backend.app.core.logging_config import app_logger
+from backend.app.core.exceptions import StorageException
+from backend.app.core.utils import generate_uuid
 
 
 class StorageService:

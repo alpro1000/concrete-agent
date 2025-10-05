@@ -4,7 +4,7 @@ Logging configuration for Concrete Agent system.
 
 import sys
 from loguru import logger
-from app.core.config import settings
+from backend.app.core.config import settings
 
 
 def setup_logging():

@@ -3,8 +3,8 @@ BOQ Parser Agent - Bill of Quantities parser.
 """
 
 from typing import Dict, Any
-from app.agents.base_agent import BaseAgent, AgentResult
-from app.core.logging_config import app_logger
+from backend.app.agents.base_agent import BaseAgent, AgentResult
+from backend.app.core.logging_config import app_logger
 
 
 class BOQParserAgent(BaseAgent):

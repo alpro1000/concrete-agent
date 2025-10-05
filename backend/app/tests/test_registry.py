@@ -3,8 +3,8 @@ Test for agent registry functionality.
 """
 
 import pytest
-from app.services.registry import AgentRegistry
-from app.agents.base_agent import BaseAgent, AgentResult
+from backend.app.services.registry import AgentRegistry
+from backend.app.agents.base_agent import BaseAgent, AgentResult
 from typing import Dict, Any
 
 
@@ -33,7 +33,7 @@ def test_agent_registry_register():
 
 def test_agent_registry_get_nonexistent():
     """Test getting non-existent agent raises exception."""
-    from app.core.exceptions import RegistryException
+    from backend.app.core.exceptions import RegistryException
     
     registry = AgentRegistry()
     
