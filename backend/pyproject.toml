@@ -1,0 +1,39 @@
+[project]
+name = "concrete-agent"
+version = "1.0.0"
+description = "Scientific-method based construction analysis system"
+requires-python = ">=3.11"
+authors = [
+    {name = "Concrete Agent Team"}
+]
+
+[tool.pytest.ini_options]
+testpaths = ["app/tests", "tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = "-v -s --cov=app --cov-report=term-missing --cov-report=xml"
+
+[tool.coverage.run]
+source = ["app"]
+omit = [
+    "*/tests/*",
+    "*/__init__.py",
+    "*/migrations/*"
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod"
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
