@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { getSystemStatus, getAvailableAgents } from '../api/client'
+import { getSystemStatus } from '../api/client'
 
 interface SystemStatus {
   status: string
