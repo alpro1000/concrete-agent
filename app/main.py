@@ -24,6 +24,7 @@ from app.core import (
 from app.services import agent_registry
 from app.core.orchestrator import orchestrator
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown."""
@@ -117,11 +118,12 @@ async def root():
 
 
 # --- Routers ---
-# Import routers using full package paths
-from app.routers import unified_router, status_router
+# ✅ ВАЖНО: Импортируем роутеры ПОСЛЕ создания объекта app
+from app.routers import unified_router, status_router, auth_router
 
 app.include_router(unified_router.router, prefix="/api/agents", tags=["agents"])
 app.include_router(status_router.router, prefix="/api", tags=["status"])
+app.include_router(auth_router.router)  # auth_router уже имеет prefix="/api/auth"
 
 
 if __name__ == "__main__":
