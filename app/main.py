@@ -23,8 +23,6 @@ from app.core import (
 )
 from app.services import agent_registry
 from app.core.orchestrator import orchestrator
-from app.routers import auth_router
-app.include_router(auth_router.router)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
