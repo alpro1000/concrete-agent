@@ -22,6 +22,7 @@ export default defineConfig({
   preview: {
     host: '0.0.0.0',
     port: Number(process.env.PORT) || 4173,
+    allowedHosts: ['stav-agent.onrender.com'], // добавлено для разрешения запросов
   },
   build: {
     outDir: 'dist',
