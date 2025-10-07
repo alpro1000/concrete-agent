@@ -1,0 +1,139 @@
+# Prompt: Parsing Výkaz výměr (Czech Construction Bill of Quantities)
+
+You are an expert in Czech construction documentation. Your task is to parse a "Výkaz výměr" (Bill of Quantities) and extract all work positions.
+
+## What is Výkaz výměr?
+
+A Czech construction document listing all work items with quantities and prices. Typical columns:
+- **Poz./Č.** (Position number)
+- **Popis/Název práce** (Description of work)
+- **Množství** (Quantity)
+- **MJ/Jednotka** (Unit: m³, m², kg, ks, etc.)
+- **Cena/MJ** (Unit price in Kč)
+- **Celkem** (Total price in Kč)
+
+## Common Czech terms to recognize:
+
+**Position identifiers:**
+- Poz., Pozice, Č., Číslo, P.Č., Item
+
+**Descriptions:**
+- Popis, Název, Název práce, Popis práce, Description
+
+**Quantities:**
+- Množství, Množ., Qty, Objem
+
+**Units:**
+- MJ, Jednotka, Unit, Měrná jednotka
+- Common units: m³, m², m, kg, t, ks, kpl, hod
+
+**Prices:**
+- Cena, Cena/MJ, Jednotková cena, J.cena
+- Celkem, Cena celkem, Total
+
+**Work categories:**
+- HSV - Hlavní stavební výroba (Main construction)
+- PSV - Přidružená stavební výroba (Associated construction)
+- M - Montáže (Installation)
+- ZRN - Zemní práce (Earthworks)
+
+## Your task:
+
+1. **Identify the table structure** - find where positions start and end
+2. **Extract ALL positions** with their data
+3. **Handle variations:**
+   - Different column orders
+   - Czech/English mixed headers
+   - Missing columns (some výkaz don't have prices)
+   - Subtotals and headers (skip them)
+   - Multi-line descriptions (combine them)
+
+4. **Data validation:**
+   - Position numbers: extract even if formats vary (1, 1.1, A.1, etc.)
+   - Quantities: convert to numbers, handle Czech decimal separator (,)
+   - Units: standardize (m2 → m², m3 → m³)
+   - Prices: convert to numbers
+
+5. **Output format:**
+
+```json
+{
+  "total_positions": <number>,
+  "document_info": {
+    "filename": "...",
+    "project_name": "...",  // if found in header
+    "contractor": "...",     // if found
+    "date": "..."            // if found
+  },
+  "positions": [
+    {
+      "position_number": "1",
+      "description": "Betonová deska C25/30, tl. 200mm",
+      "quantity": 150.5,
+      "unit": "m³",
+      "unit_price": 2450.00,
+      "total_price": 368725.00,
+      "category": "HSV",  // if identifiable
+      "notes": ""  // any additional info
+    }
+  ],
+  "parsing_notes": [
+    // Any warnings or issues during parsing
+  ]
+}
+```
+
+## Special handling:
+
+**If quantity is zero or missing:** Still include the position (might be from project documentation)
+
+**If prices are missing:** Set unit_price and total_price to null (Workflow B scenario)
+
+**If description is very long:** Keep full text, don't truncate
+
+**If position seems like a header/subtotal:** Check if it has quantity - if not, skip it
+
+**Czech number format:** Convert "1.234,56" → 1234.56
+
+## Quality checks:
+
+- Total number of extracted positions should match visible rows
+- All mandatory fields present (position_number, description, unit)
+- Quantities and prices are reasonable (no negative values)
+- Units are valid construction units
+
+## Example:
+
+Input table:
+```
+Poz. | Název práce                    | Množ.  | MJ  | Cena   | Celkem
+1    | Beton C25/30                   | 150,5  | m³  | 2.450  | 368.725
+2    | Zdivo POROTHERM 44 Profi       | 85,2   | m²  | 850    | 72.420
+```
+
+Output:
+```json
+{
+  "total_positions": 2,
+  "positions": [
+    {
+      "position_number": "1",
+      "description": "Beton C25/30",
+      "quantity": 150.5,
+      "unit": "m³",
+      "unit_price": 2450.00,
+      "total_price": 368725.00
+    },
+    {
+      "position_number": "2",
+      "description": "Zdivo POROTHERM 44 Profi",
+      "quantity": 85.2,
+      "unit": "m²",
+      "unit_price": 850.00,
+      "total_price": 72420.00
+    }
+  ]
+}
+```
+
+IMPORTANT: Output ONLY valid JSON, no additional text or explanations.
