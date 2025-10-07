@@ -1,6 +1,7 @@
 """
 Czech Building Audit System - FastAPI Application
 Phase 1: Workflow A (с výkaz výměr)
+UPDATED: Integrated with new services
 """
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
@@ -15,10 +16,13 @@ from app.core.config import settings
 from app.core.claude_client import ClaudeClient
 from app.core.prompt_manager import prompt_manager
 
+# NEW: Import services
+from app.services.workflow_a import workflow_a
+
 # Инициализация приложения
 app = FastAPI(
     title="Czech Building Audit System",
-    description="Phase 1: AUDIT výkazu výměr",
+    description="Phase 1: AUDIT výkazu výměr + Resource Calculation",
     version="1.0.0"
 )
 
@@ -56,12 +60,14 @@ async def root():
     return {
         "status": "online",
         "version": "1.0.0",
-        "phase": "Phase 1 - Workflow A",
+        "phase": "Phase 1 - Workflow A + Resource Calculation",
         "features": {
             "workflow_a": settings.ENABLE_WORKFLOW_A,
             "workflow_b": settings.ENABLE_WORKFLOW_B,
             "kros_matching": settings.ENABLE_KROS_MATCHING,
-            "rts_matching": settings.ENABLE_RTS_MATCHING
+            "rts_matching": settings.ENABLE_RTS_MATCHING,
+            "resource_calculation": settings.ENABLE_RESOURCE_CALCULATION,
+            "multi_role": settings.multi_role.enabled
         }
     }
 
@@ -109,23 +115,54 @@ async def upload_project(
             "project_name": project_name,
             "files_uploaded": len(uploaded_files),
             "files": uploaded_files,
-            "next_step": f"POST /api/v1/parse/{project_id}"
+            "next_step": f"POST /api/v1/audit/workflow-a/{project_id}"
         }
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/v1/audit/workflow-a/{project_id}")
+async def run_workflow_a_endpoint(
+    project_id: str,
+    calculate_resources: bool = False
+):
+    """
+    Spustit celý Workflow A (nový integrovaný)
+    
+    Args:
+        project_id: ID projektu
+        calculate_resources: Počítat zdroje (TOV)?
+    
+    Returns:
+        Kompletní audit report
+    """
+    try:
+        # NEW: Use integrated workflow service
+        report = await workflow_a.run(
+            project_id=project_id,
+            calculate_resources=calculate_resources
+        )
+        
+        return {
+            "status": "success",
+            "project_id": project_id,
+            "statistics": report["statistics"],
+            "download_url": f"/api/v1/download/{project_id}",
+            "results_url": f"/api/v1/results/{project_id}"
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# LEGACY ENDPOINTS (for backward compatibility)
 @app.post("/api/v1/parse/{project_id}")
 async def parse_project(project_id: str):
     """
-    Парсинг документов проекта (Workflow A)
+    LEGACY: Парсинг документов проекта (Workflow A)
     
-    Args:
-        project_id: ID проекта
-    
-    Returns:
-        Распарсенные позиции
+    NOTE: Doporučujeme používat /api/v1/audit/workflow-a/{project_id}
     """
     try:
         project_dir = settings.DATA_DIR / "raw" / project_id
@@ -179,96 +216,19 @@ async def parse_project(project_id: str):
 
 
 @app.post("/api/v1/audit/{project_id}")
-async def audit_project(project_id: str):
+async def audit_project_legacy(project_id: str):
     """
-    Запуск AUDIT для проекта
+    LEGACY: Запуск AUDIT для проекта
     
-    Args:
-        project_id: ID проекта
-    
-    Returns:
-        Результаты AUDIT
+    NOTE: Doporučujeme používat /api/v1/audit/workflow-a/{project_id}
     """
-    try:
-        # Загружаем распарсенные позиции
-        processed_dir = settings.DATA_DIR / "processed" / project_id
-        positions_file = processed_dir / "positions.json"
-        
-        if not positions_file.exists():
-            raise HTTPException(
-                status_code=404, 
-                detail="Positions not found. Run /parse first"
-            )
-        
-        import json
-        with open(positions_file, "r", encoding="utf-8") as f:
-            project_data = json.load(f)
-        
-        positions = project_data.get("positions", [])
-        
-        # Загружаем Knowledge Base (упрощенно для Phase 1)
-        kros_db = []  # TODO: Load from B5
-        csn_standards = []  # TODO: Load from B1
-        
-        # AUDIT каждой позиции
-        audit_results = []
-        statistics = {
-            "total": len(positions),
-            "green": 0,
-            "amber": 0,
-            "red": 0
-        }
-        
-        for idx, position in enumerate(positions):
-            print(f"🔍 Auditing position {idx+1}/{len(positions)}: {position.get('description', 'N/A')[:50]}...")
-            
-            # Получаем промпт для AUDIT
-            audit_prompt = prompt_manager.get_audit_prompt(
-                position=position,
-                kros_database=kros_db,
-                csn_standards=csn_standards
-            )
-            
-            # Вызываем Claude
-            audit_result = claude.call(audit_prompt)
-            
-            # Добавляем оригинальную позицию
-            audit_result["position"] = position
-            
-            # Обновляем статистику
-            status = audit_result.get("status", "AMBER").lower()
-            statistics[status] = statistics.get(status, 0) + 1
-            
-            audit_results.append(audit_result)
-        
-        # Сохраняем результаты
-        results_dir = settings.DATA_DIR / "results" / project_id
-        results_dir.mkdir(parents=True, exist_ok=True)
-        
-        audit_report = {
-            "project_id": project_id,
-            "audited_at": datetime.now().isoformat(),
-            "statistics": statistics,
-            "positions": audit_results
-        }
-        
-        with open(results_dir / "audit_report.json", "w", encoding="utf-8") as f:
-            json.dump(audit_report, f, ensure_ascii=False, indent=2)
-        
-        return {
-            "status": "success",
-            "project_id": project_id,
-            "statistics": statistics,
-            "download_url": f"/api/v1/download/{project_id}"
-        }
-    
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # Redirect to new workflow
+    return await run_workflow_a_endpoint(project_id, calculate_resources=False)
 
 
 @app.get("/api/v1/results/{project_id}")
 async def get_results(project_id: str):
-    """Получить результаты AUDIT"""
+    """Získat výsledky AUDIT"""
     try:
         results_file = settings.DATA_DIR / "results" / project_id / "audit_report.json"
         
@@ -285,7 +245,7 @@ async def get_results(project_id: str):
 
 @app.get("/api/v1/projects")
 async def list_projects():
-    """Список всех проектов"""
+    """Seznam všech projektů"""
     projects = []
     
     raw_dir = settings.DATA_DIR / "raw"
@@ -302,6 +262,25 @@ async def list_projects():
     return {
         "total": len(projects),
         "projects": projects
+    }
+
+
+@app.get("/api/v1/kb/status")
+async def kb_status():
+    """Status Knowledge Base"""
+    kb_status = {
+        "B3_productivity_rates": (settings.KB_DIR / "B3_Pricing" / "productivity_rates.json").exists(),
+        "B5_kros": (settings.KB_DIR / "B5_URS_KROS4").exists(),
+        "B6_rts": (settings.KB_DIR / "B6_RTS").exists(),
+        "B9_pumps": (settings.KB_DIR / "B9_Equipment_Specs" / "pumps.json").exists(),
+        "B9_cranes": (settings.KB_DIR / "B9_Equipment_Specs" / "cranes.json").exists(),
+        "B9_excavators": (settings.KB_DIR / "B9_Equipment_Specs" / "excavators.json").exists()
+    }
+    
+    return {
+        "knowledge_base": kb_status,
+        "total_sources": sum(1 for v in kb_status.values() if v),
+        "missing_sources": [k for k, v in kb_status.items() if not v]
     }
 
 
