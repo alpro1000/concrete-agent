@@ -3,7 +3,7 @@ Resource Calculator Service
 Автоматический расчет материалов, труда и механизмов для каждой позиции
 """
 
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Union
 import json
 from pathlib import Path
 
@@ -16,8 +16,30 @@ class ResourceCalculator:
     - Equipment (механизмы)
     """
     
-    def __init__(self, knowledge_base_dir: Path):
-        self.kb_dir = knowledge_base_dir
+    def __init__(self, knowledge_base_dir: Union[Path, str]):
+        """
+        Initialize ResourceCalculator with knowledge base directory.
+        
+        Args:
+            knowledge_base_dir: Path to knowledge base directory (app/knowledge_base).
+                               Must be a Path or str, never an AI client object.
+        
+        Raises:
+            TypeError: If knowledge_base_dir is not a Path or str
+            FileNotFoundError: If knowledge_base_dir doesn't exist
+        """
+        # Ensure kb_dir is always a Path object
+        if isinstance(knowledge_base_dir, str):
+            self.kb_dir = Path(knowledge_base_dir)
+        elif isinstance(knowledge_base_dir, Path):
+            self.kb_dir = knowledge_base_dir
+        else:
+            raise TypeError(
+                f"knowledge_base_dir must be a Path or str, "
+                f"got {type(knowledge_base_dir).__name__}. "
+                f"Do not pass AI client objects directly."
+            )
+        
         self.benchmarks = self._load_benchmarks()
         self.prices = self._load_prices()
         
