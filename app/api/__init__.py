@@ -1,6 +1,6 @@
 """
 API package for Czech Building Audit System
 """
-from app.api import routes
+from .routers import router
 
 __all__ = ["router"]
