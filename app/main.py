@@ -1,162 +1,280 @@
 """
-Czech Building Audit System - Main FastAPI Application
-WITH API ROUTES for upload, audit, and results
+FastAPI Main Application
+С автоматической загрузкой Knowledge Base
+
+⚠️ ЭТОТ ФАЙЛ НАСТРАИВАЕТСЯ ОДИН РАЗ И БОЛЬШЕ НЕ МЕНЯЕТСЯ!
+Все новые файлы KB добавляются просто в папки B1-B8
 """
-from fastapi import FastAPI
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from datetime import datetime
-import os
+from contextlib import asynccontextmanager
+import logging
 
 from app.core.config import settings
-from app.api.routes import router as api_router  # ← НОВОЕ
+from app.core.kb_loader import get_knowledge_base
+from app.api import routes, routes_resources
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+# === LIFESPAN: Загрузка KB при старте ===
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Lifecycle events
+    
+    startup: Загружаем Knowledge Base ОДИН РАЗ
+    shutdown: Очистка ресурсов
+    """
+    # === STARTUP ===
+    logger.info("🚀 Starting Czech Building Audit System...")
+    
+    try:
+        # Загружаем Knowledge Base
+        kb = get_knowledge_base()
+        logger.info(f"✅ Knowledge Base loaded: {len(kb.data)} categories")
+        
+        # Проверяем критичные данные
+        kros_codes = kb.get_kros_codes()
+        if kros_codes:
+            logger.info(f"✅ KROS codes available: {len(kros_codes)} positions")
+        else:
+            logger.warning("⚠️  No KROS codes found in B1!")
+        
+        current_prices = kb.get_current_prices()
+        if current_prices:
+            logger.info(f"✅ Current prices available: {len(current_prices)} material types")
+        else:
+            logger.warning("⚠️  No current prices found in B3!")
+        
+        productivity = kb.get_productivity_rates()
+        if productivity:
+            logger.info(f"✅ Productivity rates available: {len(productivity)} work types")
+        else:
+            logger.warning("⚠️  No productivity rates found in B4!")
+        
+        logger.info("✅ System ready!")
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to load Knowledge Base: {e}")
+        raise
+    
+    yield  # Приложение работает
+    
+    # === SHUTDOWN ===
+    logger.info("🛑 Shutting down...")
+
+
+# === СОЗДАНИЕ ПРИЛОЖЕНИЯ ===
 
 app = FastAPI(
     title="Czech Building Audit System",
-    description="""
-    AI-powered building audit and cost calculation system for Czech construction projects.
-    
-    ## Features
-    * **Upload** PDF projects and výkaz výměr Excel files
-    * **Automated Audit** using Claude AI and Czech building norms
-    * **Classification** into GREEN/AMBER/RED categories
-    * **HITL** review for critical items
-    * **Reports** in Excel format
-    
-    ## Workflows
-    * **Workflow A**: With výkaz výměr (bill of quantities)
-    * **Workflow B**: Without výkaz (generate positions from drawings)
-    """,
+    description="Automated construction project auditing with Claude AI",
     version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    lifespan=lifespan  # ← Автоматическая загрузка KB здесь!
 )
 
-# CORS middleware
+
+# === CORS ===
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # В production указать конкретные домены
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include API router ← НОВОЕ
-app.include_router(api_router)
 
-# Mount static files
+# === ROUTES ===
+
+# API endpoints
+app.include_router(routes.router)
+app.include_router(routes_resources.router)  # Resource calculation endpoints
+
+
+# === STATIC FILES (Frontend) ===
+
 if settings.WEB_DIR.exists():
-    app.mount("/web", StaticFiles(directory=str(settings.WEB_DIR)), name="web")
+    app.mount(
+        "/web",
+        StaticFiles(directory=str(settings.WEB_DIR), html=True),
+        name="web"
+    )
 
 
-@app.get("/", tags=["info"])
+# === ROOT ENDPOINT ===
+
+@app.get("/")
 async def root():
-    """Root endpoint"""
+    """
+    Root endpoint - информация о сервисе
+    
+    Также показывает статус Knowledge Base
+    """
+    kb = get_knowledge_base()
+    
     return {
         "service": "Czech Building Audit System",
         "version": "1.0.0",
         "status": "running",
-        "environment": settings.ENVIRONMENT,
+        "knowledge_base": {
+            "loaded_at": kb.loaded_at.isoformat() if kb.loaded_at else None,
+            "categories": len(kb.data),
+            "status": "ready" if kb.data else "empty"
+        },
         "endpoints": {
             "api_docs": "/docs",
-            "health": "/health",
-            "status": "/status",
-            "upload": "/api/upload",  # ← НОВОЕ
-            "projects": "/api/projects"  # ← НОВОЕ
-        },
-        "features": {
-            "workflow_a": settings.ENABLE_WORKFLOW_A,
-            "workflow_b": settings.ENABLE_WORKFLOW_B,
-            "kros_matching": settings.ENABLE_KROS_MATCHING,
-            "rts_matching": settings.ENABLE_RTS_MATCHING,
-            "multi_role": settings.multi_role.enabled
+            "upload": "/api/upload",
+            "audit": "/api/audit/{project_id}",
+            "resources": "/api/resources/*",
+            "frontend": "/web/index.html"
         }
     }
 
 
-@app.get("/health", tags=["monitoring"])
-@app.head("/health")
+@app.get("/health")
 async def health_check():
-    """Health check endpoint"""
-    health_status = {
-        "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
-        "environment": settings.ENVIRONMENT,
-        "checks": {
-            "api": "ok",
-            "configuration": "ok",
-        }
-    }
+    """
+    Health check endpoint
     
-    if not settings.ANTHROPIC_API_KEY:
-        health_status["checks"]["anthropic_api"] = "not_configured"
-        health_status["status"] = "degraded"
-    else:
-        health_status["checks"]["anthropic_api"] = "configured"
+    Проверяет что KB загружена и доступна
+    """
+    kb = get_knowledge_base()
     
-    if settings.OPENAI_API_KEY:
-        health_status["checks"]["openai_api"] = "configured"
+    # Проверяем критичные категории
+    has_kros = bool(kb.get_kros_codes())
+    has_prices = bool(kb.get_current_prices())
+    has_benchmarks = bool(kb.get_productivity_rates())
     
-    try:
-        health_status["checks"]["data_dir"] = "ok" if settings.DATA_DIR.exists() else "missing"
-        health_status["checks"]["kb_dir"] = "ok" if settings.KB_DIR.exists() else "missing"
-    except Exception as e:
-        health_status["checks"]["directories"] = f"error: {str(e)}"
-        health_status["status"] = "degraded"
+    all_healthy = has_kros and has_prices and has_benchmarks
     
-    health_status["features"] = {
-        "workflow_a": settings.ENABLE_WORKFLOW_A,
-        "workflow_b": settings.ENABLE_WORKFLOW_B,
-        "kros_matching": settings.ENABLE_KROS_MATCHING,
-        "rts_matching": settings.ENABLE_RTS_MATCHING,
-        "resource_calculation": settings.ENABLE_RESOURCE_CALCULATION,
-        "multi_role": settings.multi_role.enabled,
-    }
-    
-    return health_status
-
-
-@app.get("/status", tags=["monitoring"])
-async def status():
-    """Detailed status information"""
     return {
-        "service": "Czech Building Audit System",
-        "version": "1.0.0",
-        "uptime": "running",
-        "environment": settings.ENVIRONMENT,
-        "configuration": {
-            "claude_model": settings.CLAUDE_MODEL,
-            "gpt4_model": settings.GPT4_MODEL,
-            "audit_green_threshold": settings.AUDIT_GREEN_THRESHOLD,
-            "audit_amber_threshold": settings.AUDIT_AMBER_THRESHOLD,
-        },
-        "features": {
-            "workflow_a": settings.ENABLE_WORKFLOW_A,
-            "workflow_b": settings.ENABLE_WORKFLOW_B,
-            "kros_matching": settings.ENABLE_KROS_MATCHING,
-            "rts_matching": settings.ENABLE_RTS_MATCHING,
-            "resource_calculation": settings.ENABLE_RESOURCE_CALCULATION,
-            "multi_role": settings.multi_role.enabled,
-        },
-        "paths": {
-            "data_dir": str(settings.DATA_DIR),
-            "kb_dir": str(settings.KB_DIR),
-            "prompts_dir": str(settings.PROMPTS_DIR),
-            "logs_dir": str(settings.LOGS_DIR),
-            "web_dir": str(settings.WEB_DIR),
+        "status": "healthy" if all_healthy else "degraded",
+        "kb_loaded": kb.loaded_at is not None,
+        "checks": {
+            "kros_codes": "ok" if has_kros else "missing",
+            "current_prices": "ok" if has_prices else "missing",
+            "benchmarks": "ok" if has_benchmarks else "missing"
         }
     }
 
+
+@app.get("/kb/status")
+async def kb_status():
+    """
+    Детальная информация о Knowledge Base
+    
+    Показывает что загружено в каждой категории
+    """
+    kb = get_knowledge_base()
+    
+    status = {}
+    
+    for category in kb.CATEGORIES:
+        if category in kb.data:
+            files = list(kb.data[category].keys())
+            metadata = kb.metadata.get(category, {})
+            
+            status[category] = {
+                "files_count": len(files),
+                "files": files[:5],  # Первые 5 файлов
+                "last_updated": metadata.get("last_updated"),
+                "version": metadata.get("version")
+            }
+        else:
+            status[category] = {
+                "status": "not_loaded",
+                "files_count": 0
+            }
+    
+    return {
+        "loaded_at": kb.loaded_at.isoformat() if kb.loaded_at else None,
+        "categories": status
+    }
+
+
+@app.post("/kb/reload")
+async def kb_reload():
+    """
+    🔄 Перезагрузка Knowledge Base
+    
+    Используется когда добавили новые файлы без перезапуска сервиса.
+    В production можно защитить паролем или API ключом.
+    """
+    try:
+        # Сбрасываем singleton
+        from app.core import kb_loader
+        kb_loader._kb_instance = None
+        
+        # Загружаем заново
+        kb = get_knowledge_base()
+        
+        return {
+            "status": "success",
+            "message": "Knowledge Base reloaded",
+            "loaded_at": kb.loaded_at.isoformat(),
+            "categories": len(kb.data)
+        }
+    
+    except Exception as e:
+        logger.error(f"Failed to reload KB: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to reload Knowledge Base: {str(e)}"
+        )
+
+
+# === ERROR HANDLERS ===
+
+@app.exception_handler(404)
+async def not_found_handler(request, exc):
+    return {
+        "error": "Not Found",
+        "message": "The requested resource was not found",
+        "path": request.url.path
+    }
+
+
+@app.exception_handler(500)
+async def server_error_handler(request, exc):
+    logger.error(f"Internal server error: {exc}")
+    return {
+        "error": "Internal Server Error",
+        "message": "An unexpected error occurred"
+    }
+
+
+# === STARTUP MESSAGE ===
 
 if __name__ == "__main__":
     import uvicorn
     
-    port = int(os.environ.get("PORT", 8000))
+    print("""
+    ╔══════════════════════════════════════════════════════════╗
+    ║  🏗️  Czech Building Audit System                        ║
+    ║                                                          ║
+    ║  🚀 Starting server...                                   ║
+    ║  📚 Knowledge Base будет загружена автоматически         ║
+    ║                                                          ║
+    ║  📖 API Docs: http://localhost:8000/docs                ║
+    ║  🌐 Frontend: http://localhost:8000/web/index.html      ║
+    ║  ❤️  Health:   http://localhost:8000/health             ║
+    ║  📊 KB Status: http://localhost:8000/kb/status          ║
+    ╚══════════════════════════════════════════════════════════╝
+    """)
     
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
-        port=port,
-        reload=settings.is_development,
-        log_level=settings.LOG_LEVEL.lower(),
+        port=8000,
+        reload=True  # Auto-reload при изменении кода
     )
