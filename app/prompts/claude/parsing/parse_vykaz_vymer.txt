@@ -1,27 +1,26 @@
-# VÝKAZ VÝMĚR PARSER
+Analyzuj český dokument výkaz výměr (Excel, PDF nebo XML).
 
-You are parsing a Czech construction document "výkaz výměr" (bill of quantities).
+ÚKOL:
+Extrahuj VŠECHNY pozice z dokumentu.
 
-## TASK
-Extract ALL positions from the document with their details.
+HLEDEJ:
+- Číslo pozice (Poz., Č., #)
+- Popis práce (Popis, Název)
+- Množství (Množství)
+- Jednotka (MJ, Jednotka)
+- Cena za jednotku (Cena/MJ, Jednotková cena)
+- Celková cena (Celkem, Cena celkem)
 
-## INPUT FORMAT
-The document may be:
-- Excel with columns: Poz. (position), Popis (description), MJ (unit), Množství (quantity), Cena/MJ (unit price), Celkem (total)
-- PDF with similar structure
-- Czech language
+VÝSTUP:
+Vrať POUZE validní JSON (bez markdown):
 
-## OUTPUT FORMAT
-Return ONLY valid JSON (no markdown, no explanation):
-```json
 {
   "document_info": {
-    "document_name": "...",
-    "project_name": "...",
-    "date": "...",
-    "contractor": "..."
+    "document_name": "název dokumentu",
+    "project_name": "název projektu",
+    "date": "datum"
   },
-  "total_positions": <number>,
+  "total_positions": 45,
   "positions": [
     {
       "position_number": "1",
@@ -32,231 +31,39 @@ Return ONLY valid JSON (no markdown, no explanation):
       "total_price": 368725.00,
       "category": "HSV",
       "notes": ""
+    },
+    {
+      "position_number": "2",
+      "description": "další pozice...",
+      "quantity": 0.0,
+      "unit": "...",
+      "unit_price": 0.0,
+      "total_price": 0.0
     }
   ]
 }
-EXTRACTION RULES
 
-Extract ALL positions (don't skip any)
-Position number: keep original format (1, 1.1, A.1, etc.)
-Description: full Czech text
-Quantity: extract number only (remove text)
-Unit: Czech abbreviations (m³, m², kg, ks, soubor, hod, etc.)
-Prices: numbers only (remove currency, spaces)
-Category: HSV (hlavní stavební výroba), PSV (pomocné), M (materiály), etc.
-If data missing: use null
+PRAVIDLA:
+1. Extrahuj VŠECHNY pozice
+2. Číslo pozice: zachovej původní formát (1, 1.1, A.1)
+3. Popis: celý český text
+4. Množství: pouze číslo
+5. Jednotka: české zkratky (m³, m², kg, ks, soubor, hod)
+6. Ceny: pouze čísla (bez měny, mezer)
+7. Pokud chybí data: použij null
 
-COMMON CZECH TERMS
+BĚŽNÉ ČESKÉ TERMÍNY:
+- Poz./Č./# = Číslo pozice
+- Popis/Název = Popis práce
+- MJ/Jednotka = Jednotka
+- Množství = Quantity
+- Cena/MJ = Cena za jednotku
+- Celkem = Celková cena
+- HSV = Hlavní stavební výroba
+- PSV = Pomocné stavební práce
 
-Poz./Č./# = Position number
-Popis/Název = Description
-MJ/Jednotka = Unit
-Množství = Quantity
-Cena/MJ = Unit price
-Celkem = Total price
-HSV = Main construction work
-PSV = Auxiliary construction work
+KONTROLA:
+- Ověř že jsou extrahovány všechny pozice
+- Zkontroluj: množství × cena/MJ ≈ celkem (±5%)
 
-QUALITY CHECKS
-
-Verify all positions extracted
-Check that quantity × unit_price ≈ total_price (±5%)
-Ensure units are standard Czech units
-Preserve original position numbering
-
-Return ONLY the JSON, nothing else.
-
----
-
-### 2. `app/prompts/claude/audit/audit_position.txt`
-CONSTRUCTION POSITION AUDIT
-You are auditing a construction position from a Czech building project.
-TASK
-Perform 3 checks:
-
-CODE MATCHING - Find appropriate code from KROS/RTS database
-PRICE CHECK - Compare with market rates
-NORM VALIDATION - Check ČSN compliance
-
-INPUT DATA
-Below you will receive:
-
-Position to audit (description, quantity, unit, price)
-KROS database sample (Czech construction codes)
-ČSN standards sample (if relevant)
-
-OUTPUT FORMAT
-Return ONLY valid JSON:
-json{
-  "position_number": "...",
-  "status": "GREEN|AMBER|RED",
-  "code_match": {
-    "found": true,
-    "code": "121-01-015",
-    "name": "Betonové konstrukce monolitické",
-    "confidence": 0.95,
-    "source": "KROS 4",
-    "alternatives": [],
-    "notes": ""
-  },
-  "price_check": {
-    "given_price": 2850.00,
-    "market_price": 2450.00,
-    "difference_pct": 16.3,
-    "status": "AMBER",
-    "analysis": "Price 16% above market average",
-    "breakdown": null
-  },
-  "norm_validation": {
-    "compliant": true,
-    "standards_checked": [
-      {"code": "ČSN EN 206", "status": "OK"}
-    ],
-    "issues": [],
-    "recommendations": []
-  },
-  "overall_assessment": {
-    "classification": "AMBER",
-    "confidence": 0.75,
-    "main_issues": [
-      "Price 16% above market"
-    ],
-    "recommendations": [
-      "Request price justification",
-      "Compare with alternative suppliers"
-    ],
-    "estimated_savings": 60200.00
-  },
-  "hitl_required": true,
-  "hitl_reason": "Price difference exceeds 15% threshold"
-}
-CLASSIFICATION RULES
-GREEN (95%+ OK)
-
-Correct code match (confidence >0.9)
-Price within ±10% of market
-ČSN compliant
-No major issues
-
-AMBER (75-95% OK)
-
-Code match uncertain (confidence 0.5-0.9)
-Price ±10-20% of market
-Minor norm issues
-Needs review
-
-RED (<75% OK)
-
-No code match (confidence <0.5)
-Price >20% off market
-Major norm violations
-Critical issues
-
-HITL TRIGGERS
-Request human review if:
-
-Classification is RED
-Price difference >15%
-Code confidence <0.5
-Norm violations found
-
-CODE MATCHING LOGIC
-
-Search KROS database by keywords
-Match by construction type
-Consider quantity and unit
-Return top match + alternatives
-
-PRICE CHECK LOGIC
-
-Compare given price with market rates
-Consider:
-
-Material costs (60-70%)
-Labor costs (20-25%)
-Equipment (5-10%)
-Overhead (5-10%)
-
-
-Flag if difference >10%
-
-NORM VALIDATION LOGIC
-
-Identify relevant ČSN standards
-Check compliance with:
-
-Material specifications
-Quality requirements
-Safety standards
-
-
-Flag violations
-
-Return ONLY the JSON, no explanations.
-
----
-
-## 🗄️ ПРИОРИТЕТ 2: Knowledge Base (минимальные samples)
-
-### 1. `app/knowledge_base/B5_URS_KROS4/kros_sample.json`
-```json
-{
-  "source": "KROS 4 (sample)",
-  "positions": [
-    {
-      "code": "111-01-001",
-      "name": "Výkopy nezapažené",
-      "unit": "m³",
-      "category": "Zemní práce",
-      "price_range": {
-        "min": 150,
-        "max": 300,
-        "avg": 220
-      }
-    },
-    {
-      "code": "121-01-015",
-      "name": "Betonové konstrukce monolitické",
-      "unit": "m³",
-      "category": "Betonové práce",
-      "price_range": {
-        "min": 2200,
-        "max": 2800,
-        "avg": 2450
-      }
-    },
-    {
-      "code": "131-01-001",
-      "name": "Zdivo z cihel pálených",
-      "unit": "m³",
-      "category": "Zednické práce",
-      "price_range": {
-        "min": 3500,
-        "max": 4500,
-        "avg": 4000
-      }
-    },
-    {
-      "code": "141-01-001",
-      "name": "Montáž ocelových konstrukcí",
-      "unit": "t",
-      "category": "Ocelové konstrukce",
-      "price_range": {
-        "min": 45000,
-        "max": 65000,
-        "avg": 55000
-      }
-    },
-    {
-      "code": "311-01-001",
-      "name": "Omítky vnitřní vápenné",
-      "unit": "m²",
-      "category": "Dokončovací práce",
-      "price_range": {
-        "min": 180,
-        "max": 280,
-        "avg": 230
-      }
-    }
-  ]
-}
+Vrať POUZE JSON, nic jiného.
