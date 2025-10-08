@@ -26,7 +26,7 @@ class WorkflowA:
     def __init__(self):
         self.claude = ClaudeClient()
         self.audit_service = AuditService(self.claude)
-        self.resource_calculator = ResourceCalculator(self.claude)
+        self.resource_calculator = ResourceCalculator(knowledge_base_dir=settings.KB_DIR)
     
     async def run(self, project_id: str, calculate_resources: bool = False) -> Dict[str, Any]:
         """Run full Workflow A"""
