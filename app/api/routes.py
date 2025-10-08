@@ -21,6 +21,25 @@ router = APIRouter(prefix="/api", tags=["audit"])
 projects_db = {}
 
 
+def validate_project_id(project_id: str) -> None:
+    """Validate project ID format and existence"""
+    # Check UUID format
+    try:
+        uuid.UUID(project_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Neplatné ID projektu (musí být UUID formát)"
+        )
+    
+    # Check existence
+    if project_id not in projects_db:
+        raise HTTPException(
+            status_code=404,
+            detail="Projekt nenalezen"
+        )
+
+
 @router.post("/upload")
 async def upload_project(
     name: str,
@@ -61,6 +80,7 @@ async def upload_project(
     if vykaz_file:
         original_name = vykaz_file.filename.lower()
         
+        # Detect format from extension
         if original_name.endswith('.xlsx') or original_name.endswith('.xls'):
             vykaz_format = "excel"
             extension = ".xlsx" if original_name.endswith('.xlsx') else ".xls"
@@ -75,8 +95,19 @@ async def upload_project(
             vykaz_format = "unknown"
             vykaz_path = project_dir / f"{name}_vykaz.{original_name.split('.')[-1]}"
         
+        # Save file
         with vykaz_path.open("wb") as buffer:
             shutil.copyfileobj(vykaz_file.file, buffer)
+        
+        # Validate file size (max 50MB)
+        file_size = vykaz_path.stat().st_size
+        max_size = 50 * 1024 * 1024  # 50MB
+        if file_size > max_size:
+            vykaz_path.unlink()  # Delete the file
+            raise HTTPException(
+                status_code=413,
+                detail=f"Soubor je příliš velký ({file_size / 1024 / 1024:.1f}MB). Maximum: 50MB"
+            )
         
         uploaded_files.append({
             "filename": vykaz_file.filename,
@@ -236,8 +267,7 @@ async def get_preview(project_id: str):
     
     If preview wasn't generated during upload, generate it now
     """
-    if project_id not in projects_db:
-        raise HTTPException(status_code=404, detail="Projekt nenalezen")
+    validate_project_id(project_id)
     
     project = projects_db[project_id]
     
@@ -280,8 +310,7 @@ async def get_preview(project_id: str):
 @router.post("/audit/{project_id}/start")
 async def start_audit(project_id: str, background_tasks: BackgroundTasks):
     """Start full audit (after seeing preview)"""
-    if project_id not in projects_db:
-        raise HTTPException(status_code=404, detail="Projekt nenalezen")
+    validate_project_id(project_id)
     
     project = projects_db[project_id]
     
@@ -355,8 +384,7 @@ async def start_audit(project_id: str, background_tasks: BackgroundTasks):
 @router.get("/audit/{project_id}/status")
 async def get_audit_status(project_id: str):
     """Get audit status"""
-    if project_id not in projects_db:
-        raise HTTPException(status_code=404, detail="Projekt nenalezen")
+    validate_project_id(project_id)
     
     project = projects_db[project_id]
     
@@ -396,8 +424,7 @@ async def get_audit_status(project_id: str):
 @router.get("/audit/{project_id}/results")
 async def get_audit_results(project_id: str):
     """Get full audit results"""
-    if project_id not in projects_db:
-        raise HTTPException(status_code=404, detail="Projekt nenalezen")
+    validate_project_id(project_id)
     
     project = projects_db[project_id]
     
