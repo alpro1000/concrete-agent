@@ -1,304 +1,444 @@
 """
-Resource Calculator - výpočet zdrojů (TOV) s moduly
+Resource Calculator Service
+Автоматический расчет материалов, труда и механизмов для каждой позиции
 """
-import json
-from typing import Dict, Any, Optional
-from pathlib import Path
 
-from app.core.config import settings
-from app.core.claude_client import ClaudeClient
-from app.core.prompt_manager import prompt_manager
+from typing import Dict, List, Any
+import json
+from pathlib import Path
 
 
 class ResourceCalculator:
     """
-    Resource Calculator s modulárními prompty
-    
-    Kroky:
-    1. Klasifikace typu práce
-    2. Načíst příslušný modul (concrete, masonry, earthwork...)
-    3. Určit produktivitu (z B3 nebo B9)
-    4. Vypočítat zdroje (lidé, technika, materiály)
-    5. Určit čas a cenu
-    
-    Moduly:
-    - concrete_work.txt (beton + zachytky logic)
-    - masonry_work.txt (zdivo)
-    - earthwork.txt (zemní práce)
-    - steel_work.txt (ocel)
-    - finishing_work.txt (dokončovací)
+    Раскладывает каждую позицию на ресурсы:
+    - Materials (материалы)
+    - Labor (труд) 
+    - Equipment (механизмы)
     """
     
-    def __init__(self, claude_client: ClaudeClient):
-        self.claude = claude_client
-        self.config = settings
-        self.prompt_manager = prompt_manager
+    def __init__(self, knowledge_base_dir: Path):
+        self.kb_dir = knowledge_base_dir
+        self.benchmarks = self._load_benchmarks()
+        self.prices = self._load_prices()
         
-        # Load knowledge base
-        self.productivity_rates = self._load_productivity_rates()
-        self.equipment_specs = self._load_equipment_specs()
+    def _load_benchmarks(self) -> Dict:
+        """Загрузка B4: Production benchmarks"""
+        path = self.kb_dir / "B4_production_benchmarks" / "productivity_rates.json"
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
     
-    async def calculate(
-        self,
-        position: Dict[str, Any],
-        depth: str = "standard"
+    def _load_prices(self) -> Dict:
+        """Загрузка B3: Current prices"""
+        path = self.kb_dir / "B3_current_prices" / "market_prices.json"
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    
+    async def calculate_resources(
+        self, 
+        position: Dict,
+        project_context: Dict
     ) -> Dict[str, Any]:
         """
-        Vypočítat zdroje pro pozici
+        Главный метод: раскладка позиции на ресурсы
         
         Args:
-            position: Pozice ze smetá
-            depth: Hloubka analýzy (quick/standard/deep)
-        
+            position: Позиция из проекта (код, описание, объем...)
+            project_context: Контекст проекта (чертежи, локация...)
+            
         Returns:
-            Resource breakdown (lidé, technika, materiály, čas, cena)
+            {
+                "materials": {...},
+                "labor": {...},
+                "equipment": {...},
+                "total_cost": 430500,
+                "confidence": "HIGH"
+            }
         """
         
-        # Krok 1: Klasifikace typu práce
+        # 1. Классифицируем тип работы
         work_type = self._classify_work_type(position)
         
-        print(f"      Resource calc: {work_type}")
+        # 2. Выбираем модуль расчета
+        if work_type == "concrete":
+            breakdown = await self._calculate_concrete_work(position, project_context)
+        elif work_type == "masonry":
+            breakdown = await self._calculate_masonry_work(position, project_context)
+        elif work_type == "earthwork":
+            breakdown = await self._calculate_earthwork(position, project_context)
+        else:
+            # Универсальный расчет для остальных
+            breakdown = await self._calculate_generic_work(position, project_context)
         
-        # Krok 2: Get resource calculation prompt (with module)
-        try:
-            resource_prompt = self.prompt_manager.get_resource_calculation_prompt(
-                work_type=work_type,
-                position=position,
-                depth=depth
-            )
-        except FileNotFoundError:
-            # Fallback to master framework only
-            print(f"      ⚠️  Module {work_type}_work.txt not found, using master only")
-            resource_prompt = self._get_fallback_prompt(position, work_type)
+        # 3. Валидация результатов
+        breakdown["confidence"] = self._assess_confidence(breakdown, position)
         
-        # Add knowledge base context
-        kb_context = self._build_kb_context(work_type)
-        
-        full_prompt = f"{resource_prompt}\n\n# KNOWLEDGE BASE:\n{json.dumps(kb_context, ensure_ascii=False, indent=2)}"
-        
-        # Krok 3: Call Claude
-        try:
-            result = self.claude.call(full_prompt)
-            
-            # Ensure required fields
-            if "total_cost_czk" not in result:
-                result["total_cost_czk"] = self._estimate_cost(result)
-            
-            if "total_time_days" not in result:
-                result["total_time_days"] = self._estimate_time(result)
-            
-            if "confidence" not in result:
-                result["confidence"] = "MEDIUM"
-            
-            return result
-        
-        except Exception as e:
-            print(f"      ❌ Resource calculation failed: {e}")
-            return {
-                "error": str(e),
-                "work_type": work_type,
-                "total_cost_czk": 0,
-                "total_time_days": 0,
-                "confidence": "LOW"
-            }
+        return breakdown
     
-    def _classify_work_type(self, position: Dict[str, Any]) -> str:
+    def _classify_work_type(self, position: Dict) -> str:
         """
-        Klasifikovat typ práce
+        Определяем тип работы по коду KROS или описанию
         
-        Returns:
-            concrete / masonry / earthwork / steel / finishing / general
+        Примеры:
+        - 121-xx-xxx → Бетонные работы
+        - 142-xx-xxx → Кладка
+        - 162-xx-xxx → Земляные работы
         """
-        
+        code = position.get("code", "")
         description = position.get("description", "").lower()
         
-        # Keyword mapping
-        keywords = {
-            "concrete": [
-                "beton", "železobeton", "monolitický", "deska", 
-                "sloup", "strop", "základy", "pilíř", "mostovka"
-            ],
-            "masonry": [
-                "zdivo", "cihla", "blok", "příčka", "obklad",
-                "dlažba", "porotherm", "ytong", "kámen"
-            ],
-            "earthwork": [
-                "výkop", "zásyp", "terén", "zemní", "bagr",
-                "rýpadlo", "úprava terénu"
-            ],
-            "steel": [
-                "ocel", "konstrukce ocelová", "rošt", "svařování",
-                "montáž ocelová"
-            ],
-            "finishing": [
-                "omítka", "malba", "nátěr", "podlaha", "tapeta",
-                "stěrka", "štuky"
-            ]
+        # По коду KROS
+        if code.startswith("121"):
+            return "concrete"
+        elif code.startswith("142"):
+            return "masonry"
+        elif code.startswith("162"):
+            return "earthwork"
+        
+        # По описанию (fallback)
+        if "beton" in description or "betonu" in description:
+            return "concrete"
+        elif "zdivo" in description or "zdění" in description:
+            return "masonry"
+        
+        return "generic"
+    
+    async def _calculate_concrete_work(
+        self, 
+        position: Dict, 
+        context: Dict
+    ) -> Dict:
+        """
+        Специализированный расчет для бетонных работ
+        
+        Учитывает:
+        - Захватки (сегменты заливки)
+        - Производительность опалубки
+        - Логистику миксеров
+        """
+        volume_m3 = position.get("quantity", 0)
+        
+        # === МАТЕРИАЛЫ ===
+        materials = self._calculate_concrete_materials(volume_m3, context)
+        
+        # === ТРУД ===
+        # Используем benchmarks из B4
+        concrete_productivity = self.benchmarks["concrete"]["betonazh"]  # m³/h
+        crew_size = 6  # стандартная бригада
+        hours_needed = volume_m3 / (concrete_productivity * crew_size)
+        
+        labor = {
+            "crew_size": crew_size,
+            "hours": round(hours_needed, 1),
+            "rate_per_hour": 350,  # Kč
+            "subtotal": round(crew_size * hours_needed * 350),
+            "source": "B4: Production benchmarks (concrete work)"
         }
         
-        # Check keywords
-        for work_type, kws in keywords.items():
-            if any(kw in description for kw in kws):
-                return work_type
+        # === МЕХАНИЗМЫ ===
+        equipment = self._calculate_concrete_equipment(volume_m3, context)
         
-        # Check by code (if available)
-        code = position.get("category", "")
-        if code:
-            code_first = code[:2] if len(code) >= 2 else ""
-            code_mapping = {
-                "11": "concrete",
-                "12": "masonry",
-                "21": "earthwork",
-                "31": "steel",
-                "71": "finishing"
+        # === ИТОГО ===
+        total_cost = (
+            materials["subtotal"] + 
+            labor["subtotal"] + 
+            equipment["subtotal"]
+        )
+        
+        return {
+            "materials": materials,
+            "labor": labor,
+            "equipment": equipment,
+            "total_cost": total_cost,
+            "calculation_method": "B4 benchmarks + B3 prices"
+        }
+    
+    def _calculate_concrete_materials(self, volume_m3: float, context: Dict) -> Dict:
+        """
+        Расчет материалов для бетона
+        
+        - Бетон (заказ с завода)
+        - Транспорт (зависит от расстояния)
+        - Возможно: добавки, присадки
+        """
+        concrete_grade = context.get("concrete_grade", "C20/25")
+        
+        # Цена из B3: Current prices
+        unit_price = self.prices.get("beton", {}).get(concrete_grade, 2450)
+        
+        # Транспорт (оценка по расстоянию)
+        distance_km = context.get("distance_to_plant", 25)
+        transport_cost = self._estimate_transport_cost(volume_m3, distance_km)
+        
+        materials = {
+            "items": [
+                {
+                    "name": f"Beton {concrete_grade}",
+                    "quantity": volume_m3,
+                    "unit": "m³",
+                    "unit_price": unit_price,
+                    "total": round(volume_m3 * unit_price),
+                    "source": "B3: Current market prices (Q3 2024)"
+                },
+                {
+                    "name": "Doprava betonu",
+                    "distance_km": distance_km,
+                    "total": transport_cost
+                }
+            ],
+            "subtotal": round(volume_m3 * unit_price + transport_cost)
+        }
+        
+        return materials
+    
+    def _calculate_concrete_equipment(self, volume_m3: float, context: Dict) -> Dict:
+        """
+        Расчет механизмов для бетонирования
+        
+        - Бетононасос (обязательно для объемов >50 m³)
+        - Миксеры (7 m³ стандарт)
+        - Вибраторы (мелкие, обычно есть у бригады)
+        """
+        
+        # Нужен ли насос?
+        needs_pump = volume_m3 > 50 or context.get("height_meters", 0) > 3
+        
+        equipment_items = []
+        
+        if needs_pump:
+            # Сколько дней нужен насос?
+            pump_capacity_m3_per_hour = 30
+            hours_needed = volume_m3 / pump_capacity_m3_per_hour
+            days_needed = max(1, round(hours_needed / 8))  # 8 часовая смена
+            
+            equipment_items.append({
+                "name": "Čerpadlo betonu",
+                "model": "Schwing S36X",
+                "days": days_needed,
+                "rate_per_day": 8500,
+                "total": days_needed * 8500
+            })
+        
+        # Миксеры
+        mixer_capacity = 7  # m³
+        total_trips = round(volume_m3 / mixer_capacity)
+        
+        equipment_items.append({
+            "name": "Míchačky (doprava)",
+            "capacity_m3": mixer_capacity,
+            "trips": total_trips,
+            "note": "Included in concrete price"
+        })
+        
+        subtotal = sum(item.get("total", 0) for item in equipment_items)
+        
+        return {
+            "items": equipment_items,
+            "subtotal": subtotal
+        }
+    
+    def _estimate_transport_cost(self, volume_m3: float, distance_km: int) -> float:
+        """
+        Оценка стоимости транспортировки бетона
+        
+        Формула: базовая цена + доплата за км
+        """
+        base_cost = 5000  # Базовая стоимость доставки
+        cost_per_km = 50  # За каждый км
+        
+        # Для больших объемов - скидки
+        if volume_m3 > 100:
+            base_cost *= 0.9
+        
+        return base_cost + (distance_km * cost_per_km)
+    
+    def _assess_confidence(self, breakdown: Dict, position: Dict) -> str:
+        """
+        Оцениваем уверенность в расчетах
+        
+        HIGH - есть benchmarks и цены
+        MEDIUM - частично используем аналогии
+        LOW - много предположений
+        """
+        
+        # Проверяем есть ли источники
+        has_benchmark = "source" in breakdown.get("labor", {})
+        has_price = "source" in breakdown.get("materials", {}).get("items", [{}])[0]
+        
+        if has_benchmark and has_price:
+            return "HIGH"
+        elif has_benchmark or has_price:
+            return "MEDIUM"
+        else:
+            return "LOW"
+    
+    # === АНАЛИТИКА ПО МАТЕРИАЛАМ ===
+    
+    def analyze_material(
+        self, 
+        material_name: str, 
+        all_positions: List[Dict]
+    ) -> Dict[str, Any]:
+        """
+        "Вытягивает" все позиции где используется конкретный материал
+        
+        Args:
+            material_name: Например "Beton C20/25", "Арматура Ø12"
+            all_positions: Все позиции проекта (уже с breakdown)
+            
+        Returns:
+            {
+                "summary": {
+                    "total_quantity": 347,
+                    "unit": "m³",
+                    "total_cost": 850650,
+                    "positions_count": 8
+                },
+                "breakdown": [список позиций где используется],
+                "logistics": {...},
+                "alternative_sources": [...]
             }
-            if code_first in code_mapping:
-                return code_mapping[code_first]
+        """
         
-        return "general"
-    
-    def _build_kb_context(self, work_type: str) -> Dict[str, Any]:
-        """Build knowledge base context for prompt"""
+        matching_positions = []
+        total_quantity = 0
+        total_cost = 0
         
-        context = {
-            "productivity_rates": {},
-            "equipment_specs": {},
-            "benchmarks": []
+        # Ищем во всех позициях
+        for pos in all_positions:
+            materials = pos.get("breakdown", {}).get("materials", {})
+            
+            for item in materials.get("items", []):
+                if material_name.lower() in item.get("name", "").lower():
+                    matching_positions.append({
+                        "position_code": pos["code"],
+                        "description": pos["description"],
+                        "quantity": item["quantity"],
+                        "unit": item["unit"],
+                        "unit_price": item["unit_price"],
+                        "total": item["total"],
+                        "parameters": pos.get("parameters", {})
+                    })
+                    
+                    total_quantity += item["quantity"]
+                    total_cost += item["total"]
+        
+        # Логистика (для бетона - сколько миксеров нужно)
+        logistics = None
+        if "beton" in material_name.lower():
+            logistics = self._calculate_concrete_logistics(total_quantity)
+        
+        # Альтернативные поставщики
+        alternatives = self._find_alternative_suppliers(
+            material_name, 
+            total_quantity
+        )
+        
+        return {
+            "query": material_name,
+            "summary": {
+                "total_quantity": round(total_quantity, 2),
+                "unit": matching_positions[0]["unit"] if matching_positions else "",
+                "total_cost": total_cost,
+                "average_price": round(total_cost / total_quantity, 2) if total_quantity > 0 else 0,
+                "positions_count": len(matching_positions)
+            },
+            "breakdown": matching_positions,
+            "logistics": logistics,
+            "alternative_sources": alternatives
         }
-        
-        # Add relevant productivity rates
-        if work_type in self.productivity_rates:
-            context["productivity_rates"] = self.productivity_rates.get(work_type, {})
-        
-        # Add equipment specs
-        if work_type == "concrete" and "pumps" in self.equipment_specs:
-            context["equipment_specs"]["pumps"] = self.equipment_specs["pumps"]
-        
-        if work_type == "earthwork" and "excavators" in self.equipment_specs:
-            context["equipment_specs"]["excavators"] = self.equipment_specs["excavators"]
-        
-        # Add cranes (universal)
-        if "cranes" in self.equipment_specs:
-            context["equipment_specs"]["cranes"] = self.equipment_specs["cranes"]
-        
-        return context
     
-    def _estimate_cost(self, result: Dict[str, Any]) -> float:
-        """Estimate total cost from resources"""
+    def _calculate_concrete_logistics(self, total_volume_m3: float) -> Dict:
+        """
+        Логистика доставки бетона
+        - Сколько миксеров
+        - Сколько рейсов
+        - На сколько дней растянется
+        """
+        mixer_capacity = 7  # m³
+        trips_per_day = 8  # Реалистично для одного миксера
         
-        total = 0.0
+        total_trips = round(total_volume_m3 / mixer_capacity)
+        days_needed = round(total_trips / trips_per_day)
         
-        # Labor
-        for labor in result.get("resources", {}).get("labor", []):
-            total += labor.get("total_czk", 0)
-        
-        # Equipment
-        for equipment in result.get("resources", {}).get("equipment", []):
-            total += equipment.get("total_czk", 0)
-        
-        # Materials
-        for material in result.get("resources", {}).get("materials", []):
-            total += material.get("total_czk", 0)
-        
-        # Transport
-        for transport in result.get("resources", {}).get("transport", []):
-            total += transport.get("total_czk", 0)
-        
-        return total
+        return {
+            "total_mixers_needed": max(1, round(total_trips / trips_per_day)),
+            "mixer_capacity": mixer_capacity,
+            "total_trips": total_trips,
+            "delivery_schedule": f"{days_needed} рабочих дней"
+        }
     
-    def _estimate_time(self, result: Dict[str, Any]) -> float:
-        """Estimate total time from resources"""
+    def _find_alternative_suppliers(
+        self, 
+        material_name: str, 
+        quantity: float
+    ) -> List[Dict]:
+        """
+        Ищет альтернативных поставщиков с лучшими ценами
         
-        max_days = 0.0
+        В реальности - это запрос к базе поставщиков (B5)
+        """
         
-        # Find maximum from labor days
-        for labor in result.get("resources", {}).get("labor", []):
-            days = labor.get("days", 0)
-            if days > max_days:
-                max_days = days
+        # Заглушка - в реальности загружать из B5
+        if "beton" in material_name.lower():
+            return [
+                {
+                    "supplier": "Betonárna Praha Jih",
+                    "distance_km": 18,
+                    "price_per_m3": 2380,
+                    "savings": round((2450 - 2380) * quantity)
+                },
+                {
+                    "supplier": "Holcim Czechia",
+                    "distance_km": 32,
+                    "price_per_m3": 2420,
+                    "savings": round((2450 - 2420) * quantity)
+                }
+            ]
         
-        # Check equipment days
-        for equipment in result.get("resources", {}).get("equipment", []):
-            days = equipment.get("days", 0)
-            if days > max_days:
-                max_days = days
-        
-        return max_days if max_days > 0 else 1.0
-    
-    def _get_fallback_prompt(self, position: Dict[str, Any], work_type: str) -> str:
-        """Fallback prompt když modul neexistuje"""
-        
-        position_json = json.dumps(position, ensure_ascii=False, indent=2)
-        
-        return f"""Calculate resources for this construction work position.
+        return []
 
-WORK TYPE: {work_type}
 
-POSITION:
-{position_json}
+# === ПРИМЕР ИСПОЛЬЗОВАНИЯ ===
 
-Calculate:
-1. Labor (type, count, hours/days, cost)
-2. Equipment (type, days, cost)
-3. Materials (type, quantity, cost)
-4. Transport (if needed)
-5. Total time (days)
-6. Total cost (CZK)
-
-Output as JSON:
-{{
-  "work_type": "{work_type}",
-  "resources": {{
-    "labor": [...],
-    "equipment": [...],
-    "materials": [...],
-    "transport": [...]
-  }},
-  "total_cost_czk": <number>,
-  "total_time_days": <number>,
-  "confidence": "MEDIUM"
-}}
-"""
+async def example_usage():
+    """Пример как используется в системе"""
     
-    def _load_productivity_rates(self) -> Dict:
-        """Load productivity rates"""
-        
-        rates_file = settings.KB_DIR / "B3_Pricing" / "productivity_rates.json"
-        
-        if rates_file.exists():
-            with open(rates_file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        
-        print("⚠️  Productivity rates not found")
-        return {}
+    calculator = ResourceCalculator(
+        knowledge_base_dir=Path("app/knowledge_base")
+    )
     
-    def _load_equipment_specs(self) -> Dict:
-        """Load equipment specifications"""
-        
-        specs = {}
-        
-        equipment_dir = settings.KB_DIR / "B9_Equipment_Specs"
-        
-        if equipment_dir.exists():
-            # Load pumps
-            pumps_file = equipment_dir / "pumps.json"
-            if pumps_file.exists():
-                with open(pumps_file, "r", encoding="utf-8") as f:
-                    specs["pumps"] = json.load(f)
-            
-            # Load cranes
-            cranes_file = equipment_dir / "cranes.json"
-            if cranes_file.exists():
-                with open(cranes_file, "r", encoding="utf-8") as f:
-                    specs["cranes"] = json.load(f)
-            
-            # Load excavators
-            excavators_file = equipment_dir / "excavators.json"
-            if excavators_file.exists():
-                with open(excavators_file, "r", encoding="utf-8") as f:
-                    specs["excavators"] = json.load(f)
-        
-        if not specs:
-            print("⚠️  Equipment specs not found")
-        
-        return specs
+    # Позиция из проекта
+    position = {
+        "code": "121-01-001",
+        "description": "Beton základů C20/25",
+        "quantity": 142,
+        "unit": "m³"
+    }
+    
+    # Контекст проекта
+    project_context = {
+        "concrete_grade": "C20/25",
+        "distance_to_plant": 25,  # km
+        "height_meters": 2
+    }
+    
+    # 1. РАСЧЕТ РЕСУРСОВ для одной позиции
+    breakdown = await calculator.calculate_resources(position, project_context)
+    
+    print("=== BREAKDOWN ДЛЯ ПОЗИЦИИ ===")
+    print(f"Материалы: {breakdown['materials']['subtotal']} Kč")
+    print(f"Труд: {breakdown['labor']['subtotal']} Kč")
+    print(f"Механизмы: {breakdown['equipment']['subtotal']} Kč")
+    print(f"ИТОГО: {breakdown['total_cost']} Kč")
+    
+    # 2. АНАЛИЗ ПО МАТЕРИАЛУ для всего проекта
+    all_positions = [
+        # ... список всех позиций проекта с breakdown
+    ]
+    
+    analysis = calculator.analyze_material("Beton C20/25", all_positions)
+    
+    print("\n=== АНАЛИЗ МАТЕРИАЛА ===")
+    print(f"Всего: {analysis['summary']['total_quantity']} m³")
+    print(f"Стоимость: {analysis['summary']['total_cost']} Kč")
+    print(f"Используется в {analysis['summary']['positions_count']} позициях")
