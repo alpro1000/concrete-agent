@@ -14,7 +14,7 @@ import logging
 
 from app.core.config import settings
 from app.core.kb_loader import get_knowledge_base
-from app.api import routes as api_router
+from app.api import routes, routes_resources
 
 # Настройка логирования
 logging.basicConfig(
