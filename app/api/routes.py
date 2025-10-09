@@ -2,7 +2,7 @@
 API Routes - WITH Quick Preview (Shrnutí) after upload
 """
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from pathlib import Path
 import shutil
@@ -496,3 +496,282 @@ async def delete_project(project_id: str):
         "message": f"Projekt '{project['name']}' smazán",
         "project_id": project_id
     }
+
+
+# ==========================================
+# NEW: Position Selection Endpoints
+# ==========================================
+
+@router.post("/positions/import/{project_id}")
+async def import_all_positions(project_id: str):
+    """
+    Import ALL positions from document without limits
+    Returns all positions for user to select
+    """
+    validate_project_id(project_id)
+    
+    try:
+        # Import all positions
+        result = await workflow_a.import_all_positions(project_id)
+        
+        if result.get("success"):
+            # Store imported positions in project
+            projects_db[project_id]["imported_positions"] = result.get("positions", [])
+            projects_db[project_id]["import_timestamp"] = datetime.utcnow().isoformat()
+            
+        return result
+    
+    except Exception as e:
+        logger.error(f"Failed to import positions: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Import pozic selhal: {str(e)}"
+        )
+
+
+@router.get("/positions/{project_id}")
+async def get_positions(project_id: str):
+    """
+    Get all imported positions for selection
+    """
+    validate_project_id(project_id)
+    
+    project = projects_db[project_id]
+    
+    if not project.get("imported_positions"):
+        raise HTTPException(
+            status_code=400,
+            detail="Pozice nejsou importovány. Použijte /positions/import/{project_id}"
+        )
+    
+    return {
+        "project_id": project_id,
+        "project_name": project["name"],
+        "total_positions": len(project["imported_positions"]),
+        "positions": project["imported_positions"],
+        "message": f"📊 {len(project['imported_positions'])} pozic připraveno k výběru"
+    }
+
+
+@router.post("/positions/analyze/{project_id}")
+async def analyze_selected_positions(
+    project_id: str,
+    selected_positions: List[str]
+):
+    """
+    Analyze only user-selected positions
+    
+    Args:
+        project_id: ID projektu
+        selected_positions: List of position numbers selected by user
+    """
+    validate_project_id(project_id)
+    
+    if not selected_positions:
+        raise HTTPException(
+            status_code=400,
+            detail="Není vybráno žádná pozice"
+        )
+    
+    try:
+        # Analyze only selected positions
+        result = await workflow_a.analyze_selected_positions(
+            project_id=project_id,
+            selected_position_numbers=selected_positions
+        )
+        
+        if result.get("success"):
+            # Store analysis result
+            projects_db[project_id]["analysis_result"] = result
+            projects_db[project_id]["analysis_timestamp"] = datetime.utcnow().isoformat()
+            projects_db[project_id]["status"] = "analyzed"
+        
+        return result
+    
+    except Exception as e:
+        logger.error(f"Failed to analyze positions: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Analýza pozic selhala: {str(e)}"
+        )
+
+
+# ==========================================
+# NEW: Drawing Analysis Endpoints
+# ==========================================
+
+@router.post("/drawings/upload")
+async def upload_drawing(
+    project_id: str,
+    drawing_file: UploadFile = File(..., description="Výkres (PDF, PNG, JPG)"),
+    drawing_type: str = "general"
+):
+    """
+    Upload construction drawing for OCR/Vision analysis
+    
+    Supports: PDF, PNG, JPG, DWG (converted)
+    """
+    validate_project_id(project_id)
+    
+    project = projects_db[project_id]
+    project_dir = Path(project["pdf_path"]).parent
+    
+    # Create drawings subdirectory
+    drawings_dir = project_dir / "drawings"
+    drawings_dir.mkdir(exist_ok=True)
+    
+    # Save drawing file
+    file_ext = Path(drawing_file.filename).suffix.lower()
+    
+    if file_ext not in ['.pdf', '.png', '.jpg', '.jpeg', '.dwg']:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Nepodporovaný formát souboru: {file_ext}. Použijte PDF, PNG, JPG nebo DWG."
+        )
+    
+    drawing_filename = f"drawing_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}{file_ext}"
+    drawing_path = drawings_dir / drawing_filename
+    
+    with drawing_path.open("wb") as buffer:
+        shutil.copyfileobj(drawing_file.file, buffer)
+    
+    return {
+        "success": True,
+        "project_id": project_id,
+        "drawing_path": str(drawing_path),
+        "drawing_type": drawing_type,
+        "message": f"Výkres nahrán: {drawing_filename}",
+        "next_step": f"Použijte POST /api/drawings/analyze pro analýzu"
+    }
+
+
+@router.post("/drawings/analyze")
+async def analyze_drawing(
+    project_id: str,
+    drawing_path: str,
+    drawing_type: str = "general"
+):
+    """
+    Analyze construction drawing using GPT-4 Vision
+    
+    Extracts:
+    - Construction elements (PILOTY, ZÁKLADY, PILÍŘE, OPĚRY)
+    - Materials (BETON, OCEL, OPÁLUBKA)
+    - Standards (ČSN EN 206+A2, TKP KAP. 18)
+    - Exposure classes (XA2+XC2, XF3+XC2)
+    - Surface categories (Aa, C1a, C2d, Bd, E)
+    """
+    validate_project_id(project_id)
+    
+    from app.services.drawing_analyzer import drawing_analyzer
+    
+    drawing_file_path = Path(drawing_path)
+    
+    if not drawing_file_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Výkres nenalezen: {drawing_path}"
+        )
+    
+    try:
+        # Analyze drawing
+        result = await drawing_analyzer.upload_and_analyze_drawing(
+            project_id=project_id,
+            drawing_file_path=drawing_file_path,
+            drawing_type=drawing_type
+        )
+        
+        if result.get("success"):
+            # Store drawing analysis in project
+            if "drawings" not in projects_db[project_id]:
+                projects_db[project_id]["drawings"] = []
+            
+            projects_db[project_id]["drawings"].append({
+                "drawing_id": result["drawing_id"],
+                "path": str(drawing_file_path),
+                "type": drawing_type,
+                "analysis": result["analysis"],
+                "timestamp": datetime.utcnow().isoformat()
+            })
+        
+        return result
+    
+    except Exception as e:
+        logger.error(f"Drawing analysis failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Analýza výkresu selhala: {str(e)}"
+        )
+
+
+@router.post("/drawings/link-estimate")
+async def link_drawing_to_estimate(
+    project_id: str,
+    drawing_id: str
+):
+    """
+    Link drawing elements to estimate positions
+    
+    Creates automatic associations between construction elements
+    from drawings and positions in estimate
+    """
+    validate_project_id(project_id)
+    
+    from app.services.drawing_analyzer import drawing_analyzer
+    
+    project = projects_db[project_id]
+    
+    # Find drawing
+    drawing = None
+    for dwg in project.get("drawings", []):
+        if dwg["drawing_id"] == drawing_id:
+            drawing = dwg
+            break
+    
+    if not drawing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Výkres {drawing_id} nenalezen v projektu"
+        )
+    
+    # Get estimate positions
+    estimate_positions = project.get("imported_positions", [])
+    
+    if not estimate_positions:
+        raise HTTPException(
+            status_code=400,
+            detail="Projekt nemá importované pozice. Nejprve importujte pozice."
+        )
+    
+    try:
+        # Create links
+        links = await drawing_analyzer.link_drawing_to_estimate(
+            drawing_id=drawing_id,
+            drawing_analysis=drawing["analysis"],
+            estimate_positions=estimate_positions
+        )
+        
+        # Store links
+        if "drawing_links" not in projects_db[project_id]:
+            projects_db[project_id]["drawing_links"] = []
+        
+        projects_db[project_id]["drawing_links"].extend([
+            link.dict() for link in links
+        ])
+        
+        return {
+            "success": True,
+            "project_id": project_id,
+            "drawing_id": drawing_id,
+            "links_created": len(links),
+            "links": [link.dict() for link in links],
+            "message": f"Vytvořeno {len(links)} propojení mezi výkresem a smetou"
+        }
+    
+    except Exception as e:
+        logger.error(f"Failed to link drawing to estimate: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Propojení selhalo: {str(e)}"
+        )
+

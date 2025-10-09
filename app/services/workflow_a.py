@@ -15,34 +15,45 @@ logger = logging.getLogger(__name__)
 
 class WorkflowA:
     """
-    Workflow A: Audit existing výkaz výměr
+    Workflow A: Simplified position import and analysis
     
     Steps:
-    1. Parse document (Excel/PDF/XML)
-    2. Load relevant KB
-    3. Audit each position
-    4. Generate triage report
-    5. Return results with HITL flags
+    1. Parse document (Excel/PDF/XML) - ALL positions without limits
+    2. Show all positions to user with checkboxes
+    3. User selects positions to analyze
+    4. Audit only selected positions
+    5. Return results
     """
     
     def __init__(self):
         self.claude = ClaudeClient()
         self.kb_dir = settings.KB_DIR
     
-    async def run(
+    async def import_all_positions(
         self,
-        project_id: str,
-        calculate_resources: bool = False
+        project_id: str
     ) -> Dict[str, Any]:
         """
-        Run complete Workflow A
+        Import ALL positions from document without any limitations
         
         Args:
-            project_id: ID of the project to audit
-            calculate_resources: Whether to calculate resource requirements
+            project_id: ID of the project
         
         Returns:
-            Audit results with positions categorized as GREEN/AMBER/RED
+            All positions from the document for user selection
+        """
+    async def import_all_positions(
+        self,
+        project_id: str
+    ) -> Dict[str, Any]:
+        """
+        Import ALL positions from document without any limitations
+        
+        Args:
+            project_id: ID of the project
+        
+        Returns:
+            All positions from the document for user selection
         """
         # Import here to avoid circular dependency
         from app.api.routes import projects_db
@@ -61,14 +72,14 @@ class WorkflowA:
         project_name = project["name"]
         
         try:
-            logger.info(f"Starting Workflow A for project {project_id}: {file_path}")
+            logger.info(f"Importing ALL positions for project {project_id}: {file_path}")
             
-            # Step 1: Detect file format and parse
+            # Step 1: Detect file format and parse - NO LIMITS
             file_format = self._detect_format(file_path)
             logger.info(f"Detected file format: {file_format}")
             
             positions = await self._parse_document(file_path, file_format)
-            logger.info(f"Parsed {len(positions)} positions")
+            logger.info(f"Imported {len(positions)} positions (ALL, no limits)")
             
             if not positions:
                 logger.warning("No positions found in document!")
@@ -78,14 +89,77 @@ class WorkflowA:
                     "positions": []
                 }
             
-            # Step 2: Load Knowledge Base
+            return {
+                "success": True,
+                "project_id": project_id,
+                "project_name": project_name,
+                "total_positions": len(positions),
+                "positions": positions,
+                "message": f"📊 Smeta importována: {len(positions)} pozic"
+            }
+        
+        except Exception as e:
+            logger.error(f"Position import failed: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e),
+                "positions": []
+            }
+    
+    async def analyze_selected_positions(
+        self,
+        project_id: str,
+        selected_position_numbers: List[str]
+    ) -> Dict[str, Any]:
+        """
+        Analyze only user-selected positions
+        
+        Args:
+            project_id: ID of the project
+            selected_position_numbers: List of position numbers selected by user
+        
+        Returns:
+            Audit results for selected positions only
+        """
+        # Import here to avoid circular dependency
+        from app.api.routes import projects_db
+        
+        # Lookup project data
+        if project_id not in projects_db:
+            raise ValueError(f"Project {project_id} not found in database")
+        
+        project = projects_db[project_id]
+        
+        # Get all imported positions
+        if not project.get("imported_positions"):
+            raise ValueError(f"Project {project_id} has no imported positions. Import first.")
+        
+        all_positions = project["imported_positions"]
+        
+        # Filter to selected positions
+        selected_positions = [
+            pos for pos in all_positions 
+            if pos.get("position_number") in selected_position_numbers
+        ]
+        
+        if not selected_positions:
+            return {
+                "success": False,
+                "error": "No valid positions selected",
+                "positions": []
+            }
+        
+        try:
+            logger.info(f"Analyzing {len(selected_positions)} selected positions from {len(all_positions)} total")
+            
+            # Load Knowledge Base
             kb_data = self._load_knowledge_base()
             logger.info(f"Loaded KB with {len(kb_data)} categories")
             
-            # Step 3: Audit each position
+            # Audit only selected positions
             audit_results = []
-            for idx, position in enumerate(positions, 1):
-                logger.info(f"Auditing position {idx}/{len(positions)}: {position.get('description', 'N/A')[:50]}")
+            for idx, position in enumerate(selected_positions, 1):
+                logger.info(f"Auditing position {idx}/{len(selected_positions)}: {position.get('description', 'N/A')[:50]}")
                 
                 try:
                     audit_result = await self._audit_position(position, kb_data)
@@ -100,26 +174,29 @@ class WorkflowA:
                         "hitl_required": True
                     })
             
-            # Step 4: Categorize results
+            # Categorize results
             categorized = self._categorize_results(audit_results)
             
-            # Step 5: Generate summary
+            # Generate summary
             summary = self._generate_summary(categorized)
             
-            logger.info(f"Workflow A completed. GREEN: {len(categorized['green'])}, "
+            logger.info(f"Analysis completed. GREEN: {len(categorized['green'])}, "
                        f"AMBER: {len(categorized['amber'])}, RED: {len(categorized['red'])}")
             
             return {
                 "success": True,
-                "project_name": project_name,
-                "total_positions": len(positions),
+                "project_id": project_id,
+                "project_name": project.get("name"),
+                "total_positions": len(all_positions),
+                "selected_positions": len(selected_positions),
+                "analyzed_positions": len(audit_results),
                 "summary": summary,
                 "positions": categorized,
                 "hitl_positions": [p for p in audit_results if p.get('hitl_required')]
             }
         
         except Exception as e:
-            logger.error(f"Workflow A failed: {e}", exc_info=True)
+            logger.error(f"Analysis failed: {e}", exc_info=True)
             return {
                 "success": False,
                 "error": str(e),
