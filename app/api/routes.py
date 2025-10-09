@@ -21,6 +21,7 @@ from app.models.project import (
     ProjectStatus,
     ProjectResponse,
     ProjectStatusResponse,
+    WorkflowType,
 )
 
 logger = logging.getLogger(__name__)
@@ -447,11 +448,26 @@ async def upload_project(
         
         logger.info(f"✅ Nahrání dokončeno: {project_id}")
         
+        # Convert workflow string to WorkflowType enum
+        workflow_type = WorkflowType.A if workflow == "A" else WorkflowType.B
+        
+        # Format files list for response
+        files_list = []
+        if saved_files["vykaz_vymer"]:
+            files_list.append(saved_files["vykaz_vymer"])
+        files_list.extend(saved_files["vykresy"])
+        if saved_files["rozpocet"]:
+            files_list.append(saved_files["rozpocet"])
+        files_list.extend(saved_files["dokumentace"])
+        files_list.extend(saved_files["zmeny"])
+        
         return ProjectResponse(
             project_id=project_id,
             name=project_name,
             status=status,
             upload_timestamp=datetime.now(),
+            workflow=workflow_type,
+            files=files_list,
             message=message
         )
         
