@@ -33,6 +33,18 @@ from app.models.audit_result import (
     AuditResultWithResources
 )
 
+# Drawing models
+from app.models.drawing import (
+    DrawingUpload,
+    MaterialSpecification,
+    ConstructionElement,
+    ExposureClass,
+    SurfaceCategory,
+    DrawingAnalysisResult,
+    DrawingEstimateLink,
+    DrawingResponse
+)
+
 __all__ = [
     # Project
     "ProjectCreate",
@@ -57,4 +69,13 @@ __all__ = [
     "AuditResult",
     "MultiRoleReview",
     "AuditResultWithResources",
+    # Drawing
+    "DrawingUpload",
+    "MaterialSpecification",
+    "ConstructionElement",
+    "ExposureClass",
+    "SurfaceCategory",
+    "DrawingAnalysisResult",
+    "DrawingEstimateLink",
+    "DrawingResponse"
 ]
