@@ -65,16 +65,16 @@ python-json-logger==2.0.7
 # OPTIONAL: Phase 2 Features
 # ==========================================
 # Database (when implementing project storage)
-# sqlalchemy==2.0.36
-# psycopg2-binary==2.9.10
-# alembic==1.14.0
+  sqlalchemy==2.0.36
+  psycopg2-binary==2.9.10
+  alembic==1.14.0
 
 # Advanced Excel export
-# xlsxwriter==3.2.0
+  xlsxwriter==3.2.0
 
 # PDF generation (for reports)
-# reportlab==4.2.5
-# weasyprint==62.3
+  reportlab==4.2.5
+  weasyprint==62.3
 
 # ==========================================
 # SECURITY NOTES
