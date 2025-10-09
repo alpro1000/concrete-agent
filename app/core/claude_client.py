@@ -1,248 +1,399 @@
 """
-Claude API Client Wrapper - WITH XML Support
+Claude API Client with proper file-based prompt loading
+FIXED: Load prompts from files, support XML parsing
 """
+from pathlib import Path
 import json
 import base64
+import logging
+from typing import Dict, Any, Optional
 import xml.etree.ElementTree as ET
-from pathlib import Path
-from typing import Optional, Union, Dict, Any
+import pandas as pd
+
 from anthropic import Anthropic
 
 from app.core.config import settings
 
+logger = logging.getLogger(__name__)
+
 
 class ClaudeClient:
-    """Wrapper for Anthropic Claude API with XML support"""
+    """Client for interacting with Claude API"""
     
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or settings.ANTHROPIC_API_KEY
-        if not self.api_key:
-            raise ValueError("ANTHROPIC_API_KEY not found")
-        
-        self.client = Anthropic(api_key=self.api_key)
+    def __init__(self):
+        self.client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
         self.model = settings.CLAUDE_MODEL
-        self.max_tokens = settings.CLAUDE_MAX_TOKENS
+        self.max_tokens = 4096
+        self.prompts_dir = settings.PROMPTS_DIR / "claude"
     
-    def call(
-        self, 
-        prompt: str,
-        system_prompt: Optional[str] = None,
-        max_tokens: Optional[int] = None,
-        temperature: float = 0.0
-    ) -> Dict[str, Any]:
-        """Basic Claude API call"""
-        messages = [{"role": "user", "content": prompt}]
+    def _load_prompt_from_file(self, prompt_name: str) -> str:
+        """
+        Load prompt from file
         
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=max_tokens or self.max_tokens,
-            temperature=temperature,
-            system=system_prompt if system_prompt else "",
-            messages=messages
-        )
+        Args:
+            prompt_name: Name like 'parsing/parse_vykaz_vymer'
         
-        text_response = response.content[0].text
+        Returns:
+            Prompt text
+        """
+        prompt_path = self.prompts_dir / f"{prompt_name}.txt"
+        
+        if not prompt_path.exists():
+            raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
         
         try:
-            return json.loads(text_response)
-        except json.JSONDecodeError:
-            return {"raw_text": text_response}
+            # ВАЖНО: Используем UTF-8 для чешских символов
+            with open(prompt_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception as e:
+            logger.error(f"Failed to load prompt from {prompt_path}: {e}")
+            raise
+    
+    def call(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.3
+    ) -> Dict[str, Any]:
+        """
+        Call Claude API with prompt
+        
+        Args:
+            prompt: User prompt
+            system_prompt: Optional system prompt
+            temperature: Sampling temperature
+        
+        Returns:
+            Parsed JSON response
+        """
+        try:
+            messages = [{"role": "user", "content": prompt}]
+            
+            kwargs = {
+                "model": self.model,
+                "max_tokens": self.max_tokens,
+                "temperature": temperature,
+                "messages": messages
+            }
+            
+            if system_prompt:
+                kwargs["system"] = system_prompt
+            
+            response = self.client.messages.create(**kwargs)
+            
+            # Extract text from response
+            result_text = response.content[0].text
+            
+            # Remove markdown code blocks if present
+            result_text = result_text.replace("```json\n", "").replace("```json", "")
+            result_text = result_text.replace("```\n", "").replace("```", "")
+            result_text = result_text.strip()
+            
+            # Try to parse as JSON
+            try:
+                return json.loads(result_text)
+            except json.JSONDecodeError:
+                logger.warning("Response is not valid JSON, returning raw text")
+                return {"raw_text": result_text}
+        
+        except Exception as e:
+            logger.error(f"Claude API call failed: {e}")
+            raise
     
     def parse_excel(
-        self, 
-        file_path: Path, 
-        prompt: str
+        self,
+        file_path: Path,
+        prompt_name: str = "parsing/parse_vykaz_vymer"
     ) -> Dict[str, Any]:
         """
         Parse Excel file using Claude
-        NOW with XML fallback support
+        Supports .xlsx, .xls
+        
+        Args:
+            file_path: Path to Excel file
+            prompt_name: Name of prompt file to use
+        
+        Returns:
+            Parsed data as dict
         """
-        import pandas as pd
-        
         try:
-            # Try reading as Excel first
-            df = pd.read_excel(file_path)
+            # Load parsing prompt from file
+            parsing_prompt = self._load_prompt_from_file(prompt_name)
             
-            excel_text = f"Excel file: {file_path.name}\n\n"
-            excel_text += f"Columns: {', '.join(df.columns)}\n\n"
-            excel_text += "Data:\n"
-            excel_text += df.to_string(index=False, max_rows=1000)
+            logger.info(f"Parsing Excel file: {file_path}")
             
-            full_prompt = f"{prompt}\n\n{excel_text}"
+            # Read Excel file
+            df = pd.read_excel(file_path, sheet_name=0)
             
-            return self.call(full_prompt)
+            # Convert to string representation
+            excel_text = df.to_string(index=False, max_rows=1000)
+            
+            # Also get first 20 rows for detailed view
+            sample_text = df.head(20).to_string(index=False)
+            
+            # Build full prompt
+            full_prompt = f"""{parsing_prompt}
+
+===== UKÁZKA PRVNÍCH 20 ŘÁDKŮ =====
+{sample_text}
+
+===== CELÝ DOKUMENT =====
+{excel_text}
+"""
+            
+            logger.info(f"Sending {len(df)} rows to Claude for parsing")
+            
+            # Call Claude
+            result = self.call(full_prompt)
+            
+            logger.info(f"Parsed {result.get('total_positions', 0)} positions")
+            
+            return result
         
-        except Exception as excel_error:
-            print(f"      ⚠️  Excel parsing failed: {excel_error}")
-            print(f"      🔄 Trying XML parsing...")
-            
-            # Fallback to XML parsing
-            try:
-                return self.parse_xml(file_path, prompt)
-            except Exception as xml_error:
-                raise Exception(
-                    f"Failed to parse as Excel ({excel_error}) "
-                    f"and XML ({xml_error}). "
-                    f"File may be corrupted or in unsupported format."
-                )
+        except Exception as e:
+            logger.error(f"Failed to parse Excel: {e}")
+            raise
     
     def parse_xml(
         self,
         file_path: Path,
-        prompt: str
+        prompt_name: str = "parsing/parse_vykaz_vymer"
     ) -> Dict[str, Any]:
         """
         Parse XML file using Claude
+        Supports .xml files (KROS/RTS export format)
         
-        Supports Czech building XML formats like:
-        - KROS XML export
-        - RTS XML export  
-        - Custom výkaz XML
+        Args:
+            file_path: Path to XML file
+            prompt_name: Name of prompt file to use
+        
+        Returns:
+            Parsed data as dict
         """
-        print(f"      📄 Parsing XML: {file_path.name}")
-        
         try:
-            # Read XML file
+            # Load parsing prompt from file
+            parsing_prompt = self._load_prompt_from_file(prompt_name)
+            
+            logger.info(f"Parsing XML file: {file_path}")
+            
+            # Read XML file with UTF-8 encoding
             with open(file_path, 'r', encoding='utf-8') as f:
                 xml_content = f.read()
             
-            # Parse XML to verify it's valid
+            # Try to pretty-print XML for better readability
             try:
-                tree = ET.fromstring(xml_content)
-                print(f"      ✅ Valid XML detected, root tag: <{tree.tag}>")
-            except ET.ParseError as e:
-                raise Exception(f"Invalid XML structure: {e}")
+                root = ET.fromstring(xml_content)
+                xml_text = ET.tostring(root, encoding='unicode', method='xml')
+            except:
+                xml_text = xml_content
             
-            # Build prompt with XML content
-            xml_text = f"XML file: {file_path.name}\n\n"
-            xml_text += "XML Content:\n"
-            xml_text += xml_content[:10000]  # First 10KB
+            # Limit XML size (Claude has token limits)
+            max_chars = 50000
+            if len(xml_text) > max_chars:
+                xml_text = xml_text[:max_chars] + "\n\n[... XML truncated ...]"
             
-            if len(xml_content) > 10000:
-                xml_text += f"\n\n... (truncated, total size: {len(xml_content)} chars)"
-            
-            full_prompt = f"""{prompt}
+            # Build full prompt
+            full_prompt = f"""{parsing_prompt}
 
-IMPORTANT: This is an XML file, not Excel.
-Parse the XML structure and extract positions.
-
-Common XML formats:
-- <Position> or <Pozice> tags
-- <Item> tags
-- Attributes: number, description, quantity, unit, price
-
+===== XML DOKUMENT =====
 {xml_text}
 """
             
-            return self.call(full_prompt)
+            logger.info(f"Sending XML to Claude for parsing (size: {len(xml_text)} chars)")
+            
+            # Call Claude
+            result = self.call(full_prompt)
+            
+            logger.info(f"Parsed {result.get('total_positions', 0)} positions from XML")
+            
+            return result
         
         except Exception as e:
-            raise Exception(f"Failed to parse XML: {str(e)}")
+            logger.error(f"Failed to parse XML: {e}")
+            raise
     
     def parse_pdf(
         self,
         file_path: Path,
-        prompt: str
+        prompt_name: str = "parsing/parse_vykaz_vymer"
     ) -> Dict[str, Any]:
-        """Parse PDF file using Claude with Vision"""
-        with open(file_path, "rb") as f:
-            pdf_data = base64.standard_b64encode(f.read()).decode("utf-8")
+        """
+        Parse PDF file using Claude with Vision
         
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "document",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "application/pdf",
-                            "data": pdf_data
-                        }
-                    },
-                    {
-                        "type": "text",
-                        "text": prompt
-                    }
-                ]
-            }
-        ]
+        Args:
+            file_path: Path to PDF file
+            prompt_name: Name of prompt file to use
         
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=self.max_tokens,
-            messages=messages
-        )
-        
-        text_response = response.content[0].text
-        
+        Returns:
+            Parsed data as dict
+        """
         try:
-            return json.loads(text_response)
-        except json.JSONDecodeError:
-            return {"raw_text": text_response}
+            # Load parsing prompt from file
+            parsing_prompt = self._load_prompt_from_file(prompt_name)
+            
+            logger.info(f"Parsing PDF file: {file_path}")
+            
+            # Read PDF as base64
+            with open(file_path, "rb") as f:
+                pdf_data = base64.standard_b64encode(f.read()).decode("utf-8")
+            
+            # Build message with PDF document
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "document",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "application/pdf",
+                                "data": pdf_data
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": parsing_prompt
+                        }
+                    ]
+                }
+            ]
+            
+            # Call Claude with document
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                messages=messages
+            )
+            
+            # Extract and parse response
+            result_text = response.content[0].text
+            
+            # Remove markdown if present
+            result_text = result_text.replace("```json\n", "").replace("```json", "")
+            result_text = result_text.replace("```\n", "").replace("```", "")
+            result_text = result_text.strip()
+            
+            try:
+                result = json.loads(result_text)
+            except json.JSONDecodeError:
+                logger.warning("PDF parse result is not valid JSON")
+                result = {"raw_text": result_text}
+            
+            logger.info(f"Parsed {result.get('total_positions', 0)} positions from PDF")
+            
+            return result
+        
+        except Exception as e:
+            logger.error(f"Failed to parse PDF: {e}")
+            raise
+    
+    def audit_position(
+        self,
+        position: Dict[str, Any],
+        knowledge_base: Dict[str, Any],
+        prompt_name: str = "audit/audit_position"
+    ) -> Dict[str, Any]:
+        """
+        Audit a single position using Claude
+        
+        Args:
+            position: Position data to audit
+            knowledge_base: Relevant KB data
+            prompt_name: Name of audit prompt file
+        
+        Returns:
+            Audit result
+        """
+        try:
+            # Load audit prompt from file
+            audit_prompt = self._load_prompt_from_file(prompt_name)
+            
+            # Build context
+            full_prompt = f"""{audit_prompt}
+
+===== POZICE K AUDITU =====
+{json.dumps(position, indent=2, ensure_ascii=False)}
+
+===== KNOWLEDGE BASE =====
+{json.dumps(knowledge_base, indent=2, ensure_ascii=False)}
+"""
+            
+            # Call Claude
+            result = self.call(full_prompt)
+            
+            return result
+        
+        except Exception as e:
+            logger.error(f"Failed to audit position: {e}")
+            raise
     
     def analyze_image(
         self,
         image_path: Path,
         prompt: str
     ) -> Dict[str, Any]:
-        """Analyze image using Claude Vision"""
-        with open(image_path, "rb") as f:
-            image_data = base64.standard_b64encode(f.read()).decode("utf-8")
+        """
+        Analyze image using Claude Vision
         
-        suffix = image_path.suffix.lower()
-        media_types = {
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".png": "image/png",
-            ".gif": "image/gif",
-            ".webp": "image/webp"
-        }
-        media_type = media_types.get(suffix, "image/jpeg")
+        Args:
+            image_path: Path to image file
+            prompt: Analysis instructions
         
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": image_data
-                        }
-                    },
-                    {
-                        "type": "text",
-                        "text": prompt
-                    }
-                ]
-            }
-        ]
-        
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=self.max_tokens,
-            messages=messages
-        )
-        
-        text_response = response.content[0].text
-        
+        Returns:
+            Analysis result
+        """
         try:
-            return json.loads(text_response)
-        except json.JSONDecodeError:
-            return {"raw_text": text_response}
-    
-    def complete(
-        self,
-        prompt: str,
-        context: Optional[Dict[str, Any]] = None,
-        system_prompt: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Complete with context"""
-        if context:
-            full_prompt = f"Context:\n{json.dumps(context, ensure_ascii=False, indent=2)}\n\n{prompt}"
-        else:
-            full_prompt = prompt
+            # Determine image media type
+            suffix = image_path.suffix.lower()
+            media_types = {
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg',
+                '.png': 'image/png',
+                '.gif': 'image/gif',
+                '.webp': 'image/webp'
+            }
+            media_type = media_types.get(suffix, 'image/jpeg')
+            
+            # Read image as base64
+            with open(image_path, "rb") as f:
+                image_data = base64.standard_b64encode(f.read()).decode("utf-8")
+            
+            # Build message with image
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": image_data
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ]
+                }
+            ]
+            
+            # Call Claude
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                messages=messages
+            )
+            
+            # Extract response
+            result_text = response.content[0].text
+            
+            try:
+                return json.loads(result_text)
+            except json.JSONDecodeError:
+                return {"raw_text": result_text}
         
-        return self.call(full_prompt, system_prompt=system_prompt)
+        except Exception as e:
+            logger.error(f"Failed to analyze image: {e}")
+            raise
