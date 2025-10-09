@@ -98,6 +98,45 @@ class Settings(BaseSettings):
     # PRICE MANAGEMENT
     # ==========================================
     AUTO_UPDATE_PRICES: bool = Field(default=False, description="Auto-update prices")
+    
+    # ==========================================
+    # PARSING CONFIGURATION
+    # ==========================================
+    PRIMARY_PARSER: str = Field(
+        default="claude",
+        description="Primary parser: 'mineru', 'nanonets', 'claude'"
+    )
+    FALLBACK_ENABLED: bool = Field(
+        default=True,
+        description="Enable fallback to other parsers if primary fails"
+    )
+    MAX_FILE_SIZE_MB: int = Field(
+        default=50,
+        description="Maximum file size for upload in MB"
+    )
+    
+    # MinerU Settings
+    MINERU_OUTPUT_DIR: Optional[Path] = None
+    MINERU_OCR_ENGINE: str = Field(
+        default="paddle",
+        description="OCR engine for MinerU: 'paddle', 'tesseract'"
+    )
+    
+    # ==========================================
+    # RATE LIMITING
+    # ==========================================
+    CLAUDE_TOKENS_PER_MINUTE: int = Field(
+        default=25000,
+        description="Claude token limit per minute (safe margin from 30k)"
+    )
+    GPT4_TOKENS_PER_MINUTE: int = Field(
+        default=8000,
+        description="GPT-4 token limit per minute (safe margin from 10k)"
+    )
+    NANONETS_CALLS_PER_MINUTE: int = Field(
+        default=80,
+        description="Nanonets API calls per minute (safe margin from 100)"
+    )
     PRICE_UPDATE_INTERVAL_DAYS: int = Field(default=90, description="Update interval")
     
     # ==========================================
@@ -141,6 +180,8 @@ class Settings(BaseSettings):
             self.LOGS_DIR = base / "logs"
         if self.WEB_DIR is None:
             self.WEB_DIR = base / "web"
+        if self.MINERU_OUTPUT_DIR is None:
+            self.MINERU_OUTPUT_DIR = base / "temp" / "mineru"
         
         try:
             self.DATA_DIR.mkdir(parents=True, exist_ok=True)
