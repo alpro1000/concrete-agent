@@ -157,28 +157,41 @@ class ClaudeClient:
     def parse_xml(
         self,
         file_path: Path,
-        prompt_name: str = "parsing/parse_vykaz_vymer"
+        prompt_name: str = None
     ) -> Dict[str, Any]:
         """
         Parse XML file using Claude
         Supports .xml files (KROS/RTS export format)
+        Auto-detects UNIXML format
         
         Args:
             file_path: Path to XML file
-            prompt_name: Name of prompt file to use
+            prompt_name: Name of prompt file to use (auto-detected if None)
         
         Returns:
             Parsed data as dict
         """
         try:
-            # Load parsing prompt from file
-            parsing_prompt = self._load_prompt_from_file(prompt_name)
-            
             logger.info(f"Parsing XML file: {file_path}")
             
             # Read XML file with UTF-8 encoding
             with open(file_path, 'r', encoding='utf-8') as f:
                 xml_content = f.read()
+            
+            # Auto-detect XML format
+            if prompt_name is None:
+                if '<unixml' in xml_content.lower():
+                    prompt_name = "parsing/parse_kros_unixml"
+                    logger.info("Detected KROS UNIXML format (Soupis prací)")
+                elif '<TZ>' in xml_content or '<Row>' in xml_content:
+                    prompt_name = "parsing/parse_kros_table_xml"
+                    logger.info("Detected KROS Table XML format (Kalkulace s cenami)")
+                else:
+                    prompt_name = "parsing/parse_vykaz_vymer"
+                    logger.info("Using generic XML parser")
+            
+            # Load appropriate parsing prompt
+            parsing_prompt = self._load_prompt_from_file(prompt_name)
             
             # Try to pretty-print XML for better readability
             try:
@@ -190,7 +203,8 @@ class ClaudeClient:
             # Limit XML size (Claude has token limits)
             max_chars = 50000
             if len(xml_text) > max_chars:
-                xml_text = xml_text[:max_chars] + "\n\n[... XML truncated ...]"
+                logger.warning(f"XML truncated from {len(xml_text)} to {max_chars} chars")
+                xml_text = xml_text[:max_chars] + "\n\n[... XML ZKRÁCENO PRO ANALÝZU ...]"
             
             # Build full prompt
             full_prompt = f"""{parsing_prompt}
@@ -199,12 +213,19 @@ class ClaudeClient:
 {xml_text}
 """
             
-            logger.info(f"Sending XML to Claude for parsing (size: {len(xml_text)} chars)")
+            logger.info(f"Sending XML to Claude for parsing (size: {len(xml_text)} chars, prompt: {prompt_name})")
             
             # Call Claude
             result = self.call(full_prompt)
             
-            logger.info(f"Parsed {result.get('total_positions', 0)} positions from XML")
+            # Validate result
+            total_positions = result.get('total_positions', 0)
+            positions_count = len(result.get('positions', []))
+            
+            logger.info(f"Parsed {positions_count} positions from XML (reported: {total_positions})")
+            
+            if positions_count == 0:
+                logger.warning("⚠️  No positions parsed! Check XML structure or prompt.")
             
             return result
         
