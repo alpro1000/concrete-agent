@@ -31,21 +31,37 @@ class WorkflowA:
     
     async def run(
         self,
-        file_path: Path,
-        project_name: str
+        project_id: str,
+        calculate_resources: bool = False
     ) -> Dict[str, Any]:
         """
         Run complete Workflow A
         
         Args:
-            file_path: Path to výkaz výměr file
-            project_name: Name of the project
+            project_id: ID of the project to audit
+            calculate_resources: Whether to calculate resource requirements
         
         Returns:
             Audit results with positions categorized as GREEN/AMBER/RED
         """
+        # Import here to avoid circular dependency
+        from app.api.routes import projects_db
+        
+        # Lookup project data
+        if project_id not in projects_db:
+            raise ValueError(f"Project {project_id} not found in database")
+        
+        project = projects_db[project_id]
+        
+        # Extract required fields
+        if not project.get("vykaz_path"):
+            raise ValueError(f"Project {project_id} has no výkaz file")
+        
+        file_path = Path(project["vykaz_path"])
+        project_name = project["name"]
+        
         try:
-            logger.info(f"Starting Workflow A for: {file_path}")
+            logger.info(f"Starting Workflow A for project {project_id}: {file_path}")
             
             # Step 1: Detect file format and parse
             file_format = self._detect_format(file_path)
@@ -336,3 +352,7 @@ class WorkflowA:
             "amber_percent": len(categorized['amber']) / total * 100 if total > 0 else 0,
             "red_percent": len(categorized['red']) / total * 100 if total > 0 else 0
         }
+
+
+# Create singleton instance for import
+workflow_a = WorkflowA()
