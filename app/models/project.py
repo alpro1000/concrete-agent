@@ -45,6 +45,15 @@ class UploadedFile(BaseModel):
     size: int
 
 
+class FileMetadata(BaseModel):
+    """Safe file metadata without exposing server paths"""
+    file_id: str = Field(..., description="Logical file identifier")
+    filename: str = Field(..., description="Original filename")
+    size: int = Field(..., description="File size in bytes")
+    file_type: str = Field(..., description="Type of file (vykaz_vymer, vykresy, etc.)")
+    uploaded_at: datetime = Field(..., description="Upload timestamp")
+
+
 class ProjectResponse(BaseModel):
     """Response model for project"""
     project_id: str
@@ -52,7 +61,7 @@ class ProjectResponse(BaseModel):
     upload_timestamp: datetime
     status: ProjectStatus
     workflow: WorkflowType
-    files: List[Dict[str, Any]]
+    files: List[Dict[str, Any]]  # Safe file metadata (no paths)
     message: str
 
 
