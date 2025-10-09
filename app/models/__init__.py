@@ -20,7 +20,7 @@ from app.models.position import (
     ResourceMaterial,
     ResourceTransport,
     Zachytka,
-    PositionResources
+    PositionResources,
     PositionAudit,
     PositionClassification,
     ProjectStatusResponse,
@@ -92,4 +92,5 @@ __all__ = [
     "PositionClassification",
     "ProjectStatusResponse"
 ]
+
 
