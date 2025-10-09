@@ -383,7 +383,14 @@ def get_knowledge_base() -> KnowledgeBaseLoader:
         _kb_instance.load_all()
     
     return _kb_instance
+kb_loader = None  # Будет инициализирован при первом вызове
 
+def init_kb_loader():
+    """Инициализация kb_loader"""
+    global kb_loader
+    if kb_loader is None:
+        kb_loader = get_knowledge_base()
+    return kb_loader
 
 # === ИСПОЛЬЗОВАНИЕ В КОДЕ ===
 
