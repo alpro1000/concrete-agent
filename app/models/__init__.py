@@ -7,8 +7,9 @@ from app.models.project import (
     Base, 
     ProjectCreate,
     ProjectResponse,
+    ProjectStatusResponse,
     UploadedFile,
-    AuditStatus,
+    ProjectStatus,
     WorkflowType
 )
 
@@ -23,7 +24,6 @@ from app.models.position import (
     PositionResources,
     PositionAudit,
     PositionClassification,
-    ProjectStatusResponse,
 )
 
 # Audit result models
@@ -57,11 +57,14 @@ __all__ = [
     # Project
     "ProjectCreate",
     "ProjectResponse",
+    "ProjectStatusResponse",
     "UploadedFile",
-    "AuditStatus",
+    "ProjectStatus",
     "WorkflowType",
     # Position
     "Position",
+    "PositionAudit",
+    "PositionClassification",
     "ResourceLabor",
     "ResourceEquipment",
     "ResourceMaterial",
@@ -86,11 +89,6 @@ __all__ = [
     "DrawingAnalysisResult",
     "DrawingEstimateLink",
     "DrawingResponse",
-    # Новые модели
-    "Position",
-    "PositionAudit",
-    "PositionClassification",
-    "ProjectStatusResponse"
 ]
 
 
