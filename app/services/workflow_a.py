@@ -1,6 +1,7 @@
 """
 Workflow A: Import and Audit Construction Estimates
 Simplified version - user selects positions to analyze
+WITH specialized parsers for better accuracy
 """
 from pathlib import Path
 import logging
@@ -9,6 +10,9 @@ import json
 
 from app.core.claude_client import ClaudeClient
 from app.core.config import settings
+from app.core.nanonets_client import NanonetsClient
+from app.core.mineru_client import MinerUClient
+from app.parsers import KROSParser, PDFParser, ExcelParser
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +26,47 @@ class WorkflowA:
     2. Display positions with checkboxes
     3. User selects positions to analyze
     4. Analyze only selected positions
+    
+    NOW WITH: Specialized parsers for better accuracy
     """
     
     def __init__(self):
         self.claude = ClaudeClient()
         self.kb_dir = settings.KB_DIR
+        
+        # Initialize optional clients
+        self.nanonets = None
+        self.mineru = None
+        
+        if settings.NANONETS_API_KEY:
+            try:
+                self.nanonets = NanonetsClient()
+                logger.info("✅ Nanonets client initialized")
+            except Exception as e:
+                logger.warning(f"Nanonets initialization failed: {e}")
+        
+        try:
+            self.mineru = MinerUClient(
+                output_dir=settings.MINERU_OUTPUT_DIR,
+                ocr_engine=settings.MINERU_OCR_ENGINE
+            )
+            if self.mineru.available:
+                logger.info("✅ MinerU client initialized")
+        except Exception as e:
+            logger.warning(f"MinerU initialization failed: {e}")
+        
+        # Initialize parsers
+        self.kros_parser = KROSParser(
+            claude_client=self.claude,
+            nanonets_client=self.nanonets
+        )
+        self.pdf_parser = PDFParser(
+            claude_client=self.claude,
+            mineru_client=self.mineru
+        )
+        self.excel_parser = ExcelParser(
+            claude_client=self.claude
+        )
     
     async def import_and_prepare(
         self,
@@ -180,7 +220,7 @@ class WorkflowA:
         file_format: str
     ) -> List[Dict[str, Any]]:
         """
-        Parse document based on format (NO LIMITATIONS!)
+        Parse document based on format using SPECIALIZED PARSERS
         
         Args:
             file_path: Path to document
@@ -190,18 +230,24 @@ class WorkflowA:
             List of ALL parsed positions
         """
         try:
+            logger.info(f"Parsing {file_format} document with specialized parser...")
+            
             if file_format == 'excel':
-                result = self.claude.parse_excel(file_path)
+                # Use Excel parser
+                result = self.excel_parser.parse(file_path)
             elif file_format == 'xml':
-                # Auto-detect KROS format
-                result = self.claude.parse_xml(file_path)
+                # Use KROS parser with auto-detection and fallback
+                result = self.kros_parser.parse(file_path)
             elif file_format == 'pdf':
-                result = self.claude.parse_pdf(file_path)
+                # Use PDF parser with MinerU/pdfplumber
+                result = self.pdf_parser.parse(file_path)
             else:
                 raise ValueError(f"Unsupported format: {file_format}")
             
             # Extract positions from result
             positions = result.get('positions', [])
+            
+            logger.info(f"✅ Parsed {len(positions)} positions with specialized parser")
             
             # Validate positions
             valid_positions = []
@@ -211,11 +257,34 @@ class WorkflowA:
                 else:
                     logger.warning(f"Skipping invalid position: {pos}")
             
+            logger.info(f"✅ {len(valid_positions)} valid positions after validation")
+            
             return valid_positions
         
         except Exception as e:
-            logger.error(f"Failed to parse document: {e}")
-            raise
+            logger.error(f"Failed to parse document with specialized parser: {e}")
+            
+            # Fallback to Claude direct parsing if enabled
+            if settings.FALLBACK_ENABLED:
+                logger.warning("Falling back to Claude direct parsing...")
+                try:
+                    if file_format == 'excel':
+                        result = self.claude.parse_excel(file_path)
+                    elif file_format == 'xml':
+                        result = self.claude.parse_xml(file_path)
+                    elif file_format == 'pdf':
+                        result = self.claude.parse_pdf(file_path)
+                    else:
+                        raise ValueError(f"Unsupported format: {file_format}")
+                    
+                    positions = result.get('positions', [])
+                    logger.info(f"✅ Fallback: Parsed {len(positions)} positions")
+                    return positions
+                except Exception as e2:
+                    logger.error(f"Fallback also failed: {e2}")
+                    raise
+            else:
+                raise
     
     def _is_valid_position(self, position: Dict[str, Any]) -> bool:
         """

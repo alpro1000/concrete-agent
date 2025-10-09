@@ -100,6 +100,16 @@ app.add_middleware(
 app.include_router(routes.router)
 app.include_router(routes_resources.router)  # Resource calculation endpoints
 
+# NEW: Workflow-specific endpoints
+try:
+    from app.api import routes_workflow_a, routes_workflow_b, routes_parsing
+    app.include_router(routes_workflow_a.router)
+    app.include_router(routes_workflow_b.router)
+    app.include_router(routes_parsing.router)
+    logger.info("✅ Workflow A/B and parsing routes loaded")
+except Exception as e:
+    logger.warning(f"⚠️  Failed to load new workflow routes: {e}")
+
 
 # === STATIC FILES (Frontend) ===
 
