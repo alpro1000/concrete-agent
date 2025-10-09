@@ -10,26 +10,7 @@ class PositionClassification(str, Enum):
     GREEN = "green"
     AMBER = "amber" 
     RED = "red"
-
-class PositionAudit(BaseModel):
-    """Audit result for a position"""
-    position: Position
-    classification: PositionClassification
-    confidence: float = Field(..., ge=0.0, le=1.0)
-    issues_found: List[str] = Field(default_factory=list)
-    recommendations: List[str] = Field(default_factory=list)
-    hitl_required: bool = False
-
-class ProjectStatusResponse(BaseModel):
-    """Detailed project status response"""
-    project_id: str
-    name: str
-    status: str  # или AuditStatus
-    progress_percent: int = Field(..., ge=0, le=100)
-    current_step: str
-    estimated_completion: Optional[str] = None
-    positions_total: int = 0
-    positions_analyzed: int = 0
+    
 class Position(BaseModel):
     """Pozice ze smetá (výkaz výměr)"""
     
@@ -53,6 +34,25 @@ class Position(BaseModel):
                 "total_price": 368725.00,
                 "category": "HSV",
                 "notes": ""
+class PositionAudit(BaseModel):
+    """Audit result for a position"""
+    position: Position
+    classification: PositionClassification
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    issues_found: List[str] = Field(default_factory=list)
+    recommendations: List[str] = Field(default_factory=list)
+    hitl_required: bool = False
+
+class ProjectStatusResponse(BaseModel):
+    """Detailed project status response"""
+    project_id: str
+    name: str
+    status: str  # или AuditStatus
+    progress_percent: int = Field(..., ge=0, le=100)
+    current_step: str
+    estimated_completion: Optional[str] = None
+    positions_total: int = 0
+    positions_analyzed: int = 0
             }
         }
 
