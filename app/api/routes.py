@@ -1,3 +1,23 @@
+"""
+API Routes for Czech Building Audit System
+"""
+from pathlib import Path
+from typing import Dict, Any, List, Optional  # ← ДОБАВЬТЕ ЭТУ СТРОКУ!
+from datetime import datetime
+import json
+import logging
+import uuid
+import asyncio
+
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query
+from fastapi.responses import FileResponse, JSONResponse
+
+from app.core.config import settings
+from app.services.workflow_a import WorkflowA
+from app.models.project import Project, ProjectStatus
+
+logger = logging.getLogger(__name__)
+
 async def generate_quick_preview(project_id: str) -> Dict[str, Any]:
     """
     Generate quick preview of uploaded document using Claude
