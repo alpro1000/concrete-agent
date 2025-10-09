@@ -3,6 +3,7 @@ Pydantic models for Position (Pozice)
 """
 from typing import Optional, List
 from pydantic import BaseModel, Field
+from enum import Enum
 
 class PositionClassification(str, Enum):
     """Classification of audit result"""
