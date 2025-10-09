@@ -329,9 +329,12 @@ async def start_audit(project_id: str, background_tasks: BackgroundTasks):
         try:
             logger.info(f"Starting full audit for {project_id}")
             
+            vykaz_path = Path(project["vykaz_path"])
+            project_name = project["name"]
+            
             result = await workflow_a.run(
-                project_id=project_id,
-                calculate_resources=settings.ENABLE_RESOURCE_CALCULATION
+                file_path=vykaz_path,
+                project_name=project_name
             )
             
             project["status"] = "completed"

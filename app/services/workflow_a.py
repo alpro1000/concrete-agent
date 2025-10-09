@@ -336,3 +336,7 @@ class WorkflowA:
             "amber_percent": len(categorized['amber']) / total * 100 if total > 0 else 0,
             "red_percent": len(categorized['red']) / total * 100 if total > 0 else 0
         }
+
+
+# Create singleton instance for import
+workflow_a = WorkflowA()
