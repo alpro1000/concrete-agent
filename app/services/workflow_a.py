@@ -127,3 +127,7 @@ async def run(
             "amber_percent": len(categorized['amber']) / total * 100 if total > 0 else 0,
             "red_percent": len(categorized['red']) / total * 100 if total > 0 else 0
         }
+# ========================================
+# Singleton instance for backward compatibility
+# ========================================
+workflow_a = WorkflowA()
