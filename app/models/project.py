@@ -17,7 +17,7 @@ Base = declarative_base()
 # СУЩЕСТВУЮЩИЕ PYDANTIC МОДЕЛИ (БЕЗ ИЗМЕНЕНИЙ)
 # =============================================================================
 
-class AuditStatus(str, Enum):
+class ProjectStatus(str, Enum):
     """Status of audit processing"""
     UPLOADED = "uploaded"
     PROCESSING = "processing"
@@ -50,7 +50,7 @@ class ProjectResponse(BaseModel):
     project_id: str
     name: str
     upload_timestamp: datetime
-    status: AuditStatus
+    status: ProjectStatus
     workflow: WorkflowType
     files: List[Dict[str, Any]]
     message: str
@@ -72,8 +72,8 @@ class Project(Base):
     name = Column(String(500), nullable=False)
     description = Column(Text, nullable=True)
     
-    # Статус (используем существующий AuditStatus enum)
-    status = Column(SQLEnum(AuditStatus), default=AuditStatus.UPLOADED)
+    # Статус (используем существующий ProjectStatus enum)
+    status = Column(SQLEnum(ProjectStatus), default=ProjectStatus.UPLOADED)
     workflow = Column(SQLEnum(WorkflowType), nullable=True)
     
     # Пути к файлам
@@ -110,44 +110,13 @@ class Project(Base):
 
 
 # =============================================================================
-# НОВОЕ: Дополнительные enum'ы (без конфликта с AuditStatus)
+# PROJECT STATUS RESPONSE
 # =============================================================================
-
-class PositionClassification(str, Enum):
-    """Classification of individual position audit (GREEN/AMBER/RED)"""
-    GREEN = "green"
-    AMBER = "amber"
-    RED = "red"
-
-
-# =============================================================================
-# ДОПОЛНИТЕЛЬНЫЕ PYDANTIC МОДЕЛИ
-# =============================================================================
-
-class Position(BaseModel):
-    """Building position/item"""
-    id: str
-    code: Optional[str] = None
-    name: str
-    unit: str
-    quantity: float
-    unit_price: Optional[float] = None
-    total_price: Optional[float] = None
-
-
-class PositionAudit(BaseModel):
-    """Audit result for individual position"""
-    position: Position
-    classification: PositionClassification  # GREEN/AMBER/RED
-    confidence_score: float = Field(..., ge=0, le=1)
-    findings: List[str] = []
-    requires_hitl: bool = False
-
 
 class ProjectStatusResponse(BaseModel):
     """Detailed project status for API"""
     project_id: str
-    status: AuditStatus
+    status: ProjectStatus
     progress: int = Field(0, ge=0, le=100)
     message: str
     positions_processed: int = 0

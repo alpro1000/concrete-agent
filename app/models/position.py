@@ -48,18 +48,6 @@ class PositionAudit(BaseModel):
     hitl_required: bool = False
 
 
-class ProjectStatusResponse(BaseModel):
-    """Detailed project status response"""
-    project_id: str
-    name: str
-    status: str
-    progress_percent: int = Field(..., ge=0, le=100)
-    current_step: str
-    estimated_completion: Optional[str] = None
-    positions_total: int = 0
-    positions_analyzed: int = 0
-
-
 class ResourceLabor(BaseModel):
     """Lidské zdroje"""
     type: str = Field(..., description="Typ práce (tesaři, zedníci, betonáři...)")
