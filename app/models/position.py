@@ -34,6 +34,10 @@ class Position(BaseModel):
                 "total_price": 368725.00,
                 "category": "HSV",
                 "notes": ""
+            }
+        }
+
+
 class PositionAudit(BaseModel):
     """Audit result for a position"""
     position: Position
@@ -43,18 +47,17 @@ class PositionAudit(BaseModel):
     recommendations: List[str] = Field(default_factory=list)
     hitl_required: bool = False
 
+
 class ProjectStatusResponse(BaseModel):
     """Detailed project status response"""
     project_id: str
     name: str
-    status: str  # или AuditStatus
+    status: str
     progress_percent: int = Field(..., ge=0, le=100)
     current_step: str
     estimated_completion: Optional[str] = None
     positions_total: int = 0
     positions_analyzed: int = 0
-            }
-        }
 
 
 class ResourceLabor(BaseModel):
@@ -93,7 +96,7 @@ class ResourceTransport(BaseModel):
     type: str = Field(..., description="Typ dopravy")
     distance_km: Optional[float] = Field(None, description="Vzdálenost")
     trips: Optional[int] = Field(None, description="Počet jízd")
-    price_per_trip_czk: Optional[float] = Field(None, description="Cena za jízdu")
+    price_per_trip_czk: Optional[float] = Field(None, description="Cena за jízdu")
     total_czk: float = Field(..., description="Celkové náklady")
 
 
