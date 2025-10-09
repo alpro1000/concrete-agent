@@ -552,12 +552,16 @@ async def get_project_results(project_id: str):
 @router.get("/api/kb/status")
 async def get_kb_status():
     """Získat stav Knowledge Base"""
-    from app.core.kb_loader import kb_loader
+    from app.core.kb_loader import get_knowledge_base
+    
+    kb = get_knowledge_base()
     
     categories = {}
-    for category, (data, metadata) in kb_loader.data.items():
+    for category in kb.data:
+        data = kb.data[category]
+        metadata = kb.metadata.get(category, {})
         categories[category] = {
-            "files": len(data) if isinstance(data, list) else 1,
+            "files": len(data) if isinstance(data, dict) else 1,
             "version": metadata.get("version", "1.0"),
             "loaded_at": metadata.get("loaded_at", "unknown")
         }
@@ -573,13 +577,19 @@ async def get_kb_status():
 async def reload_kb():
     """Znovu načíst Knowledge Base"""
     try:
-        from app.core.kb_loader import kb_loader
-        kb_loader.load()
+        from app.core.kb_loader import get_knowledge_base
+        from app.core import kb_loader as kb_module
+        
+        # Reset singleton
+        kb_module._kb_instance = None
+        
+        # Reload KB
+        kb = get_knowledge_base()
         
         return {
             "status": "reloaded",
             "message": "Knowledge Base byla úspěšně znovu načtena",
-            "categories": len(kb_loader.data)
+            "categories": len(kb.data)
         }
     except Exception as e:
         logger.error(f"Chyba při načítání KB: {str(e)}")

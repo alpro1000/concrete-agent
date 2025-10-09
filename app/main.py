@@ -8,6 +8,7 @@ FastAPI Main Application
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import logging
@@ -102,11 +103,10 @@ app.include_router(routes_resources.router)  # Resource calculation endpoints
 
 # NEW: Workflow-specific endpoints
 try:
-    from app.api import routes_workflow_a, routes_workflow_b, routes_parsing
+    from app.api import routes_workflow_a, routes_workflow_b
     app.include_router(routes_workflow_a.router)
     app.include_router(routes_workflow_b.router)
-    app.include_router(routes_parsing.router)
-    logger.info("✅ Workflow A/B and parsing routes loaded")
+    logger.info("✅ Workflow A/B routes loaded")
 except Exception as e:
     logger.warning(f"⚠️  Failed to load new workflow routes: {e}")
 
@@ -247,20 +247,26 @@ async def kb_reload():
 
 @app.exception_handler(404)
 async def not_found_handler(request, exc):
-    return {
-        "error": "Not Found",
-        "message": "The requested resource was not found",
-        "path": request.url.path
-    }
+    return JSONResponse(
+        status_code=404,
+        content={
+            "error": "Not Found",
+            "message": "The requested resource was not found",
+            "path": request.url.path
+        }
+    )
 
 
 @app.exception_handler(500)
 async def server_error_handler(request, exc):
     logger.error(f"Internal server error: {exc}")
-    return {
-        "error": "Internal Server Error",
-        "message": "An unexpected error occurred"
-    }
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal Server Error",
+            "message": "An unexpected error occurred"
+        }
+    )
 
 
 # === STARTUP MESSAGE ===
