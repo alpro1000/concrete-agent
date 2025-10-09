@@ -19,10 +19,15 @@ class GPT4VisionClient:
     """Client for interacting with GPT-4 Vision API"""
     
     def __init__(self):
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        self.client = None
         self.model = "gpt-4-vision-preview"  # or "gpt-4o" for newer version
         self.max_tokens = 4096
         self.prompts_dir = settings.PROMPTS_DIR / "gpt4"
+    
+    def _ensure_client(self):
+        """Lazy initialization of OpenAI client"""
+        if self.client is None:
+            self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
     
     def _load_prompt_from_file(self, prompt_name: str) -> str:
         """
@@ -95,6 +100,8 @@ class GPT4VisionClient:
             OCR analysis result with extracted text
         """
         try:
+            self._ensure_client()
+            
             # Load OCR prompt
             ocr_prompt = self._load_prompt_from_file(prompt_name)
             
@@ -163,6 +170,8 @@ class GPT4VisionClient:
             Vision analysis result with construction elements, materials, etc.
         """
         try:
+            self._ensure_client()
+            
             # Load Vision prompt
             vision_prompt = self._load_prompt_from_file(prompt_name)
             
