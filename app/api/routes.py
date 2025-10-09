@@ -1,5 +1,7 @@
 """
 API Routes for Czech Building Audit System
+CORE endpoints - upload, status, knowledge base
+ИСПРАВЛЕНО: Streaming upload, валидация, без дубликатов
 """
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -7,397 +9,578 @@ from datetime import datetime
 import json
 import logging
 import uuid
-import asyncio
+import aiofiles
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Form, Query
 from fastapi.responses import FileResponse, JSONResponse
 
 from app.core.config import settings
 from app.services.workflow_a import WorkflowA
-from app.models.project import Project, ProjectStatus
+from app.services.workflow_b import WorkflowB
+from app.models.project import (
+    ProjectStatus,
+    ProjectResponse,
+    ProjectStatusResponse,
+)
 
 logger = logging.getLogger(__name__)
-
-# Create router
 router = APIRouter()
 
-# In-memory storage for audit tasks
-audit_tasks = {}
+# Константы
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB на файл
+ALLOWED_EXTENSIONS = {
+    'vykaz': {'.xml', '.xlsx', '.xls', '.pdf'},
+    'vykresy': {'.pdf', '.dwg', '.dxf', '.png', '.jpg', '.jpeg'},
+    'dokumentace': {'.pdf', '.doc', '.docx', '.xlsx', '.xls'},
+}
+
+# In-memory project store (в production заменить на БД)
+project_store: Dict[str, Dict[str, Any]] = {}
 
 
-# ============================================================================
+# =============================================================================
 # HELPER FUNCTIONS
-# ============================================================================
+# =============================================================================
 
-async def generate_quick_preview(project_id: str) -> Dict[str, Any]:
+async def _validate_file(
+    file: UploadFile, 
+    file_type: str,
+    max_size: int = MAX_FILE_SIZE
+) -> None:
     """
-    Generate quick preview of uploaded document using Claude
-    FIXED: Properly load prompt from file
+    Валидация загружаемого файла
+    
+    Args:
+        file: Загружаемый файл
+        file_type: Тип файла ('vykaz', 'vykresy', 'dokumentace')
+        max_size: Максимальный размер в байтах
+    
+    Raises:
+        ValueError: Если файл не прошел валидацию
     """
-    logger.info(f"Generating quick preview for {project_id}")
+    # Проверка расширения
+    file_ext = Path(file.filename).suffix.lower()
+    allowed = ALLOWED_EXTENSIONS.get(file_type, set())
+    
+    if file_ext not in allowed:
+        raise ValueError(
+            f"Nepodporovaný formát pro {file_type}: {file_ext}. "
+            f"Povolené: {', '.join(allowed)}"
+        )
+    
+    # Проверка размера (через seek - без загрузки в память)
+    file.file.seek(0, 2)  # Конец файла
+    size = file.file.tell()
+    file.file.seek(0)  # Вернуться в начало
+    
+    if size > max_size:
+        raise ValueError(
+            f"Soubor {file.filename} je příliš velký: {size / 1024 / 1024:.1f} MB. "
+            f"Maximum: {max_size / 1024 / 1024:.0f} MB"
+        )
+    
+    logger.info(f"✅ Validace OK: {file.filename} ({size / 1024:.1f} KB)")
+
+
+async def _save_file_streaming(file: UploadFile, save_path: Path) -> int:
+    """
+    Сохранить файл используя streaming (память-эффективно)
+    
+    Args:
+        file: Загружаемый файл
+        save_path: Путь для сохранения
+    
+    Returns:
+        Размер сохраненного файла в байтах
+    """
+    CHUNK_SIZE = 1024 * 1024  # 1 MB chunks
+    total_size = 0
     
     try:
-        # Find uploaded file
-        raw_dir = settings.DATA_DIR / "raw" / project_id
-        if not raw_dir.exists():
-            raise HTTPException(status_code=404, detail="Project not found")
+        async with aiofiles.open(save_path, 'wb') as f:
+            while True:
+                chunk = await file.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                await f.write(chunk)
+                total_size += len(chunk)
         
-        # Find the file
-        files = list(raw_dir.glob("*"))
-        if not files:
-            raise HTTPException(status_code=404, detail="No files found")
-        
-        file_path = files[0]
-        
-        # Initialize Claude client
-        from app.core.claude_client import ClaudeClient
-        client = ClaudeClient()
-        
-        # Detect file format
-        file_ext = file_path.suffix.lower()
-        
-        # Parse the file
-        if file_ext == '.xml':
-            # Check if it's KROS format
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content_preview = f.read(1000)
-            
-            if '<TZ>' in content_preview or '<Row>' in content_preview:
-                # KROS Table XML
-                parsed_data = client.parse_xml(file_path, prompt_name="parsing/parse_kros_table_xml")
-            elif '<unixml' in content_preview.lower():
-                # KROS UNIXML
-                parsed_data = client.parse_xml(file_path, prompt_name="parsing/parse_kros_unixml")
-            else:
-                # Generic XML
-                parsed_data = client.parse_xml(file_path)
-        
-        elif file_ext in ['.xlsx', '.xls']:
-            parsed_data = client.parse_excel(file_path)
-        
-        elif file_ext == '.pdf':
-            parsed_data = client.parse_pdf(file_path)
-        
-        else:
-            raise HTTPException(status_code=400, detail=f"Unsupported file format: {file_ext}")
-        
-        # Load quick preview prompt from file
-        prompt = client._load_prompt_from_file("analysis/quick_preview")
-        
-        # Prepare data for preview
-        data_summary = {
-            "document_type": parsed_data.get("document_info", {}).get("document_type", "Unknown"),
-            "total_positions": parsed_data.get("total_positions", 0),
-            "positions_sample": parsed_data.get("positions", [])[:5],  # First 5 positions
-            "sections": parsed_data.get("sections", [])
-        }
-        
-        # Add data to prompt
-        full_prompt = f"""{prompt}
-
-===== DATA Z DOKUMENTU =====
-{json.dumps(data_summary, ensure_ascii=False, indent=2)}
-"""
-        
-        # Call Claude for preview
-        preview_result = client.call(full_prompt)
-        
-        # Save preview to curated
-        curated_dir = settings.DATA_DIR / "curated" / project_id
-        curated_dir.mkdir(parents=True, exist_ok=True)
-        
-        preview_path = curated_dir / "quick_preview.json"
-        with open(preview_path, 'w', encoding='utf-8') as f:
-            json.dump({
-                "preview": preview_result,
-                "parsed_data": parsed_data,
-                "generated_at": datetime.now().isoformat()
-            }, f, ensure_ascii=False, indent=2)
-        
-        logger.info(f"Quick preview generated successfully for {project_id}")
-        
-        return preview_result
+        logger.info(f"💾 Uloženo: {save_path.name} ({total_size / 1024:.1f} KB)")
+        return total_size
         
     except Exception as e:
-        logger.error(f"Preview generation error: {str(e)}")
-        # Return fallback preview
-        return {
-            "nahrano": {
-                "nazev_dokumentu": file_path.name if 'file_path' in locals() else "Unknown",
-                "format": file_ext.upper() if 'file_ext' in locals() else "Unknown",
-                "datum_nacteni": datetime.now().strftime("%Y-%m-%d")
-            },
-            "obsah": {
-                "pocet_pozic": 0,
-                "celkova_suma_kc": 0.0,
-                "hlavni_prace": [],
-                "stav": "chyba při načítání"
-            },
-            "co_budeme_kontrolovat": [
-                "Kódy KROS/RTS",
-                "Ceny",
-                "Normy ČSN"
-            ],
-            "doporuceni": f"Chyba při generování náhledu: {str(e)}. Pokračujte na detailní analýzu.",
-            "estimate_time_minutes": 5,
-            "error": str(e)
-        }
+        # Удалить частично сохраненный файл
+        if save_path.exists():
+            save_path.unlink()
+        raise
 
 
-async def process_audit_task(project_id: str, file_path: Path, project_name: str):
+async def _process_project_background(
+    project_id: str,
+    workflow: str,
+    vykaz_path: Optional[Path],
+    vykresy_paths: List[Path],
+    project_name: str
+):
     """
-    Background task for processing audit
+    Фоновая обработка проекта
+    
+    Args:
+        project_id: ID проекта
+        workflow: Тип workflow ("A" или "B")
+        vykaz_path: Путь к выказу (для Workflow A)
+        vykresy_paths: Пути к чертежам
+        project_name: Название проекта
     """
+    import gc
+    
     try:
-        audit_tasks[project_id] = {
-            "status": "processing",
-            "progress": 0,
-            "message": "Starting audit..."
-        }
+        logger.info(f"🚀 Začínám zpracování projektu {project_id} (Workflow {workflow})")
         
-        workflow_a = WorkflowA()
+        # Обновить статус
+        if project_id in project_store:
+            project_store[project_id]["status"] = ProjectStatus.PROCESSING
         
-        # Run audit workflow
-        result = await workflow_a.run(
-            file_path=file_path,
-            project_name=project_name
-        )
+        # Выбрать и запустить workflow
+        if workflow == "A":
+            workflow_service = WorkflowA()
+            result = await workflow_service.execute(
+                project_id=project_id,
+                vykaz_path=vykaz_path,
+                vykresy_paths=vykresy_paths,
+                project_name=project_name
+            )
+        else:  # workflow == "B"
+            workflow_service = WorkflowB()
+            result = await workflow_service.execute(
+                project_id=project_id,
+                vykresy_paths=vykresy_paths,
+                project_name=project_name
+            )
         
-        # Save results
-        curated_dir = settings.DATA_DIR / "curated" / project_id
-        curated_dir.mkdir(parents=True, exist_ok=True)
+        # Сохранить результаты
+        results_dir = settings.DATA_DIR / "results" / project_id
+        results_dir.mkdir(parents=True, exist_ok=True)
         
-        results_path = curated_dir / "audit_results.json"
-        with open(results_path, 'w', encoding='utf-8') as f:
-            json.dump(result, f, ensure_ascii=False, indent=2)
+        results_path = results_dir / f"audit_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        async with aiofiles.open(results_path, 'w', encoding='utf-8') as f:
+            await f.write(json.dumps(result, ensure_ascii=False, indent=2))
         
-        # Update task status
-        audit_tasks[project_id] = {
-            "status": "completed",
-            "progress": 100,
-            "message": "Audit completed successfully",
-            "results": result
-        }
+        # Обновить статус
+        if project_id in project_store:
+            project_store[project_id].update({
+                "status": ProjectStatus.COMPLETED,
+                "results_path": str(results_path),
+                "total_positions": result.get("total_positions", 0),
+                "green_count": result.get("green_count", 0),
+                "amber_count": result.get("amber_count", 0),
+                "red_count": result.get("red_count", 0),
+                "completed_at": datetime.now().isoformat()
+            })
+        
+        logger.info(f"✅ Projekt {project_id} dokončen úspěšně")
         
     except Exception as e:
-        logger.error(f"AttributeError: {str(e)}")
-        logger.error("Traceback:", exc_info=True)
-        audit_tasks[project_id] = {
-            "status": "error",
-            "progress": 0,
-            "message": f"Error: {str(e)}"
-        }
+        logger.error(f"❌ Chyba při zpracování projektu {project_id}: {str(e)}", exc_info=True)
+        
+        if project_id in project_store:
+            project_store[project_id].update({
+                "status": ProjectStatus.FAILED,
+                "error": str(e)
+            })
+    
+    finally:
+        # Освободить память
+        gc.collect()
 
 
-# ============================================================================
-# ENDPOINTS
-# ============================================================================
+# =============================================================================
+# MAIN ENDPOINTS
+# =============================================================================
 
 @router.get("/")
-async def root():
+@router.get("/api/health")
+async def health_check():
     """Health check endpoint"""
     return {
         "status": "ok",
-        "message": "Czech Building Audit System API",
-        "version": "1.0.0"
+        "service": "Czech Building Audit System",
+        "version": "1.0.0",
+        "timestamp": datetime.utcnow().isoformat(),
+        "limits": {
+            "max_file_size_mb": MAX_FILE_SIZE / 1024 / 1024,
+            "supported_formats": {
+                "vykaz": list(ALLOWED_EXTENSIONS['vykaz']),
+                "vykresy": list(ALLOWED_EXTENSIONS['vykresy']),
+                "dokumentace": list(ALLOWED_EXTENSIONS['dokumentace'])
+            }
+        }
     }
 
 
-@router.post("/upload")
-async def upload_file(
-    file: UploadFile = File(...),
-    name: Optional[str] = None,
-    quick_preview: bool = Query(False),
-    background_tasks: BackgroundTasks = None
-):
-    """
-    Upload výkaz výměr (estimate) file
+@router.post("/api/upload", response_model=ProjectResponse)
+async def upload_project(
+    background_tasks: BackgroundTasks,
     
-    Supports: Excel (.xlsx, .xls), XML, PDF
+    # ZÁKLADNÍ PARAMETRY
+    project_name: str = Form(..., description="Název projektu"),
+    workflow: str = Form(..., description="Typ workflow: 'A' nebo 'B'"),
+    
+    # HLAVNÍ SOUBORY
+    vykaz_vymer: Optional[UploadFile] = File(
+        None, 
+        description="Výkaz výměr (povinné pro Workflow A)"
+    ),
+    
+    vykresy: List[UploadFile] = File(
+        default=[],
+        description="Výkresy (povinné pro oba workflows)"
+    ),
+    
+    # VOLITELNÉ SOUBORY
+    rozpocet: Optional[UploadFile] = File(
+        None,
+        description="Rozpočet s cenami (volitelné)"
+    ),
+    
+    dokumentace: List[UploadFile] = File(
+        default=[],
+        description="Projektová dokumentace (volitelné)"
+    ),
+    
+    zmeny: List[UploadFile] = File(
+        default=[],
+        description="Změny a dodatky (volitelné)"
+    ),
+    
+    # MOŽNOSTI
+    generate_summary: bool = Form(default=True, description="Generovat summary"),
+    auto_start_audit: bool = Form(default=True, description="Automaticky spustit audit")
+    
+) -> ProjectResponse:
+    """
+    Nahrání projektu pro audit
+    
+    **Workflow A (Mám výkaz výměr):**
+    - ✅ vykaz_vymer (POVINNÉ) - pozice a množství
+    - ✅ vykresy (POVINNÉ) - materiály, podmínky, kontext
+    - 📄 rozpocet, dokumentace, zmeny (volitelné)
+    
+    **Workflow B (Vytvořit z výkresů):**
+    - ✅ vykresy (POVINNÉ) - generování výkazu z výkresů
+    - 📄 dokumentace, zmeny (volitelné)
+    
+    **Limity:**
+    - Maximální velikost souboru: 50 MB
+    - Podporované formáty viz /api/health
     """
     try:
-        # Generate project ID
-        project_id = str(uuid.uuid4())
+        # VALIDACE workflow
+        workflow = workflow.upper()
+        if workflow not in ["A", "B"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Workflow musí být 'A' nebo 'B'"
+            )
         
-        # Create directories
-        raw_dir = settings.DATA_DIR / "raw" / project_id
-        raw_dir.mkdir(parents=True, exist_ok=True)
+        # VALIDACE povinných souborů
+        if workflow == "A":
+            if not vykaz_vymer:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Pro Workflow A je výkaz výměr povinný"
+                )
+            if not vykresy or len(vykresy) == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Pro Workflow A jsou výkresy povinné (pro kontext materiálů a podmínek)"
+                )
         
-        # Save uploaded file
-        file_path = raw_dir / file.filename
-        with open(file_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
+        elif workflow == "B":
+            if not vykresy or len(vykresy) == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Pro Workflow B jsou výkresy povinné"
+                )
         
-        logger.info(f"File uploaded: {file.filename} -> {project_id}")
+        # Генерация project ID
+        project_id = f"proj_{uuid.uuid4().hex[:12]}"
         
-        # Generate quick preview if requested
-        preview = None
-        if quick_preview:
-            preview = await generate_quick_preview(project_id)
+        logger.info(f"📤 Nové nahrání: {project_id} - {project_name} (Workflow {workflow})")
         
-        return {
-            "project_id": project_id,
-            "filename": file.filename,
-            "size": len(content),
-            "status": "uploaded",
-            "preview": preview
+        # Создание директорий
+        project_dir = settings.DATA_DIR / "raw" / project_id
+        project_dir.mkdir(parents=True, exist_ok=True)
+        
+        # ULOŽENÍ SOUBORŮ
+        saved_files = {
+            "vykaz_vymer": None,
+            "vykresy": [],
+            "rozpocet": None,
+            "dokumentace": [],
+            "zmeny": []
         }
         
-    except Exception as e:
-        logger.error(f"Upload error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/preview/{project_id}")
-async def get_preview(project_id: str):
-    """
-    Get quick preview of uploaded document
-    """
-    try:
-        # Check if preview exists
-        curated_dir = settings.DATA_DIR / "curated" / project_id
-        preview_path = curated_dir / "quick_preview.json"
+        # 1. Výkaz výměr
+        if vykaz_vymer:
+            await _validate_file(vykaz_vymer, 'vykaz')
+            
+            vykaz_dir = project_dir / "vykaz_vymer"
+            vykaz_dir.mkdir(exist_ok=True)
+            
+            vykaz_path = vykaz_dir / vykaz_vymer.filename
+            size = await _save_file_streaming(vykaz_vymer, vykaz_path)
+            
+            saved_files["vykaz_vymer"] = {
+                "path": str(vykaz_path),
+                "filename": vykaz_vymer.filename,
+                "size": size
+            }
         
-        if preview_path.exists():
-            with open(preview_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data.get("preview", {})
+        # 2. Výkresy (může быть много)
+        if vykresy:
+            vykresy_dir = project_dir / "vykresy"
+            vykresy_dir.mkdir(exist_ok=True)
+            
+            for vykres in vykresy:
+                await _validate_file(vykres, 'vykresy')
+                
+                vykres_path = vykresy_dir / vykres.filename
+                size = await _save_file_streaming(vykres, vykres_path)
+                
+                saved_files["vykresy"].append({
+                    "path": str(vykres_path),
+                    "filename": vykres.filename,
+                    "size": size
+                })
         
-        # Generate preview if doesn't exist
-        preview = await generate_quick_preview(project_id)
-        return preview
+        # 3. Rozpočet
+        if rozpocet:
+            await _validate_file(rozpocet, 'vykaz')
+            
+            rozpocet_dir = project_dir / "rozpocet"
+            rozpocet_dir.mkdir(exist_ok=True)
+            
+            rozpocet_path = rozpocet_dir / rozpocet.filename
+            size = await _save_file_streaming(rozpocet, rozpocet_path)
+            
+            saved_files["rozpocet"] = {
+                "path": str(rozpocet_path),
+                "filename": rozpocet.filename,
+                "size": size
+            }
         
-    except Exception as e:
-        logger.error(f"Preview error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/audit/{project_id}/start")
-async def start_audit(
-    project_id: str,
-    background_tasks: BackgroundTasks
-):
-    """
-    Start full audit process
-    """
-    try:
-        logger.info(f"Starting full audit for {project_id}")
+        # 4. Dokumentace
+        if dokumentace:
+            dok_dir = project_dir / "dokumentace"
+            dok_dir.mkdir(exist_ok=True)
+            
+            for dok in dokumentace:
+                await _validate_file(dok, 'dokumentace')
+                
+                dok_path = dok_dir / dok.filename
+                size = await _save_file_streaming(dok, dok_path)
+                
+                saved_files["dokumentace"].append({
+                    "path": str(dok_path),
+                    "filename": dok.filename,
+                    "size": size
+                })
         
-        # Find uploaded file
-        raw_dir = settings.DATA_DIR / "raw" / project_id
-        if not raw_dir.exists():
-            raise HTTPException(status_code=404, detail="Project not found")
+        # 5. Změny
+        if zmeny:
+            zmeny_dir = project_dir / "zmeny"
+            zmeny_dir.mkdir(exist_ok=True)
+            
+            for zmena in zmeny:
+                await _validate_file(zmena, 'dokumentace')
+                
+                zmena_path = zmeny_dir / zmena.filename
+                size = await _save_file_streaming(zmena, zmena_path)
+                
+                saved_files["zmeny"].append({
+                    "path": str(zmena_path),
+                    "filename": zmena.filename,
+                    "size": size
+                })
         
-        files = list(raw_dir.glob("*"))
-        if not files:
-            raise HTTPException(status_code=404, detail="No files found")
+        # Сохранить project info
+        project_info = {
+            "project_id": project_id,
+            "project_name": project_name,
+            "workflow": workflow,
+            "uploaded_at": datetime.now().isoformat(),
+            "status": ProjectStatus.UPLOADED,
+            "files": saved_files,
+            "options": {
+                "generate_summary": generate_summary,
+                "auto_start_audit": auto_start_audit
+            }
+        }
         
-        file_path = files[0]
+        info_path = project_dir / "project_info.json"
+        async with aiofiles.open(info_path, 'w', encoding='utf-8') as f:
+            await f.write(json.dumps(project_info, ensure_ascii=False, indent=2))
         
-        # Start background task
-        background_tasks.add_task(
-            process_audit_task,
-            project_id,
-            file_path,
-            file_path.stem
+        # Сохранить в store
+        project_store[project_id] = project_info.copy()
+        
+        # Запустить обработку в фоне
+        if auto_start_audit:
+            vykaz_path = Path(saved_files["vykaz_vymer"]["path"]) if saved_files["vykaz_vymer"] else None
+            vykresy_paths = [Path(v["path"]) for v in saved_files["vykresy"]]
+            
+            background_tasks.add_task(
+                _process_project_background,
+                project_id=project_id,
+                workflow=workflow,
+                vykaz_path=vykaz_path,
+                vykresy_paths=vykresy_paths,
+                project_name=project_name
+            )
+            
+            status = ProjectStatus.PROCESSING
+            message = "Projekt nahrán a zpracování zahájeno"
+        else:
+            status = ProjectStatus.UPLOADED
+            message = "Projekt nahrán úspěšně"
+        
+        logger.info(f"✅ Nahrání dokončeno: {project_id}")
+        
+        return ProjectResponse(
+            project_id=project_id,
+            name=project_name,
+            status=status,
+            upload_timestamp=datetime.now(),
+            message=message
         )
         
-        return {
-            "project_id": project_id,
-            "status": "processing",
-            "message": "Audit started in background"
-        }
-        
-    except Exception as e:
-        logger.error(f"Audit start error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/audit/{project_id}/status")
-async def get_audit_status(project_id: str):
-    """
-    Get status of audit process
-    """
-    if project_id not in audit_tasks:
-        # Check if results exist
-        curated_dir = settings.DATA_DIR / "curated" / project_id
-        results_path = curated_dir / "audit_results.json"
-        
-        if results_path.exists():
-            with open(results_path, 'r', encoding='utf-8') as f:
-                results = json.load(f)
-                return {
-                    "status": "completed",
-                    "progress": 100,
-                    "results": results
-                }
-        
-        return {
-            "status": "not_found",
-            "message": "Audit not started or project not found"
-        }
+    except ValueError as e:
+        logger.error(f"Chyba validace: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
     
-    return audit_tasks[project_id]
-
-
-@router.get("/audit/{project_id}/results")
-async def get_audit_results(project_id: str):
-    """
-    Get full audit results
-    """
-    try:
-        curated_dir = settings.DATA_DIR / "curated" / project_id
-        results_path = curated_dir / "audit_results.json"
-        
-        if not results_path.exists():
-            raise HTTPException(status_code=404, detail="Results not found")
-        
-        with open(results_path, 'r', encoding='utf-8') as f:
-            results = json.load(f)
-        
-        return results
-        
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Results retrieval error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Chyba při nahrávání: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Chyba serveru: {str(e)}")
 
 
-@router.get("/kb/status")
+@router.get("/api/projects/{project_id}/status", response_model=ProjectStatusResponse)
+async def get_project_status(project_id: str) -> ProjectStatusResponse:
+    """
+    Získat stav projektu
+    
+    Args:
+        project_id: ID projektu
+    
+    Returns:
+        Aktuální stav zpracování
+    """
+    if project_id not in project_store:
+        raise HTTPException(status_code=404, detail="Projekt nenalezen")
+    
+    project = project_store[project_id]
+    status = project.get("status", ProjectStatus.UPLOADED)
+    
+    # Vypočítat progress
+    progress_map = {
+        ProjectStatus.UPLOADED: 10,
+        ProjectStatus.PROCESSING: 50,
+        ProjectStatus.COMPLETED: 100,
+        ProjectStatus.FAILED: 0,
+    }
+    progress = progress_map.get(status, 0)
+    
+    # Zpráva podle stavu
+    messages = {
+        ProjectStatus.UPLOADED: "Projekt nahrán, čeká na zpracování",
+        ProjectStatus.PROCESSING: "Probíhá zpracování...",
+        ProjectStatus.COMPLETED: "Zpracování dokončeno",
+        ProjectStatus.FAILED: f"Chyba: {project.get('error', 'Neznámá chyba')}",
+    }
+    
+    return ProjectStatusResponse(
+        project_id=project_id,
+        status=status,
+        progress=progress,
+        message=messages.get(status, "Neznámý stav"),
+        positions_total=project.get("total_positions", 0),
+        positions_processed=project.get("total_positions", 0) if status == ProjectStatus.COMPLETED else 0,
+        green_count=project.get("green_count", 0),
+        amber_count=project.get("amber_count", 0),
+        red_count=project.get("red_count", 0)
+    )
+
+
+@router.get("/api/projects/{project_id}/results")
+async def get_project_results(project_id: str):
+    """
+    Získat výsledky auditu
+    
+    Args:
+        project_id: ID projektu
+    
+    Returns:
+        Excel soubor s výsledky nebo JSON
+    """
+    if project_id not in project_store:
+        raise HTTPException(status_code=404, detail="Projekt nenalezen")
+    
+    project = project_store[project_id]
+    
+    if project.get("status") != ProjectStatus.COMPLETED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Projekt ještě není dokončen. Aktuální stav: {project.get('status')}"
+        )
+    
+    results_path = project.get("results_path")
+    if not results_path or not Path(results_path).exists():
+        raise HTTPException(status_code=404, detail="Výsledky nenalezeny")
+    
+    # Vrátit JSON s výsledky
+    async with aiofiles.open(results_path, 'r', encoding='utf-8') as f:
+        content = await f.read()
+        results = json.loads(content)
+    
+    return results
+
+
+# =============================================================================
+# KNOWLEDGE BASE ENDPOINTS
+# =============================================================================
+
+@router.get("/api/kb/status")
 async def get_kb_status():
-    """
-    Get Knowledge Base status
-    """
+    """Získat stav Knowledge Base"""
     from app.core.kb_loader import kb_loader
     
-    return {
-        "loaded": True,
-        "categories": len(kb_loader.data),
-        "summary": {
-            category: {
-                "files": len(data),
-                "version": metadata.get("version", "1.0")
-            }
-            for category, (data, metadata) in kb_loader.data.items()
+    categories = {}
+    for category, (data, metadata) in kb_loader.data.items():
+        categories[category] = {
+            "files": len(data) if isinstance(data, list) else 1,
+            "version": metadata.get("version", "1.0"),
+            "loaded_at": metadata.get("loaded_at", "unknown")
         }
+    
+    return {
+        "status": "loaded",
+        "total_categories": len(categories),
+        "categories": categories
     }
 
 
-@router.post("/kb/reload")
+@router.post("/api/kb/reload")
 async def reload_kb():
-    """
-    Reload Knowledge Base
-    """
+    """Znovu načíst Knowledge Base"""
     try:
         from app.core.kb_loader import kb_loader
         kb_loader.load()
         
         return {
             "status": "reloaded",
+            "message": "Knowledge Base byla úspěšně znovu načtena",
             "categories": len(kb_loader.data)
         }
     except Exception as e:
-        logger.error(f"KB reload error: {str(e)}")
+        logger.error(f"Chyba při načítání KB: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
