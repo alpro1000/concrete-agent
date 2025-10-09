@@ -3,6 +3,8 @@ Pydantic models for Czech Building Audit System
 """
 # Project models
 from app.models.project import (
+    Project,
+    Base, 
     ProjectCreate,
     ProjectResponse,
     UploadedFile,
@@ -19,6 +21,9 @@ from app.models.position import (
     ResourceTransport,
     Zachytka,
     PositionResources
+    PositionAudit,
+    PositionClassification,
+    ProjectStatusResponse,
 )
 
 # Audit result models
@@ -46,6 +51,9 @@ from app.models.drawing import (
 )
 
 __all__ = [
+    # SQLAlchemy
+    "Project",
+    "Base",
     # Project
     "ProjectCreate",
     "ProjectResponse",
@@ -77,5 +85,11 @@ __all__ = [
     "SurfaceCategory",
     "DrawingAnalysisResult",
     "DrawingEstimateLink",
-    "DrawingResponse"
+    "DrawingResponse",
+    # Новые модели
+    "Position",
+    "PositionAudit",
+    "PositionClassification",
+    "ProjectStatusResponse"
 ]
+
