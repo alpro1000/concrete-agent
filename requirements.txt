@@ -27,7 +27,7 @@ openai==1.54.3
 pandas==2.2.3
 openpyxl==3.1.5
 xlrd==2.0.1
-
+pdfplumber>=0.10.0  # Для проверки PDF
 # CSV parsing (for KROS/RTS exports)
 # Built-in csv module sufficient
 
