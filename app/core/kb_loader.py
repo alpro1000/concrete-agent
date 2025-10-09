@@ -412,3 +412,7 @@ def example_usage():
 
 if __name__ == "__main__":
     example_usage()
+    """Примеры как использовать в других сервисах"""
+    
+    # 1. Получить KB
+    kb = get_knowledge_base()
