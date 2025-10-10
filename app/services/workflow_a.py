@@ -452,6 +452,78 @@ Vrať POUZE JSON, bez markdown.
         return prompt
     
     # ========================================
+    # UNIFIED EXECUTE METHOD
+    # ========================================
+    
+    async def execute(
+        self,
+        project_id: str,
+        vykaz_path: Optional[Path],
+        vykresy_paths: List[Path],
+        project_name: str
+    ) -> Dict[str, Any]:
+        """
+        Execute Workflow A with unified interface
+        
+        This method provides a unified interface compatible with routes.py.
+        It processes the vykaz file and uses vykresy for context.
+        
+        Args:
+            project_id: Project ID
+            vykaz_path: Path to vykaz file (required for Workflow A)
+            vykresy_paths: Paths to drawing files (for context)
+            project_name: Name of the project
+        
+        Returns:
+            Dict with audit results compatible with project_store
+        """
+        try:
+            logger.info(f"🚀 Executing Workflow A for project {project_id}: {project_name}")
+            
+            # Validate vykaz_path
+            if not vykaz_path or not vykaz_path.exists():
+                logger.error("Workflow A requires vykaz_path")
+                return {
+                    "success": False,
+                    "error": "Vykaz file is required for Workflow A",
+                    "project_id": project_id,
+                    "total_positions": 0
+                }
+            
+            logger.info(f"  Vykaz file: {vykaz_path}")
+            logger.info(f"  Vykresy files: {len(vykresy_paths)}")
+            
+            # Use the existing run() method for core processing
+            result = await self.run(
+                file_path=vykaz_path,
+                project_name=project_name
+            )
+            
+            # Add project_id to result
+            result["project_id"] = project_id
+            
+            # Ensure result has expected fields for project_store
+            if result.get("success"):
+                # Extract counts from summary or categorized results
+                summary = result.get("summary", {})
+                result.setdefault("green_count", summary.get("green_count", 0))
+                result.setdefault("amber_count", summary.get("amber_count", 0))
+                result.setdefault("red_count", summary.get("red_count", 0))
+                result.setdefault("total_positions", summary.get("total_positions", 0))
+            
+            logger.info(f"✅ Workflow A completed for project {project_id}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Workflow A failed for project {project_id}: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e),
+                "project_id": project_id,
+                "total_positions": 0
+            }
+    
+    # ========================================
     # BACKWARD COMPATIBILITY METHOD
     # ========================================
     
