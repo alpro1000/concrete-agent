@@ -584,3 +584,471 @@ Vrať POUZE JSON, bez markdown.
             "amber_percent": len(categorized['amber']) / total * 100 if total > 0 else 0,
             "red_percent": len(categorized['red']) / total * 100 if total > 0 else 0
         }
+    
+    # ========================================
+    # NEW: EXECUTE METHOD FOR INTELLIGENT SYSTEM
+    # ========================================
+    
+    async def execute(
+        self,
+        project_id: str,
+        vykaz_path: Optional[Path],
+        vykresy_paths: List[Path],
+        project_name: str
+    ) -> Dict[str, Any]:
+        """
+        PHASE 1: Basic data collection and preparation for intelligent queries
+        
+        This method implements the intelligent system approach:
+        1. Parse all documents → structured data
+        2. Basic validation → quick URS code checks
+        3. Prepare context → for intelligent prompts
+        4. URS integration → dual validation (local KB + podminky.urs.cz)
+        
+        Args:
+            project_id: Project ID
+            vykaz_path: Path to vykaz vymer (optional for Workflow B)
+            vykresy_paths: List of paths to drawings
+            project_name: Project name
+        
+        Returns:
+            Dict with collected data and validation results
+        """
+        try:
+            logger.info(f"🚀 Starting execute() for project {project_id}")
+            
+            # 1. COLLECT ALL PROJECT DATA
+            all_data = await self._collect_project_data(
+                vykaz_path=vykaz_path,
+                vykresy_paths=vykresy_paths,
+                project_name=project_name
+            )
+            
+            # 2. BASIC VALIDATION WITH URS
+            validated_positions = await self._basic_validation_with_urs(
+                positions=all_data["positions"],
+                project_id=project_id
+            )
+            
+            # 3. PREPARE PROJECT CONTEXT
+            project_context = await self._extract_project_context(
+                drawings_data=all_data["drawings"],
+                tech_specs=all_data["technical_specs"]
+            )
+            
+            # 4. URS INTEGRATION - Dual validation with Perplexity
+            if settings.PERPLEXITY_API_KEY and settings.ALLOW_WEB_SEARCH:
+                try:
+                    from app.core.perplexity_client import PerplexityClient
+                    perplexity = PerplexityClient()
+                    
+                    logger.info("🔍 Starting dual URS validation (local KB + podminky.urs.cz)")
+                    
+                    for pos in validated_positions:
+                        try:
+                            # Search on podminky.urs.cz
+                            urs_result = await perplexity.search_kros_code(
+                                description=pos.get("description", ""),
+                                quantity=pos.get("quantity"),
+                                unit=pos.get("unit")
+                            )
+                            
+                            pos["urs_validation"] = {
+                                "local_kb": pos.get("kb_match", {}),
+                                "online_urs": {
+                                    "found": urs_result.get("found", False),
+                                    "codes": urs_result.get("codes", []),
+                                    "confidence": urs_result.get("confidence", 0),
+                                    "source": "podminky.urs.cz"
+                                }
+                            }
+                        except Exception as e:
+                            logger.warning(f"URS online validation failed for position: {e}")
+                            pos["urs_validation"] = {
+                                "local_kb": pos.get("kb_match", {}),
+                                "online_urs": {
+                                    "found": False,
+                                    "error": str(e)
+                                }
+                            }
+                
+                except Exception as e:
+                    logger.warning(f"Perplexity integration failed: {e}")
+            else:
+                logger.info("ℹ️  Perplexity not configured, using local KB only")
+            
+            # 5. CALCULATE REAL STATISTICS
+            green_count = len([p for p in validated_positions if p.get("basic_status") == "OK"])
+            amber_count = len([p for p in validated_positions if p.get("basic_status") == "WARNING"])
+            red_count = len([p for p in validated_positions if p.get("basic_status") == "ERROR"])
+            
+            logger.info(
+                f"✅ Execute complete: {len(validated_positions)} positions "
+                f"(Green: {green_count}, Amber: {amber_count}, Red: {red_count})"
+            )
+            
+            return {
+                "success": True,
+                "project_id": project_id,
+                "total_positions": len(validated_positions),
+                "positions": validated_positions,
+                "project_context": project_context,
+                "green_count": green_count,
+                "amber_count": amber_count,
+                "red_count": red_count,
+                "urs_validation": {
+                    "local_kb_matches": len([p for p in validated_positions if p.get("kb_match", {}).get("found")]),
+                    "online_matches": len([p for p in validated_positions if p.get("urs_validation", {}).get("online_urs", {}).get("found")]),
+                    "total_validated": len(validated_positions)
+                },
+                "ready_for_analysis": True
+            }
+            
+        except Exception as e:
+            logger.error(f"Execute failed: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e),
+                "project_id": project_id
+            }
+    
+    async def _collect_project_data(
+        self,
+        vykaz_path: Optional[Path],
+        vykresy_paths: List[Path],
+        project_name: str
+    ) -> Dict[str, Any]:
+        """
+        Collect all data from documents
+        
+        Args:
+            vykaz_path: Path to vykaz vymer
+            vykresy_paths: List of paths to drawings
+            project_name: Project name
+        
+        Returns:
+            Dict with positions, drawings, and technical specs
+        """
+        positions = []
+        drawings_data = []
+        technical_specs = []
+        
+        # Parse vykaz vymer if provided
+        if vykaz_path and vykaz_path.exists():
+            logger.info(f"📄 Parsing vykaz vymer: {vykaz_path.name}")
+            import_result = await self.import_and_prepare(vykaz_path, project_name)
+            positions = import_result.get("positions", [])
+            logger.info(f"✅ Extracted {len(positions)} positions from vykaz")
+        else:
+            logger.info("ℹ️  No vykaz vymer provided")
+        
+        # Parse drawings
+        for drawing_path in vykresy_paths:
+            if drawing_path.exists():
+                logger.info(f"📐 Parsing drawing: {drawing_path.name}")
+                try:
+                    drawing_content = await self._parse_drawing_document(drawing_path)
+                    drawings_data.append(drawing_content)
+                    
+                    # Extract technical specifications
+                    tech_specs = self._extract_technical_specs(drawing_content)
+                    technical_specs.extend(tech_specs)
+                    
+                    logger.info(f"✅ Parsed drawing with {len(tech_specs)} technical specs")
+                except Exception as e:
+                    logger.warning(f"Failed to parse drawing {drawing_path.name}: {e}")
+        
+        logger.info(
+            f"📊 Data collection complete: {len(positions)} positions, "
+            f"{len(drawings_data)} drawings, {len(technical_specs)} specs"
+        )
+        
+        return {
+            "positions": positions,
+            "drawings": drawings_data,
+            "technical_specs": technical_specs
+        }
+    
+    async def _basic_validation_with_urs(
+        self,
+        positions: List[Dict[str, Any]],
+        project_id: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Basic validation with Knowledge Base check
+        
+        Args:
+            positions: List of positions to validate
+            project_id: Project ID
+        
+        Returns:
+            Validated positions with status
+        """
+        from app.core.kb_loader import get_knowledge_base
+        
+        kb = get_knowledge_base()
+        validated_positions = []
+        
+        logger.info(f"🔍 Validating {len(positions)} positions against KB")
+        
+        for position in positions:
+            # Check against local KB
+            kb_match = self._check_local_knowledge_base(position, kb)
+            
+            # Basic categorization
+            if kb_match.get("found") and kb_match.get("price_variance", 0) <= 10:
+                basic_status = "OK"
+            elif kb_match.get("found") and kb_match.get("price_variance", 0) <= 20:
+                basic_status = "WARNING"
+            else:
+                basic_status = "ERROR"
+            
+            position.update({
+                "kb_match": kb_match,
+                "basic_status": basic_status
+            })
+            
+            validated_positions.append(position)
+        
+        ok_count = len([p for p in validated_positions if p.get("basic_status") == "OK"])
+        logger.info(f"✅ Validation complete: {ok_count}/{len(positions)} positions OK")
+        
+        return validated_positions
+    
+    def _check_local_knowledge_base(
+        self,
+        position: Dict[str, Any],
+        kb: Any
+    ) -> Dict[str, Any]:
+        """
+        Check position against local Knowledge Base
+        
+        Args:
+            position: Position to check
+            kb: Knowledge Base instance
+        
+        Returns:
+            Match result with price variance
+        """
+        description = position.get("description", "").lower()
+        unit_price = position.get("unit_price", 0)
+        
+        # Simple keyword matching (can be improved)
+        # Check B1 (KROS codes) and B3 (prices)
+        found = False
+        matched_code = None
+        kb_price = None
+        price_variance = 100
+        
+        # Check KROS codes
+        if hasattr(kb, 'data') and 'B1_kros_urs_codes' in kb.data:
+            codes_data = kb.data['B1_kros_urs_codes']
+            # Simple search - in production, use more sophisticated matching
+            for item in codes_data if isinstance(codes_data, list) else []:
+                if isinstance(item, dict):
+                    item_desc = item.get("description", "").lower()
+                    if any(word in item_desc for word in description.split()[:3]):
+                        found = True
+                        matched_code = item.get("code")
+                        break
+        
+        # Check prices
+        if hasattr(kb, 'data') and 'B3_current_prices' in kb.data and unit_price:
+            prices_data = kb.data['B3_current_prices']
+            for item in prices_data if isinstance(prices_data, list) else []:
+                if isinstance(item, dict):
+                    item_desc = item.get("description", "").lower()
+                    if any(word in item_desc for word in description.split()[:3]):
+                        kb_price = item.get("unit_price", 0)
+                        if kb_price and unit_price:
+                            price_variance = abs((unit_price - kb_price) / kb_price * 100)
+                        break
+        
+        return {
+            "found": found,
+            "matched_code": matched_code,
+            "kb_price": kb_price,
+            "price_variance": price_variance
+        }
+    
+    async def _parse_drawing_document(self, drawing_path: Path) -> Dict[str, Any]:
+        """
+        Parse drawing document to extract text and metadata
+        
+        Args:
+            drawing_path: Path to drawing document
+        
+        Returns:
+            Dict with drawing data
+        """
+        drawing_data = {
+            "filename": drawing_path.name,
+            "path": str(drawing_path),
+            "text": "",
+            "format": drawing_path.suffix.lower()
+        }
+        
+        # Extract text based on format
+        if drawing_path.suffix.lower() == '.pdf':
+            try:
+                # Use PDF parser
+                result = self.pdf_parser.parse(drawing_path)
+                drawing_data["text"] = result.get("text", "")
+                drawing_data["metadata"] = result.get("metadata", {})
+            except Exception as e:
+                logger.warning(f"PDF parsing failed: {e}")
+        elif drawing_path.suffix.lower() == '.txt':
+            try:
+                with open(drawing_path, 'r', encoding='utf-8') as f:
+                    drawing_data["text"] = f.read()
+            except Exception as e:
+                logger.warning(f"TXT parsing failed: {e}")
+        else:
+            # For other formats (DWG, DXF, images), just store metadata
+            logger.info(f"Format {drawing_path.suffix} - metadata only")
+        
+        return drawing_data
+    
+    def _extract_technical_specs(self, drawing_content: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Extract technical specifications from drawing content
+        
+        Args:
+            drawing_content: Parsed drawing content
+        
+        Returns:
+            List of technical specifications
+        """
+        specs = []
+        text = drawing_content.get("text", "")
+        
+        if not text:
+            return specs
+        
+        # Extract concrete grades (C20/25, C30/37, etc.)
+        import re
+        concrete_pattern = r'C\d{2}/\d{2}'
+        concrete_grades = re.findall(concrete_pattern, text)
+        
+        for grade in set(concrete_grades):
+            specs.append({
+                "type": "concrete_grade",
+                "value": grade,
+                "source": drawing_content.get("filename", "unknown")
+            })
+        
+        # Extract environmental classes (XA2, XF3, XC2, etc.)
+        env_pattern = r'X[A-Z]\d'
+        env_classes = re.findall(env_pattern, text)
+        
+        for env_class in set(env_classes):
+            specs.append({
+                "type": "environmental_class",
+                "value": env_class,
+                "source": drawing_content.get("filename", "unknown")
+            })
+        
+        # Extract ČSN standards
+        csn_pattern = r'ČSN\s+(?:EN\s+)?\d+'
+        csn_standards = re.findall(csn_pattern, text)
+        
+        for standard in set(csn_standards):
+            specs.append({
+                "type": "csn_standard",
+                "value": standard,
+                "source": drawing_content.get("filename", "unknown")
+            })
+        
+        return specs
+    
+    async def _extract_project_context(
+        self,
+        drawings_data: List[Dict[str, Any]],
+        tech_specs: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """
+        Extract project context for intelligent prompts
+        
+        Args:
+            drawings_data: List of parsed drawing data
+            tech_specs: List of technical specifications
+        
+        Returns:
+            Project context dict
+        """
+        # Aggregate technical specifications
+        context = {
+            "construction_type": None,
+            "concrete_grades": [],
+            "environmental_classes": [],
+            "special_conditions": [],
+            "formwork_requirements": {},
+            "csn_standards": []
+        }
+        
+        # Group specs by type
+        for spec in tech_specs:
+            spec_type = spec.get("type")
+            spec_value = spec.get("value")
+            
+            if spec_type == "concrete_grade":
+                if spec_value not in context["concrete_grades"]:
+                    context["concrete_grades"].append(spec_value)
+            elif spec_type == "environmental_class":
+                if spec_value not in context["environmental_classes"]:
+                    context["environmental_classes"].append(spec_value)
+            elif spec_type == "csn_standard":
+                if spec_value not in context["csn_standards"]:
+                    context["csn_standards"].append(spec_value)
+        
+        # Try to analyze with Claude if available
+        if drawings_data and settings.ANTHROPIC_API_KEY:
+            try:
+                # Take first drawing with text
+                for drawing in drawings_data:
+                    if drawing.get("text"):
+                        context_prompt = f"""
+Analyzuj tento stavební dokument a extrahuj klíčové technické informace:
+
+Dokument: {drawing.get("filename", "unknown")}
+
+Text (prvních 2000 znaků):
+{drawing.get("text", "")[:2000]}
+
+Najdi a vrať v JSON formátu:
+{{
+  "construction_type": "typ stavby (např. 'základy', 'stěny', 'stropy')",
+  "special_conditions": ["speciální podmínky nebo požadavky"],
+  "formwork_requirements": {{"kategorie": "kategorie povrchu (např. C2d)"}}
+}}
+
+Vrať POUZE JSON, bez markdown.
+"""
+                        
+                        analysis_result = await self.claude.call(context_prompt)
+                        
+                        # Try to parse JSON from result
+                        import json
+                        if isinstance(analysis_result, str):
+                            try:
+                                parsed = json.loads(analysis_result)
+                                context.update(parsed)
+                            except:
+                                pass
+                        elif isinstance(analysis_result, dict):
+                            context.update(analysis_result)
+                        
+                        # Only analyze first drawing with text
+                        break
+                        
+            except Exception as e:
+                logger.warning(f"Claude analysis failed: {e}")
+        
+        logger.info(
+            f"📋 Project context extracted: "
+            f"{len(context['concrete_grades'])} concrete grades, "
+            f"{len(context['environmental_classes'])} env classes, "
+            f"{len(context['csn_standards'])} CSN standards"
+        )
+        
+        return context

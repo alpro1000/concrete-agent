@@ -246,6 +246,67 @@ class WorkflowB:
         
         return area
     
+    # ========================================
+    # NEW: EXECUTE METHOD FOR CONSISTENCY
+    # ========================================
+    
+    async def execute(
+        self,
+        project_id: str,
+        vykresy_paths: List[Path],
+        project_name: str
+    ) -> Dict[str, Any]:
+        """
+        Execute Workflow B: Generate estimate from drawings
+        
+        This is a wrapper around process_drawings() for consistency with WorkflowA.
+        
+        Args:
+            project_id: Project ID
+            vykresy_paths: List of paths to drawings
+            project_name: Project name
+        
+        Returns:
+            Dict with generated estimate and statistics
+        """
+        try:
+            logger.info(f"🚀 Starting execute() for Workflow B project {project_id}")
+            
+            # Call the existing process_drawings method
+            result = await self.process_drawings(
+                drawings=vykresy_paths,
+                documentation=None,
+                project_name=project_name
+            )
+            
+            # Add project_id to result
+            result["project_id"] = project_id
+            
+            # Calculate statistics for consistency with WorkflowA
+            positions = result.get("generated_positions", [])
+            
+            # For Workflow B, all generated positions are initially "OK" (green)
+            # They would need validation in a later step
+            result.update({
+                "total_positions": len(positions),
+                "green_count": len(positions),
+                "amber_count": 0,
+                "red_count": 0,
+                "ready_for_analysis": True
+            })
+            
+            logger.info(f"✅ Workflow B execute complete: {len(positions)} positions generated")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Workflow B execute failed: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e),
+                "project_id": project_id
+            }
+    
     async def _generate_positions(
         self,
         drawing_analysis: List[Dict[str, Any]],
