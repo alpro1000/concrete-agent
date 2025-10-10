@@ -4,6 +4,7 @@ Nanonets API Client for document processing
 """
 import requests
 import logging
+import base64
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -31,9 +32,16 @@ class NanonetsClient:
             logger.warning("NANONETS_API_KEY not set. Nanonets integration disabled.")
         
         self.base_url = "https://app.nanonets.com/api/v2"
-        self.headers = {
-            "Authorization": f"Basic {self.api_key}"
-        } if self.api_key else {}
+        
+        # Encode API key for Basic authentication: base64(api_key:)
+        if self.api_key:
+            credentials = f"{self.api_key}:".encode('utf-8')
+            encoded_credentials = base64.b64encode(credentials).decode('utf-8')
+            self.headers = {
+                "Authorization": f"Basic {encoded_credentials}"
+            }
+        else:
+            self.headers = {}
         
         self.available = bool(self.api_key)
     
