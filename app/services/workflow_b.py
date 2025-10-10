@@ -34,6 +34,60 @@ class WorkflowB:
         if not self.gpt4v:
             logger.warning("GPT-4 Vision not available. Workflow B limited.")
     
+    async def execute(
+        self,
+        project_id: str,
+        vykresy_paths: List[Path],
+        project_name: str
+    ) -> Dict[str, Any]:
+        """
+        Execute Workflow B with unified interface
+        
+        This method provides a unified interface compatible with routes.py.
+        It generates estimate from drawings without a vykaz file.
+        
+        Args:
+            project_id: Project ID
+            vykresy_paths: Paths to drawing files
+            project_name: Name of the project
+        
+        Returns:
+            Dict with generated estimate compatible with project_store
+        """
+        try:
+            logger.info(f"🚀 Executing Workflow B for project {project_id}: {project_name}")
+            logger.info(f"  Vykresy files: {len(vykresy_paths)}")
+            
+            # Use the existing process_drawings() method
+            result = await self.process_drawings(
+                drawings=vykresy_paths,
+                documentation=None,
+                project_name=project_name
+            )
+            
+            # Add project_id to result
+            result["project_id"] = project_id
+            
+            # Ensure result has expected fields for project_store
+            # Workflow B generates positions, so we need to provide counts
+            if result.get("success"):
+                result.setdefault("green_count", 0)
+                result.setdefault("amber_count", 0)
+                result.setdefault("red_count", 0)
+                # total_positions should already be in result from process_drawings
+            
+            logger.info(f"✅ Workflow B completed for project {project_id}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"❌ Workflow B failed for project {project_id}: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e),
+                "project_id": project_id,
+                "total_positions": 0
+            }
+    
     async def process_drawings(
         self,
         drawings: List[Path],
