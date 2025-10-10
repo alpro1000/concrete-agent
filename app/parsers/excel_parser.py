@@ -1,11 +1,17 @@
 """
 Excel Parser for construction estimates
-Парсер Excel выказов
+БЕЗ CLAUDE FALLBACK - только локальный парсинг
+
+Поддерживает:
+- .xlsx (Office 2007+)
+- .xls (Office 97-2003)
+- Чешские форматы выказов
 """
 import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 import pandas as pd
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -14,18 +20,25 @@ class ExcelParser:
     """
     Excel parser для строительных смет
     
-    Поддерживает:
-    - .xlsx (Office 2007+)
-    - .xls (Office 97-2003)
-    - Различные форматы выказов
+    ✅ БЕЗ Claude fallback - только pandas
+    ✅ Полная поддержка чешских столбцов
     """
     
-    def __init__(self, claude_client=None):
-        """
-        Args:
-            claude_client: ClaudeClient instance for fallback
-        """
-        self.claude = claude_client
+    # Расширенные чешские столбцы
+    CZECH_COLUMNS = {
+        'number': ['pč', 'p.č.', 'číslo', 'cislo', 'number', 'no'],
+        'type': ['typ', 'type'],
+        'code': ['kód', 'kod', 'code'],
+        'description': ['popis', 'název', 'nazev', 'description', 'name'],
+        'unit': ['mj', 'm.j.', 'jednotka', 'unit'],
+        'quantity': ['množství', 'mnozstvi', 'quantity', 'počet', 'pocet'],
+        'unit_price': ['j.cena', 'j. cena', 'jednotková', 'unit price', 'cena'],
+        'total_price': ['cena celkem', 'celkem', 'total', 'celková cena']
+    }
+    
+    def __init__(self):
+        """БЕЗ claude_client параметра!"""
+        pass
     
     def parse(self, excel_path: Path) -> Dict[str, Any]:
         """
@@ -37,29 +50,15 @@ class ExcelParser:
         Returns:
             Dict with parsed data
         """
-        logger.info(f"Parsing Excel: {excel_path}")
+        logger.info(f"📊 Parsing Excel: {excel_path}")
         
-        try:
-            # Try pandas first
-            return self._parse_with_pandas(excel_path)
-        except Exception as e:
-            logger.warning(f"Pandas parsing failed: {e}")
-            
-            # Fallback to Claude if available
-            if self.claude:
-                logger.info("Using Claude fallback...")
-                return self.claude.parse_excel(excel_path)
-            
-            raise Exception(f"Failed to parse Excel: {e}")
+        return self._parse_with_pandas(excel_path)
     
     def _parse_with_pandas(self, excel_path: Path) -> Dict[str, Any]:
-        """
-        Parse Excel using pandas
-        """
-        logger.info("Parsing Excel with pandas...")
+        """Parse Excel using pandas"""
+        logger.info("Using pandas parser...")
         
         # Read Excel file
-        # Try to read all sheets
         try:
             excel_file = pd.ExcelFile(excel_path)
             sheet_names = excel_file.sheet_names
@@ -110,16 +109,7 @@ class ExcelParser:
         return result
     
     def _parse_dataframe(self, df: pd.DataFrame, sheet_name: str) -> List[Dict[str, Any]]:
-        """
-        Parse positions from pandas DataFrame
-        
-        Args:
-            df: pandas DataFrame
-            sheet_name: Name of the sheet
-            
-        Returns:
-            List of parsed positions
-        """
+        """Parse positions from pandas DataFrame"""
         if df.empty:
             return []
         
@@ -128,12 +118,13 @@ class ExcelParser:
         # Normalize column names (lowercase, strip)
         df.columns = [str(col).lower().strip() for col in df.columns]
         
-        # Find relevant columns
-        code_col = self._find_column(df.columns, ['code', 'kód', 'kod', 'číslo', 'cislo'])
-        desc_col = self._find_column(df.columns, ['description', 'popis', 'název', 'nazev', 'name'])
-        unit_col = self._find_column(df.columns, ['unit', 'mj', 'jednotka'])
-        qty_col = self._find_column(df.columns, ['quantity', 'množství', 'mnozstvi', 'počet', 'pocet'])
-        price_col = self._find_column(df.columns, ['price', 'cena', 'unit_price', 'jednotková'])
+        # Find relevant columns - ✅ CASE-INSENSITIVE!
+        code_col = self._find_column(df.columns, self.CZECH_COLUMNS['code'])
+        desc_col = self._find_column(df.columns, self.CZECH_COLUMNS['description'])
+        unit_col = self._find_column(df.columns, self.CZECH_COLUMNS['unit'])
+        qty_col = self._find_column(df.columns, self.CZECH_COLUMNS['quantity'])
+        price_col = self._find_column(df.columns, self.CZECH_COLUMNS['unit_price'])
+        total_col = self._find_column(df.columns, self.CZECH_COLUMNS['total_price'])
         
         logger.info(f"  Column mapping: code={code_col}, desc={desc_col}, unit={unit_col}, qty={qty_col}, price={price_col}")
         
@@ -156,14 +147,15 @@ class ExcelParser:
                     "code": self._get_cell_value(row, code_col, ''),
                     "description": description,
                     "unit": self._get_cell_value(row, unit_col, ''),
-                    "quantity": self._parse_float(self._get_cell_value(row, qty_col, '0')),
-                    "unit_price": self._parse_float(self._get_cell_value(row, price_col, '0')),
+                    "quantity": self._parse_czech_number(self._get_cell_value(row, qty_col, '0')),
+                    "unit_price": self._parse_czech_number(self._get_cell_value(row, price_col, '0')),
+                    "total_price": self._parse_czech_number(self._get_cell_value(row, total_col, '0')),
                     "sheet": sheet_name,
                     "row_number": int(idx) + 2  # +2 for Excel row number (1-indexed + header)
                 }
                 
                 # Calculate total if not present
-                if position["quantity"] and position["unit_price"]:
+                if position["quantity"] and position["unit_price"] and not position["total_price"]:
                     position["total_price"] = position["quantity"] * position["unit_price"]
                 
                 positions.append(position)
@@ -175,10 +167,15 @@ class ExcelParser:
         return positions
     
     def _find_column(self, columns: List[str], keywords: List[str]) -> Optional[str]:
-        """Find column name by keywords"""
+        """
+        Find column name by keywords
+        ✅ CASE-INSENSITIVE поиск!
+        """
         for col in columns:
+            col_clean = col.lower().strip()
             for keyword in keywords:
-                if keyword in col:
+                keyword_clean = keyword.lower().strip()
+                if keyword_clean in col_clean or col_clean == keyword_clean:
                     return col
         return None
     
@@ -206,20 +203,58 @@ class ExcelParser:
             'cena', 'price', 'celkem', 'total'
         ]
         
-        return any(keyword == text_lower for keyword in header_keywords)
+        # If short and matches header keyword exactly
+        if len(text_lower) < 20:
+            return any(keyword == text_lower for keyword in header_keywords)
+        
+        return False
     
-    def _parse_float(self, value: Any) -> float:
-        """Parse float from value"""
+    def _parse_czech_number(self, value: Any) -> float:
+        """
+        Parse Czech number format
+        ✅ Улучшенный парсинг
+        
+        Examples:
+        - "1 220,168" → 1220.168
+        - "15,50" → 15.50
+        - "1 000" → 1000.0
+        """
         if isinstance(value, (int, float)):
             return float(value)
         
         if isinstance(value, str):
             try:
-                # Remove spaces and replace comma with dot
-                value = value.strip().replace(' ', '').replace(',', '.')
-                # Remove currency symbols
-                value = value.replace('Kč', '').replace('CZK', '').strip()
-                return float(value)
+                text = value.strip()
+                
+                # Remove spaces and non-breaking spaces
+                text = text.replace(' ', '').replace('\xa0', '')
+                
+                # Remove currency
+                text = text.replace('Kč', '').replace('CZK', '').replace('EUR', '').replace('€', '')
+                text = text.strip()
+                
+                # Handle Czech decimal separator
+                # If has both . and , → European format
+                if '.' in text and ',' in text:
+                    text = text.replace('.', '')  # Remove thousands
+                    text = text.replace(',', '.')  # Comma is decimal
+                elif ',' in text:
+                    # Check if comma is thousands or decimal
+                    parts = text.split(',')
+                    if len(parts) == 2 and len(parts[1]) <= 2:
+                        # Decimal: 15,50
+                        text = text.replace(',', '.')
+                    else:
+                        # Thousands: 1,220
+                        text = text.replace(',', '')
+                
+                # Clean any remaining non-numeric
+                text = re.sub(r'[^\d.-]', '', text)
+                
+                if not text or text == '-':
+                    return 0.0
+                
+                return float(text)
             except (ValueError, AttributeError):
                 return 0.0
         
