@@ -1,7 +1,7 @@
 """
 API Routes for Czech Building Audit System
 CORE endpoints - upload, status, knowledge base
-ИСПРАВЛЕНО: Streaming upload, валидация, без дубликатов
+ИСПРАВЛЕНО: Streaming upload, валидация, без дубликатов, фильтрация пустых файлов
 """
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -321,30 +321,40 @@ async def upload_project(
                 detail="Workflow musí být 'A' nebo 'B'"
             )
         
-        # VALIDACE povinných souborů
+        # Генерация project ID
+        project_id = f"proj_{uuid.uuid4().hex[:12]}"
+        
+        logger.info(f"📤 Nové nahrání: {project_id} - {project_name} (Workflow {workflow})")
+        
+        # ✅ ИСПРАВЛЕНИЕ: Фильтруем пустые файлы ПЕРЕД валидацией
+        vykresy_clean = [f for f in vykresy if f and f.filename]
+        dokumentace_clean = [f for f in dokumentace if f and f.filename]
+        zmeny_clean = [f for f in zmeny if f and f.filename]
+        
+        logger.info(
+            f"Soubory po filtraci: vykresy={len(vykresy_clean)}, "
+            f"dokumentace={len(dokumentace_clean)}, zmeny={len(zmeny_clean)}"
+        )
+        
+        # VALIDACE povinných souborů (ПОСЛЕ фильтрации!)
         if workflow == "A":
-            if not vykaz_vymer:
+            if not vykaz_vymer or not vykaz_vymer.filename:
                 raise HTTPException(
                     status_code=400,
                     detail="Pro Workflow A je výkaz výměr povinný"
                 )
-            if not vykresy or len(vykresy) == 0:
+            if len(vykresy_clean) == 0:
                 raise HTTPException(
                     status_code=400,
                     detail="Pro Workflow A jsou výkresy povinné (pro kontext materiálů a podmínek)"
                 )
         
         elif workflow == "B":
-            if not vykresy or len(vykresy) == 0:
+            if len(vykresy_clean) == 0:
                 raise HTTPException(
                     status_code=400,
                     detail="Pro Workflow B jsou výkresy povinné"
                 )
-        
-        # Генерация project ID
-        project_id = f"proj_{uuid.uuid4().hex[:12]}"
-        
-        logger.info(f"📤 Nové nahrání: {project_id} - {project_name} (Workflow {workflow})")
         
         # Создание директорий
         project_dir = settings.DATA_DIR / "raw" / project_id
@@ -362,7 +372,7 @@ async def upload_project(
         upload_time = datetime.now()
         
         # 1. Výkaz výměr
-        if vykaz_vymer:
+        if vykaz_vymer and vykaz_vymer.filename:
             await _validate_file(vykaz_vymer, 'vykaz')
             
             vykaz_dir = project_dir / "vykaz_vymer"
@@ -378,12 +388,12 @@ async def upload_project(
                 "size": size
             }
         
-        # 2. Výkresy (může быть много)
-        if vykresy:
+        # 2. Výkresy (může být много) - используем vykresy_clean!
+        if vykresy_clean:
             vykresy_dir = project_dir / "vykresy"
             vykresy_dir.mkdir(exist_ok=True)
             
-            for vykres in vykresy:
+            for vykres in vykresy_clean:
                 await _validate_file(vykres, 'vykresy')
                 
                 vykres_path = vykresy_dir / vykres.filename
@@ -396,7 +406,7 @@ async def upload_project(
                 })
         
         # 3. Rozpočet
-        if rozpocet:
+        if rozpocet and rozpocet.filename:
             await _validate_file(rozpocet, 'vykaz')
             
             rozpocet_dir = project_dir / "rozpocet"
@@ -411,12 +421,12 @@ async def upload_project(
                 "size": size
             }
         
-        # 4. Dokumentace
-        if dokumentace:
+        # 4. Dokumentace - используем dokumentace_clean!
+        if dokumentace_clean:
             dok_dir = project_dir / "dokumentace"
             dok_dir.mkdir(exist_ok=True)
             
-            for dok in dokumentace:
+            for dok in dokumentace_clean:
                 await _validate_file(dok, 'dokumentace')
                 
                 dok_path = dok_dir / dok.filename
@@ -428,12 +438,12 @@ async def upload_project(
                     "size": size
                 })
         
-        # 5. Změny
-        if zmeny:
+        # 5. Změny - используем zmeny_clean!
+        if zmeny_clean:
             zmeny_dir = project_dir / "zmeny"
             zmeny_dir.mkdir(exist_ok=True)
             
-            for zmena in zmeny:
+            for zmena in zmeny_clean:
                 await _validate_file(zmena, 'dokumentace')
                 
                 zmena_path = zmeny_dir / zmena.filename
