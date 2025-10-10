@@ -9,7 +9,7 @@ uvicorn[standard]==0.32.0
 python-multipart==0.0.17
 
 # Production server (for deployment)
-gunicorn==21.2.0
+gunicorn>=23.0.0
 
 # ==========================================
 # AI MODELS
@@ -24,10 +24,10 @@ openai==1.54.3
 # DATA PROCESSING
 # ==========================================
 # Excel parsing
-pandas==2.2.3
-openpyxl==3.1.5
-xlrd==2.0.1
-pdfplumber>=0.10.0  # Для проверки PDF
+pandas>=2.2.0
+openpyxl>=3.1.0
+# xlrd==2.0.1
+pdfplumber>=0.11.0  # Для проверки PDF
 # CSV parsing (for KROS/RTS exports)
 # Built-in csv module sufficient
 
@@ -37,8 +37,8 @@ pdfplumber>=0.10.0  # Для проверки PDF
 # CRITICAL: Versions must be compatible!
 pydantic==2.10.3
 pydantic-settings==2.7.0
-python-dotenv==1.0.1
-
+python-dotenv>=1.0.0
+python-slugify>=8.0.0
 # ==========================================
 # HTTP & ASYNC
 # ==========================================
@@ -49,7 +49,7 @@ requests==2.32.3
 # LOGGING (Production)
 # ==========================================
 python-json-logger==2.0.7
-
+loguru>=0.7.2
 # ==========================================
 # DEVELOPMENT & TESTING (Optional)
 # ==========================================
