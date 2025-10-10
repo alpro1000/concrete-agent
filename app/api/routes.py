@@ -4,7 +4,7 @@ CORE endpoints - upload, status, knowledge base
 ИСПРАВЛЕНО: Streaming upload, валидация, без дубликатов, фильтрация пустых файлов
 """
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
 from datetime import datetime
 import json
 import logging
@@ -31,9 +31,9 @@ router = APIRouter()
 # Константы
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB на файл
 ALLOWED_EXTENSIONS = {
-    'vykaz': {'.xml', '.xlsx', '.xls', '.pdf'},
-    'vykresy': {'.pdf', '.dwg', '.dxf', '.png', '.jpg', '.jpeg'},
-    'dokumentace': {'.pdf', '.doc', '.docx', '.xlsx', '.xls'},
+    'vykaz': {'.xml', '.xlsx', '.xls', '.pdf', '.csv'},  # Added .csv
+    'vykresy': {'.pdf', '.dwg', '.dxf', '.png', '.jpg', '.jpeg', '.txt'},  # Added .txt
+    'dokumentace': {'.pdf', '.doc', '.docx', '.xlsx', '.xls', '.txt'},  # Added .txt
 }
 
 # In-memory project store (в production заменить на БД)
@@ -43,6 +43,62 @@ project_store: Dict[str, Dict[str, Any]] = {}
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
+
+def _normalize_optional_file(file: Any) -> Optional[UploadFile]:
+    """
+    Normalize optional file parameter - convert empty string to None
+    
+    When clients send empty form fields (e.g., -F 'rozpocet='), 
+    FastAPI receives empty strings instead of None. This function
+    normalizes those to None.
+    
+    Args:
+        file: File parameter that might be UploadFile, str, or None
+        
+    Returns:
+        UploadFile if valid file, None otherwise
+    """
+    if file is None:
+        return None
+    if isinstance(file, str):
+        # Empty string or any string should be treated as None
+        return None
+    # Use duck typing to check if it's an UploadFile (has filename attribute)
+    if hasattr(file, 'filename'):
+        # Check if it has a valid filename
+        if not file.filename or file.filename.strip() == "":
+            return None
+        return file
+    return None
+
+
+def _normalize_file_list(files: List[Any]) -> List[UploadFile]:
+    """
+    Normalize file list - filter out empty strings and invalid files
+    
+    When clients send empty form fields in lists (e.g., -F 'zmeny='), 
+    FastAPI receives empty strings. This function filters those out.
+    
+    Args:
+        files: List of file parameters
+        
+    Returns:
+        List of valid UploadFile objects
+    """
+    if not files:
+        return []
+    
+    result = []
+    for f in files:
+        if isinstance(f, str):
+            # Skip empty strings
+            continue
+        # Use duck typing to check if it's an UploadFile (has filename attribute)
+        if hasattr(f, 'filename') and f.filename and f.filename.strip():
+            result.append(f)
+    
+    return result
+
 
 async def _validate_file(
     file: UploadFile, 
@@ -264,29 +320,29 @@ async def upload_project(
     project_name: str = Form(..., description="Název projektu"),
     workflow: str = Form(..., description="Typ workflow: 'A' nebo 'B'"),
     
-    # HLAVNÍ SOUBORY
-    vykaz_vymer: Optional[UploadFile] = File(
+    # HLAVNÍ SOUBORY - Accept Union to handle empty strings
+    vykaz_vymer: Union[UploadFile, str, None] = File(
         None, 
         description="Výkaz výměr (povinné pro Workflow A)"
     ),
     
-    vykresy: List[UploadFile] = File(
+    vykresy: Union[List[UploadFile], List[str], List[Any]] = File(
         default=[],
         description="Výkresy (povinné pro oba workflows)"
     ),
     
-    # VOLITELNÉ SOUBORY
-    rozpocet: Optional[UploadFile] = File(
+    # VOLITELNÉ SOUBORY - Accept Union to handle empty strings
+    rozpocet: Union[UploadFile, str, None] = File(
         None,
         description="Rozpočet s cenami (volitelné)"
     ),
     
-    dokumentace: List[UploadFile] = File(
+    dokumentace: Union[List[UploadFile], List[str], List[Any]] = File(
         default=[],
         description="Projektová dokumentace (volitelné)"
     ),
     
-    zmeny: List[UploadFile] = File(
+    zmeny: Union[List[UploadFile], List[str], List[Any]] = File(
         default=[],
         description="Změny a dodatky (volitelné)"
     ),
@@ -325,6 +381,14 @@ async def upload_project(
         project_id = f"proj_{uuid.uuid4().hex[:12]}"
         
         logger.info(f"📤 Nové nahrání: {project_id} - {project_name} (Workflow {workflow})")
+        
+        # ✅ NORMALIZACE: Convert empty strings to None/empty lists
+        # This handles the case where clients send -F 'rozpocet=' or -F 'zmeny='
+        vykaz_vymer = _normalize_optional_file(vykaz_vymer)
+        rozpocet = _normalize_optional_file(rozpocet)
+        vykresy = _normalize_file_list(vykresy) if isinstance(vykresy, list) else []
+        dokumentace = _normalize_file_list(dokumentace) if isinstance(dokumentace, list) else []
+        zmeny = _normalize_file_list(zmeny) if isinstance(zmeny, list) else []
         
         # ✅ ИСПРАВЛЕНИЕ: Фильтруем пустые файлы ПЕРЕД валидацией
         vykresy_clean = [f for f in vykresy if f and f.filename]
