@@ -33,7 +33,7 @@ MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB на файл
 ALLOWED_EXTENSIONS = {
     'vykaz': {'.xml', '.xlsx', '.xls', '.pdf', '.csv'},  # Added .csv
     'vykresy': {'.pdf', '.dwg', '.dxf', '.png', '.jpg', '.jpeg', '.txt'},  # Added .txt
-    'dokumentace': {'.pdf', '.doc', '.docx', '.xlsx', '.xls', '.txt'},  # Added .txt
+    'dokumentace': {'.pdf', '.doc', '.docx', '.xlsx', '.xls', '.txt', '.csv'},  # Added .txt, .csv
 }
 
 # In-memory project store (в production заменить на БД)
