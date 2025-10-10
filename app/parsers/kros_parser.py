@@ -1,6 +1,11 @@
 """
-KROS XML Parser with fallback strategies
-Специализированный парсер для KROS XML с поддержкой различных форматов
+KROS XML Parser
+БЕЗ CLAUDE/NANONETS FALLBACK - только XML parsing
+
+Поддерживает:
+- KROS Table XML (с ценами)
+- KROS UNIXML (без цен)
+- Старые форматы KROS
 """
 import xml.etree.ElementTree as ET
 import logging
@@ -13,43 +18,26 @@ logger = logging.getLogger(__name__)
 class KROSParser:
     """
     Специализированный парсер для KROS XML
-    Поддерживает:
-    - KROS Table XML 
-    - KROS UNIXML
-    - Старые форматы KROS
     
-    Использует fallback стратегию:
-    1. Прямой XML parsing
-    2. Nanonets API (если XML поврежден) - если доступен
-    3. Claude + промпты (последний вариант)
+    ✅ БЕЗ Claude/Nanonets fallback
+    ✅ Прямой XML parsing
     """
     
-    def __init__(self, claude_client=None, nanonets_client=None):
-        """
-        Args:
-            claude_client: ClaudeClient instance for fallback
-            nanonets_client: NanonetsClient instance for fallback
-        """
-        self.claude = claude_client
-        self.nanonets = nanonets_client
+    def __init__(self):
+        """БЕЗ claude_client и nanonets_client!"""
+        pass
     
     def parse(self, xml_path: Path) -> Dict[str, Any]:
         """
-        Парсинг KROS XML с fallback стратегией
+        Парсинг KROS XML
         
         Args:
             xml_path: Path to KROS XML file
             
         Returns:
-            Dict with parsed data:
-            {
-                "positions": List[Dict],
-                "total_positions": int,
-                "document_info": Dict,
-                "sections": List[Dict]
-            }
+            Dict with parsed data
         """
-        logger.info(f"Parsing KROS XML: {xml_path}")
+        logger.info(f"📝 Parsing KROS XML: {xml_path}")
         
         # Read XML content
         try:
@@ -63,39 +51,21 @@ class KROSParser:
         xml_format = self._detect_format(xml_content)
         logger.info(f"Detected KROS format: {xml_format}")
         
-        # Try direct XML parsing
-        try:
-            if xml_format == "KROS_UNIXML":
-                return self._parse_unixml(xml_content)
-            elif xml_format == "KROS_TABLE":
-                return self._parse_table_xml(xml_content)
-            else:
-                return self._parse_generic_xml(xml_content)
-                
-        except Exception as e:
-            logger.warning(f"Direct XML parsing failed: {e}")
-            
-            # Fallback to Nanonets if available
-            if self.nanonets:
-                try:
-                    logger.info("Trying Nanonets fallback...")
-                    return self._parse_with_nanonets(xml_path)
-                except Exception as e2:
-                    logger.warning(f"Nanonets parsing failed: {e2}")
-            
-            # Last resort: Claude
-            if self.claude:
-                logger.info("Using Claude fallback...")
-                return self._parse_with_claude(xml_path)
-            
-            # No fallback available
-            raise Exception(f"All parsing methods failed. Last error: {e}")
+        # Parse based on format
+        if xml_format == "KROS_UNIXML":
+            return self._parse_unixml(xml_content)
+        elif xml_format == "KROS_TABLE":
+            return self._parse_table_xml(xml_content)
+        else:
+            return self._parse_generic_xml(xml_content)
     
     def _detect_format(self, xml_content: str) -> str:
         """Detect KROS XML format type"""
-        if '<unixml' in xml_content.lower():
+        content_lower = xml_content.lower()
+        
+        if '<unixml' in content_lower:
             return "KROS_UNIXML"
-        elif '<TZ>' in xml_content or '<Row>' in xml_content:
+        elif '<tz>' in content_lower or '<row>' in content_lower:
             return "KROS_TABLE"
         else:
             return "GENERIC"
@@ -103,17 +73,6 @@ class KROSParser:
     def _parse_unixml(self, xml_content: str) -> Dict[str, Any]:
         """
         Parse KROS UNIXML format (Soupis prací)
-        
-        UNIXML structure:
-        <unixml>
-            <global_header>...</global_header>
-            <body>
-                <section>
-                    <header>...</header>
-                    <item>...</item>
-                </section>
-            </body>
-        </unixml>
         """
         logger.info("Parsing KROS UNIXML format")
         
@@ -158,17 +117,6 @@ class KROSParser:
     def _parse_table_xml(self, xml_content: str) -> Dict[str, Any]:
         """
         Parse KROS Table XML format (Kalkulace s cenami)
-        
-        Table XML structure:
-        <TZ>
-            <Row>
-                <C1>Kód</C1>
-                <C2>Popis</C2>
-                <C3>MJ</C3>
-                <C4>Množství</C4>
-                <C5>Cena</C5>
-            </Row>
-        </TZ>
         """
         logger.info("Parsing KROS Table XML format")
         
@@ -273,9 +221,20 @@ class KROSParser:
         """Extract position from Table XML row"""
         try:
             # Extract data from columns
+            code = self._get_element_text(row, 'C1', '')
+            description = self._get_element_text(row, 'C2', '')
+            
+            # Skip if no description or code
+            if not description and not code:
+                return None
+            
+            # Skip section headers (HSV, PSV, etc.)
+            if code.upper() in ['HSV', 'PSV', 'M', 'VRN'] or len(code) <= 2:
+                return None
+            
             position = {
-                "code": self._get_element_text(row, 'C1', ''),
-                "description": self._get_element_text(row, 'C2', ''),
+                "code": code,
+                "description": description,
                 "unit": self._get_element_text(row, 'C3', ''),
                 "quantity": self._parse_float(self._get_element_text(row, 'C4', '0')),
                 "unit_price": self._parse_float(self._get_element_text(row, 'C5', '0')),
@@ -352,31 +311,6 @@ class KROSParser:
             logger.warning(f"Failed to extract position data: {e}")
             return None
     
-    def _parse_with_nanonets(self, xml_path: Path) -> Dict[str, Any]:
-        """Parse using Nanonets API (fallback)"""
-        if not self.nanonets:
-            raise ValueError("Nanonets client not available")
-        
-        logger.info("Parsing with Nanonets...")
-        result = self.nanonets.extract_estimate_data(xml_path)
-        
-        # Convert Nanonets result to our format
-        return {
-            "positions": result.get("positions", []),
-            "total_positions": len(result.get("positions", [])),
-            "document_info": result.get("metadata", {}),
-            "sections": [],
-            "format": "NANONETS_PARSED"
-        }
-    
-    def _parse_with_claude(self, xml_path: Path) -> Dict[str, Any]:
-        """Parse using Claude (last resort fallback)"""
-        if not self.claude:
-            raise ValueError("Claude client not available")
-        
-        logger.info("Parsing with Claude...")
-        return self.claude.parse_xml(xml_path)
-    
     # Utility methods
     def _get_element_text(self, parent: ET.Element, tag: str, default: str = '') -> str:
         """Safely get text from child element"""
@@ -393,6 +327,6 @@ class KROSParser:
         try:
             # Remove spaces and replace comma with dot
             text = text.strip().replace(' ', '').replace(',', '.')
-            return float(text)
+            return float(text) if text else 0.0
         except (ValueError, AttributeError):
             return 0.0
