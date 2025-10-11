@@ -10,6 +10,9 @@ from app.core.claude_client import ClaudeClient
 from app.core.gpt4_client import GPT4VisionClient
 from app.core.config import settings
 
+# ✅ ДОБАВЛЕНО: SmartParser для документации
+from app.parsers import SmartParser
+
 logger = logging.getLogger(__name__)
 
 
@@ -19,17 +22,20 @@ class WorkflowB:
     
     Workflow:
     1. Upload → Только документация + чертежи
-    2. GPT-4V анализ чертежей → размеры, объемы
-    3. Calculate материалы → бетон, арматура, опалубка
-    4. Claude генерация позиций → создание выказа
-    5. AUDIT генерированных → как в Workflow A
-    6. Generate отчет + Tech Card
+    2. GPT-4V анализ чертежей → размеры, объемы (ПЛАТНО)
+    3. Calculate материалы → бетон, арматура, опалубка (БЕСПЛАТНО)
+    4. Claude генерация позиций → создание выказа (ПЛАТНО)
+    5. AUDIT генерированных → как в Workflow A (ПЛАТНО)
+    6. Generate отчет + Tech Card (БЕСПЛАТНО)
     """
     
     def __init__(self):
         """Initialize Workflow B services"""
         self.claude = ClaudeClient()
         self.gpt4v = GPT4VisionClient() if settings.ENABLE_WORKFLOW_B else None
+        
+        # ✅ ДОБАВЛЕНО: SmartParser для обработки документации
+        self.smart_parser = SmartParser()
         
         if not self.gpt4v:
             logger.warning("GPT-4 Vision not available. Workflow B limited.")
@@ -45,7 +51,7 @@ class WorkflowB:
         
         Args:
             drawings: List of drawing files (PDF/images)
-            documentation: Optional technical documentation
+            documentation: Optional technical documentation (PDF/Excel/XML/TXT)
             project_name: Project name
             
         Returns:
@@ -60,15 +66,15 @@ class WorkflowB:
         logger.info(f"Workflow B: Processing {len(drawings)} drawings for '{project_name}'")
         
         try:
-            # Step 1: Analyze drawings with GPT-4V
+            # Step 1: Analyze drawings with GPT-4V (ПЛАТНО)
             logger.info("Step 1: Analyzing drawings with GPT-4 Vision...")
             drawing_analysis = await self._analyze_drawings(drawings)
             
-            # Step 2: Calculate materials
+            # Step 2: Calculate materials (БЕСПЛАТНО)
             logger.info("Step 2: Calculating materials...")
             calculations = self._calculate_materials(drawing_analysis)
             
-            # Step 3: Generate positions with Claude
+            # Step 3: Generate positions with Claude (ПЛАТНО)
             logger.info("Step 3: Generating positions with Claude...")
             positions = await self._generate_positions(
                 drawing_analysis,
@@ -76,7 +82,7 @@ class WorkflowB:
                 documentation
             )
             
-            # Step 4: Create technical card
+            # Step 4: Create technical card (БЕСПЛАТНО)
             logger.info("Step 4: Creating technical card...")
             tech_card = self._create_tech_card(
                 project_name,
@@ -107,7 +113,7 @@ class WorkflowB:
     
     async def _analyze_drawings(self, drawings: List[Path]) -> List[Dict[str, Any]]:
         """
-        Analyze drawings with GPT-4 Vision
+        Analyze drawings with GPT-4 Vision (ПЛАТНО)
         
         Returns:
             List of analyzed drawing data:
@@ -151,7 +157,7 @@ class WorkflowB:
     
     def _calculate_materials(self, drawing_analysis: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Calculate materials from drawing analysis
+        Calculate materials from drawing analysis (БЕСПЛАТНО)
         
         Returns:
             Dict with material calculations:
@@ -246,10 +252,6 @@ class WorkflowB:
         
         return area
     
-    # ========================================
-    # NEW: EXECUTE METHOD FOR CONSISTENCY
-    # ========================================
-    
     async def execute(
         self,
         project_id: str,
@@ -314,7 +316,7 @@ class WorkflowB:
         documentation: Optional[List[Path]]
     ) -> List[Dict[str, Any]]:
         """
-        Generate estimate positions using Claude
+        Generate estimate positions using Claude (ПЛАТНО)
         
         Returns:
             List of generated positions with KROS codes
@@ -328,19 +330,70 @@ class WorkflowB:
             "documentation": []
         }
         
-        # Add documentation if available
+        # ✅ ИСПРАВЛЕНО: Используем SmartParser для документации
         if documentation:
             for doc in documentation:
-                # Read documentation
+                logger.info(f"  Processing documentation: {doc.name}")
+                
                 try:
-                    with open(doc, 'r', encoding='utf-8') as f:
-                        content = f.read()[:5000]  # First 5000 chars
+                    # Определить тип файла
+                    suffix = doc.suffix.lower()
+                    
+                    if suffix == '.txt':
+                        # Простой текстовый файл - читаем напрямую
+                        with open(doc, 'r', encoding='utf-8') as f:
+                            content = f.read()[:5000]  # First 5000 chars
+                        
+                        context["documentation"].append({
+                            "file": doc.name,
+                            "type": "text",
+                            "content": content
+                        })
+                    
+                    elif suffix in ['.pdf', '.xlsx', '.xls', '.xml']:
+                        # ✅ Структурированные документы - используем SmartParser
+                        logger.info(f"    Using SmartParser for {suffix} document")
+                        parsed_data = self.smart_parser.parse(doc)
+                        
+                        # Извлечь текстовое представление
+                        if suffix == '.pdf':
+                            content = parsed_data.get("raw_text", "")[:5000]
+                        elif suffix in ['.xlsx', '.xls']:
+                            # Для Excel - извлечь позиции как текст
+                            positions = parsed_data.get("positions", [])
+                            content = "\n".join([
+                                f"{p.get('code', '')}: {p.get('description', '')}"
+                                for p in positions[:50]  # First 50 positions
+                            ])
+                        elif suffix == '.xml':
+                            # Для XML - извлечь позиции
+                            positions = parsed_data.get("positions", [])
+                            content = "\n".join([
+                                f"{p.get('code', '')}: {p.get('description', '')}"
+                                for p in positions[:50]
+                            ])
+                        
+                        context["documentation"].append({
+                            "file": doc.name,
+                            "type": suffix[1:],  # Remove dot
+                            "content": content,
+                            "parsed_data": parsed_data
+                        })
+                    
+                    else:
+                        logger.warning(f"    Unsupported documentation format: {suffix}")
+                        context["documentation"].append({
+                            "file": doc.name,
+                            "type": "unknown",
+                            "error": f"Unsupported format: {suffix}"
+                        })
+                
+                except Exception as e:
+                    logger.warning(f"Failed to process {doc.name}: {e}")
                     context["documentation"].append({
                         "file": doc.name,
-                        "content": content
+                        "error": str(e)
                     })
-                except Exception as e:
-                    logger.warning(f"Failed to read {doc.name}: {e}")
         
         # Load generation prompt
         prompt = self.claude._load_prompt_from_file("generation/generate_from_drawings")
@@ -368,7 +421,7 @@ class WorkflowB:
         calculations: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Create technical card
+        Create technical card (БЕСПЛАТНО)
         
         Returns:
             Technical card with project details
