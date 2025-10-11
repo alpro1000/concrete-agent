@@ -12,10 +12,8 @@ import json
 from app.core.claude_client import ClaudeClient
 from app.core.config import settings
 
-# ✅ Импортируем SmartParser или отдельные парсеры
-from app.parsers import SmartParser  # Рекомендуемый вариант
-# ИЛИ:
-# from app.parsers import KROSParser, PDFParser, ExcelParser
+# ✅ Импортируем SmartParser
+from app.parsers import SmartParser
 
 logger = logging.getLogger(__name__)
 
@@ -34,20 +32,11 @@ class WorkflowA:
     """
     
     def __init__(self):
+        """Initialize Workflow A"""
         self.kb_dir = settings.KB_DIR
         
         # ✅ ПРАВИЛЬНО: SmartParser БЕЗ параметров
         self.smart_parser = SmartParser()
-        
-        # ИЛИ если хотите прямой доступ к парсерам:
-        # self.kros_parser = KROSParser()
-        # self.pdf_parser = PDFParser()
-        # self.excel_parser = ExcelParser()
-        
-        # ❌ УДАЛЕНО: Все строки про nanonets и mineru
-        # self.nanonets = None
-        # self.mineru = None
-        # if settings.NANONETS_API_KEY: ...
     
     async def import_and_prepare(
         self,
@@ -343,366 +332,21 @@ Vrat POUZE JSON, bez markdown.
         
         return prompt
     
-    # ... остальные методы без изменений ..."""
-Workflow A: Import and Audit Construction Estimates
-Simplified version - user selects positions to analyze
-WITH specialized parsers for better accuracy
-"""
-from pathlib import Path
-import logging
-from typing import Dict, Any, List, Optional
-import json
-
-from app.core.claude_client import ClaudeClient
-from app.core.config import settings
-from app.core.nanonets_client import NanonetsClient
-from app.core.mineru_client import MinerUClient
-from app.parsers import KROSParser, PDFParser, ExcelParser
-
-logger = logging.getLogger(__name__)
-
-
-class WorkflowA:
-    """
-    Simplified Workflow A: Import ALL positions, user selects what to analyze
-    
-    New workflow:
-    1. Import all positions without limitations
-    2. Display positions with checkboxes
-    3. User selects positions to analyze
-    4. Analyze only selected positions
-    
-    NOW WITH: Specialized parsers for better accuracy
-    """
-    
-    def __init__(self):
-        self.kb_dir = settings.KB_DIR
-        
-        # Initialize optional clients
-        self.nanonets = None
-        self.mineru = None
-        
-        if settings.NANONETS_API_KEY:
-            try:
-                self.nanonets = NanonetsClient()
-                logger.info("Nanonets client initialized")
-            except Exception as e:
-                logger.warning(f"Nanonets initialization failed: {e}")
-        
-        try:
-            self.mineru = MinerUClient(
-                output_dir=settings.MINERU_OUTPUT_DIR,
-                ocr_engine=settings.MINERU_OCR_ENGINE
-            )
-            if self.mineru.available:
-                logger.info("MinerU client initialized")
-        except Exception as e:
-            logger.warning(f"MinerU initialization failed: {e}")
-        
-        # Initialize parsers WITHOUT claude_client parameter
-        self.kros_parser = KROSParser(
-            nanonets_client=self.nanonets
-        )
-        self.pdf_parser = PDFParser(
-            mineru_client=self.mineru
-        )
-        self.excel_parser = ExcelParser()
-    
-    async def import_and_prepare(
-        self,
-        file_path: Path,
-        project_name: str
-    ) -> Dict[str, Any]:
-        """
-        Import ALL positions from document without limitations
-        
-        Args:
-            file_path: Path to document file
-            project_name: Name of the project
-        
-        Returns:
-            Dict with all imported positions
-        """
-        try:
-            logger.info(f"Importing positions from: {file_path}")
-            
-            file_format = self._detect_format(file_path)
-            logger.info(f"Detected file format: {file_format}")
-            
-            positions = await self._parse_document(file_path, file_format)
-            logger.info(f"Imported {len(positions)} positions")
-            
-            if not positions:
-                logger.warning("No positions found in document!")
-                return {
-                    "success": False,
-                    "error": "No positions found in document",
-                    "positions": []
-                }
-            
-            for idx, pos in enumerate(positions):
-                pos['index'] = idx
-                pos['selected'] = False
-            
-            return {
-                "success": True,
-                "project_name": project_name,
-                "total_positions": len(positions),
-                "positions": positions,
-                "file_format": file_format,
-                "project_context": {
-                    "file_name": file_path.name,
-                    "project_name": project_name
-                }
-            }
-        
-        except Exception as e:
-            logger.error(f"Import failed: {e}", exc_info=True)
-            return {
-                "success": False,
-                "error": str(e),
-                "positions": []
-            }
-    
-    async def analyze_selected_positions(
-        self,
-        positions: List[Dict[str, Any]],
-        selected_indices: List[int],
-        project_context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """
-        Analyze only selected positions
-        """
-        try:
-            logger.info(f"Analyzing {len(selected_indices)} selected positions")
-            
-            selected_positions = [positions[i] for i in selected_indices if i < len(positions)]
-            
-            if not selected_positions:
-                return {
-                    "success": False,
-                    "error": "No valid positions selected",
-                    "results": []
-                }
-            
-            kb_data = self._load_knowledge_base()
-            logger.info(f"Loaded KB with {len(kb_data)} categories")
-            
-            results = []
-            for idx, position in enumerate(selected_positions, 1):
-                logger.info(f"Analyzing position {idx}/{len(selected_positions)}")
-                
-                try:
-                    audit_result = await self._audit_position(position, kb_data, project_context)
-                    results.append(audit_result)
-                except Exception as e:
-                    logger.error(f"Failed to audit position {idx}: {e}")
-                    results.append({
-                        "position": position,
-                        "status": "ERROR",
-                        "error": str(e),
-                        "classification": "RED",
-                        "hitl_required": True
-                    })
-            
-            return {
-                "success": True,
-                "total_analyzed": len(results),
-                "results": results
-            }
-            
-        except Exception as e:
-            logger.error(f"Analysis failed: {e}", exc_info=True)
-            return {
-                "success": False,
-                "error": str(e),
-                "results": []
-            }
-    
-    def _detect_format(self, file_path: Path) -> str:
-        suffix = file_path.suffix.lower()
-        
-        if suffix in ['.xlsx', '.xls']:
-            return 'excel'
-        elif suffix == '.pdf':
-            return 'pdf'
-        elif suffix == '.xml':
-            return 'xml'
-        else:
-            raise ValueError(f"Unsupported file format: {suffix}")
-    
-    async def _parse_document(
-        self,
-        file_path: Path,
-        file_format: str
-    ) -> List[Dict[str, Any]]:
-        try:
-            logger.info(f"Parsing {file_format} document with specialized parser")
-            
-            if file_format == 'excel':
-                result = self.excel_parser.parse(file_path)
-            elif file_format == 'xml':
-                result = self.kros_parser.parse(file_path)
-            elif file_format == 'pdf':
-                result = self.pdf_parser.parse(file_path)
-            else:
-                raise ValueError(f"Unsupported format: {file_format}")
-            
-            positions = result.get('positions', [])
-            logger.info(f"Parsed {len(positions)} positions")
-            
-            valid_positions = []
-            for pos in positions:
-                if self._is_valid_position(pos):
-                    valid_positions.append(pos)
-                else:
-                    logger.warning(f"Skipping invalid position")
-            
-            logger.info(f"{len(valid_positions)} valid positions after validation")
-            return valid_positions
-        
-        except Exception as e:
-            logger.error(f"Failed to parse document: {e}")
-            
-            if settings.FALLBACK_ENABLED:
-                logger.warning("Falling back to Claude direct parsing")
-                try:
-                    claude = ClaudeClient()
-                    
-                    if file_format == 'excel':
-                        result = claude.parse_excel(file_path)
-                    elif file_format == 'xml':
-                        result = claude.parse_xml(file_path)
-                    elif file_format == 'pdf':
-                        result = claude.parse_pdf(file_path)
-                    else:
-                        raise ValueError(f"Unsupported format: {file_format}")
-                    
-                    positions = result.get('positions', [])
-                    logger.info(f"Fallback: Parsed {len(positions)} positions")
-                    return positions
-                except Exception as e2:
-                    logger.error(f"Fallback also failed: {e2}")
-                    raise
-            else:
-                raise
-    
-    def _is_valid_position(self, position: Dict[str, Any]) -> bool:
-        return 'description' in position and position['description']
-    
-    def _load_knowledge_base(self) -> Dict[str, Any]:
-        kb_data = {}
-        
-        b1_path = self.kb_dir / "B1_kros_urs_codes"
-        if b1_path.exists():
-            kb_data['codes'] = self._load_category(b1_path)
-        
-        b2_path = self.kb_dir / "B2_csn_standards"
-        if b2_path.exists():
-            kb_data['standards'] = self._load_category(b2_path)
-        
-        b3_path = self.kb_dir / "B3_current_prices"
-        if b3_path.exists():
-            kb_data['prices'] = self._load_category(b3_path)
-        
-        return kb_data
-    
-    def _load_category(self, category_path: Path) -> List[Dict[str, Any]]:
-        data = []
-        
-        for json_file in category_path.glob("*.json"):
-            if json_file.name == "metadata.json":
-                continue
-            try:
-                with open(json_file, 'r', encoding='utf-8') as f:
-                    content = json.load(f)
-                    if isinstance(content, list):
-                        data.extend(content)
-                    else:
-                        data.append(content)
-            except Exception as e:
-                logger.warning(f"Failed to load {json_file}: {e}")
-        
-        return data
-    
-    async def _audit_position(
-        self,
-        position: Dict[str, Any],
-        kb_data: Dict[str, Any],
-        project_context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        try:
-            prompt = self._build_audit_prompt(position, kb_data, project_context)
-            
-            claude = ClaudeClient()
-            result = claude.call(prompt)
-            
-            result['position'] = position
-            result.setdefault('classification', 'AMBER')
-            result.setdefault('hitl_required', False)
-            
-            if result['classification'] == 'RED':
-                result['hitl_required'] = True
-            
-            return result
-        
-        except Exception as e:
-            logger.error(f"Audit failed for position: {e}")
-            return {
-                "position": position,
-                "status": "ERROR",
-                "error": str(e),
-                "classification": "RED",
-                "hitl_required": True
-            }
-    
-    def _build_audit_prompt(
-        self,
-        position: Dict[str, Any],
-        kb_data: Dict[str, Any],
-        project_context: Optional[Dict[str, Any]] = None
-    ) -> str:
-        prompt = f"""Analyzuj tuto pozici stavebniho vykazu vymer a proved audit.
-
-===== POZICE K AUDITU =====
-{json.dumps(position, ensure_ascii=False, indent=2)}
-
-===== KNOWLEDGE BASE =====
-Dostupne kody KROS/URS: {len(kb_data.get('codes', []))} polozek
-Dostupne CSN standardy: {len(kb_data.get('standards', []))} polozek
-Aktualni ceny: {len(kb_data.get('prices', []))} polozek
-
-===== UKOL =====
-1. Zkontroluj kod pozice (KROS/URS)
-2. Zkontroluj popis a jednotku
-3. Zkontroluj cenu (pokud je uvedena)
-4. Zkontroluj mnozstvi (pokud je uvedeno)
-5. Identifikuj pripadne problemy
-
-===== VYSTUP =====
-Vrat JSON:
-{{
-  "classification": "GREEN/AMBER/RED",
-  "issues": ["seznam problemu"],
-  "recommendations": ["doporuceni"],
-  "price_check": "OK/WARNING/ERROR",
-  "code_check": "OK/WARNING/ERROR",
-  "notes": "poznamky"
-}}
-
-Vrat POUZE JSON, bez markdown.
-"""
-        
-        if project_context:
-            prompt += f"\n\n===== KONTEXT PROJEKTU =====\n{json.dumps(project_context, ensure_ascii=False, indent=2)}\n"
-        
-        return prompt
-    
     async def run(
         self,
         file_path: Path,
         project_name: str
     ) -> Dict[str, Any]:
+        """
+        Run complete Workflow A
+        
+        Args:
+            file_path: Path to document file
+            project_name: Project name
+            
+        Returns:
+            Complete audit results
+        """
         try:
             logger.info(f"Starting Workflow A for: {file_path}")
             
@@ -756,6 +400,7 @@ Vrat POUZE JSON, bez markdown.
         self,
         audit_results: List[Dict[str, Any]]
     ) -> Dict[str, List[Dict[str, Any]]]:
+        """Categorize audit results by classification"""
         categorized = {
             'green': [],
             'amber': [],
@@ -778,6 +423,7 @@ Vrat POUZE JSON, bez markdown.
         self,
         categorized: Dict[str, List[Dict[str, Any]]]
     ) -> Dict[str, Any]:
+        """Generate summary statistics"""
         total = sum(len(v) for v in categorized.values())
         
         return {
@@ -797,6 +443,18 @@ Vrat POUZE JSON, bez markdown.
         vykresy_paths: List[Path],
         project_name: str
     ) -> Dict[str, Any]:
+        """
+        Execute Workflow A with full project analysis
+        
+        Args:
+            project_id: Project ID
+            vykaz_path: Path to vykaz vymer (optional)
+            vykresy_paths: List of paths to drawings
+            project_name: Project name
+            
+        Returns:
+            Complete project analysis results
+        """
         try:
             logger.info(f"Starting execute() for project {project_id}")
             
@@ -846,6 +504,7 @@ Vrat POUZE JSON, bez markdown.
         vykresy_paths: List[Path],
         project_name: str
     ) -> Dict[str, Any]:
+        """Collect all project data from documents"""
         positions = []
         drawings_data = []
         technical_specs = []
@@ -879,6 +538,7 @@ Vrat POUZE JSON, bez markdown.
         positions: List[Dict[str, Any]],
         project_id: str
     ) -> List[Dict[str, Any]]:
+        """Basic validation against local knowledge base"""
         from app.core.kb_loader import get_knowledge_base
         
         kb = get_knowledge_base()
@@ -908,6 +568,7 @@ Vrat POUZE JSON, bez markdown.
         position: Dict[str, Any],
         kb: Any
     ) -> Dict[str, Any]:
+        """Check position against local knowledge base"""
         description = position.get("description", "").lower()
         unit_price = position.get("unit_price", 0)
         
@@ -945,6 +606,7 @@ Vrat POUZE JSON, bez markdown.
         }
     
     async def _parse_drawing_document(self, drawing_path: Path) -> Dict[str, Any]:
+        """Parse drawing document to extract text and metadata"""
         drawing_data = {
             "filename": drawing_path.name,
             "path": str(drawing_path),
@@ -954,9 +616,10 @@ Vrat POUZE JSON, bez markdown.
         
         if drawing_path.suffix.lower() == '.pdf':
             try:
-                result = self.pdf_parser.parse(drawing_path)
-                drawing_data["text"] = result.get("text", "")
-                drawing_data["metadata"] = result.get("metadata", {})
+                # ✅ Use SmartParser for PDF
+                result = self.smart_parser.parse_pdf(drawing_path)
+                drawing_data["text"] = result.get("raw_text", "")
+                drawing_data["metadata"] = result.get("document_info", {})
             except Exception as e:
                 logger.warning(f"PDF parsing failed: {e}")
         elif drawing_path.suffix.lower() == '.txt':
@@ -969,6 +632,7 @@ Vrat POUZE JSON, bez markdown.
         return drawing_data
     
     def _extract_technical_specs(self, drawing_content: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Extract technical specifications from drawing text"""
         specs = []
         text = drawing_content.get("text", "")
         
@@ -977,6 +641,7 @@ Vrat POUZE JSON, bez markdown.
         
         import re
         
+        # Extract concrete grades (e.g., C25/30)
         concrete_pattern = r'C\d{2}/\d{2}'
         concrete_grades = re.findall(concrete_pattern, text)
         for grade in set(concrete_grades):
@@ -986,6 +651,7 @@ Vrat POUZE JSON, bez markdown.
                 "source": drawing_content.get("filename", "unknown")
             })
         
+        # Extract environmental classes (e.g., XC3, XD1)
         env_pattern = r'X[A-Z]\d'
         env_classes = re.findall(env_pattern, text)
         for env_class in set(env_classes):
@@ -995,6 +661,7 @@ Vrat POUZE JSON, bez markdown.
                 "source": drawing_content.get("filename", "unknown")
             })
         
+        # Extract CSN standards (e.g., CSN EN 206)
         csn_pattern = r'CSN\s+(?:EN\s+)?\d+'
         csn_standards = re.findall(csn_pattern, text)
         for standard in set(csn_standards):
@@ -1011,6 +678,7 @@ Vrat POUZE JSON, bez markdown.
         drawings_data: List[Dict[str, Any]],
         tech_specs: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
+        """Extract project context from drawings and technical specs"""
         context = {
             "construction_type": None,
             "concrete_grades": [],
@@ -1020,6 +688,7 @@ Vrat POUZE JSON, bez markdown.
             "csn_standards": []
         }
         
+        # Extract from technical specs
         for spec in tech_specs:
             spec_type = spec.get("type")
             spec_value = spec.get("value")
@@ -1034,6 +703,7 @@ Vrat POUZE JSON, bez markdown.
                 if spec_value not in context["csn_standards"]:
                     context["csn_standards"].append(spec_value)
         
+        # Use Claude to analyze drawings if available
         if drawings_data and settings.ANTHROPIC_API_KEY:
             try:
                 claude = ClaudeClient()
@@ -1057,7 +727,7 @@ Najdi a vrat v JSON formatu:
 Vrat POUZE JSON, bez markdown.
 """
                         
-                        analysis_result = await claude.call(context_prompt)
+                        analysis_result = claude.call(context_prompt)
                         
                         if isinstance(analysis_result, str):
                             try:
