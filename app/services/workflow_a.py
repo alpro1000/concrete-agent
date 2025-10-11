@@ -2,6 +2,351 @@
 Workflow A: Import and Audit Construction Estimates
 Simplified version - user selects positions to analyze
 WITH specialized parsers for better accuracy
+БЕЗ Claude fallback в парсерах - только для аудита!
+"""
+from pathlib import Path
+import logging
+from typing import Dict, Any, List, Optional
+import json
+
+from app.core.claude_client import ClaudeClient
+from app.core.config import settings
+
+# ✅ Импортируем SmartParser или отдельные парсеры
+from app.parsers import SmartParser  # Рекомендуемый вариант
+# ИЛИ:
+# from app.parsers import KROSParser, PDFParser, ExcelParser
+
+logger = logging.getLogger(__name__)
+
+
+class WorkflowA:
+    """
+    Simplified Workflow A: Import ALL positions, user selects what to analyze
+    
+    New workflow:
+    1. Import all positions without limitations (БЕЗ Claude - бесплатно!)
+    2. Display positions with checkboxes
+    3. User selects positions to analyze
+    4. Analyze only selected positions (С Claude - платно!)
+    
+    NOW WITH: Specialized parsers WITHOUT Claude fallback
+    """
+    
+    def __init__(self):
+        self.kb_dir = settings.KB_DIR
+        
+        # ✅ ПРАВИЛЬНО: SmartParser БЕЗ параметров
+        self.smart_parser = SmartParser()
+        
+        # ИЛИ если хотите прямой доступ к парсерам:
+        # self.kros_parser = KROSParser()
+        # self.pdf_parser = PDFParser()
+        # self.excel_parser = ExcelParser()
+        
+        # ❌ УДАЛЕНО: Все строки про nanonets и mineru
+        # self.nanonets = None
+        # self.mineru = None
+        # if settings.NANONETS_API_KEY: ...
+    
+    async def import_and_prepare(
+        self,
+        file_path: Path,
+        project_name: str
+    ) -> Dict[str, Any]:
+        """
+        Import ALL positions from document without limitations
+        ✅ БЕЗ Claude - парсинг бесплатный!
+        
+        Args:
+            file_path: Path to document file
+            project_name: Name of the project
+        
+        Returns:
+            Dict with all imported positions
+        """
+        try:
+            logger.info(f"Importing positions from: {file_path}")
+            
+            file_format = self._detect_format(file_path)
+            logger.info(f"Detected file format: {file_format}")
+            
+            # ✅ Используем SmartParser - он сам выберет оптимальный метод
+            positions = await self._parse_document(file_path, file_format)
+            logger.info(f"Imported {len(positions)} positions")
+            
+            if not positions:
+                logger.warning("No positions found in document!")
+                return {
+                    "success": False,
+                    "error": "No positions found in document",
+                    "positions": []
+                }
+            
+            # Add index and selected flag
+            for idx, pos in enumerate(positions):
+                pos['index'] = idx
+                pos['selected'] = False
+            
+            return {
+                "success": True,
+                "project_name": project_name,
+                "total_positions": len(positions),
+                "positions": positions,
+                "file_format": file_format,
+                "project_context": {
+                    "file_name": file_path.name,
+                    "project_name": project_name
+                }
+            }
+        
+        except Exception as e:
+            logger.error(f"Import failed: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e),
+                "positions": []
+            }
+    
+    async def analyze_selected_positions(
+        self,
+        positions: List[Dict[str, Any]],
+        selected_indices: List[int],
+        project_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Analyze only selected positions
+        ✅ С Claude - платный аудит!
+        """
+        try:
+            logger.info(f"Analyzing {len(selected_indices)} selected positions")
+            
+            selected_positions = [positions[i] for i in selected_indices if i < len(positions)]
+            
+            if not selected_positions:
+                return {
+                    "success": False,
+                    "error": "No valid positions selected",
+                    "results": []
+                }
+            
+            # Load knowledge base
+            kb_data = self._load_knowledge_base()
+            logger.info(f"Loaded KB with {len(kb_data)} categories")
+            
+            results = []
+            for idx, position in enumerate(selected_positions, 1):
+                logger.info(f"Analyzing position {idx}/{len(selected_positions)}")
+                
+                try:
+                    # ✅ Аудит С Claude - это платная часть
+                    audit_result = await self._audit_position(position, kb_data, project_context)
+                    results.append(audit_result)
+                except Exception as e:
+                    logger.error(f"Failed to audit position {idx}: {e}")
+                    results.append({
+                        "position": position,
+                        "status": "ERROR",
+                        "error": str(e),
+                        "classification": "RED",
+                        "hitl_required": True
+                    })
+            
+            return {
+                "success": True,
+                "total_analyzed": len(results),
+                "results": results
+            }
+            
+        except Exception as e:
+            logger.error(f"Analysis failed: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e),
+                "results": []
+            }
+    
+    def _detect_format(self, file_path: Path) -> str:
+        """Detect file format by extension"""
+        suffix = file_path.suffix.lower()
+        
+        if suffix in ['.xlsx', '.xls']:
+            return 'excel'
+        elif suffix == '.pdf':
+            return 'pdf'
+        elif suffix == '.xml':
+            return 'xml'
+        else:
+            raise ValueError(f"Unsupported file format: {suffix}")
+    
+    async def _parse_document(
+        self,
+        file_path: Path,
+        file_format: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Parse document using specialized parsers
+        ✅ БЕЗ Claude - парсинг бесплатный!
+        """
+        try:
+            logger.info(f"Parsing {file_format} document with specialized parser")
+            
+            # ✅ SmartParser автоматически выберет оптимальный метод
+            if file_format == 'excel':
+                result = self.smart_parser.parse_excel(file_path)
+            elif file_format == 'xml':
+                result = self.smart_parser.parse_xml(file_path)
+            elif file_format == 'pdf':
+                result = self.smart_parser.parse_pdf(file_path)
+            else:
+                raise ValueError(f"Unsupported format: {file_format}")
+            
+            positions = result.get('positions', [])
+            logger.info(f"Parsed {len(positions)} positions")
+            
+            # Validate positions
+            valid_positions = []
+            for pos in positions:
+                if self._is_valid_position(pos):
+                    valid_positions.append(pos)
+                else:
+                    logger.warning(f"Skipping invalid position")
+            
+            logger.info(f"{len(valid_positions)} valid positions after validation")
+            return valid_positions
+        
+        except Exception as e:
+            logger.error(f"Failed to parse document: {e}", exc_info=True)
+            # ✅ Просто выбрасываем ошибку - БЕЗ Claude fallback!
+            raise
+    
+    def _is_valid_position(self, position: Dict[str, Any]) -> bool:
+        """Check if position has required fields"""
+        return 'description' in position and position['description']
+    
+    def _load_knowledge_base(self) -> Dict[str, Any]:
+        """Load knowledge base data"""
+        kb_data = {}
+        
+        # B1: KROS/URS codes
+        b1_path = self.kb_dir / "B1_kros_urs_codes"
+        if b1_path.exists():
+            kb_data['codes'] = self._load_category(b1_path)
+        
+        # B2: CSN standards
+        b2_path = self.kb_dir / "B2_csn_standards"
+        if b2_path.exists():
+            kb_data['standards'] = self._load_category(b2_path)
+        
+        # B3: Current prices
+        b3_path = self.kb_dir / "B3_current_prices"
+        if b3_path.exists():
+            kb_data['prices'] = self._load_category(b3_path)
+        
+        return kb_data
+    
+    def _load_category(self, category_path: Path) -> List[Dict[str, Any]]:
+        """Load JSON files from category directory"""
+        data = []
+        
+        for json_file in category_path.glob("*.json"):
+            if json_file.name == "metadata.json":
+                continue
+            try:
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    content = json.load(f)
+                    if isinstance(content, list):
+                        data.extend(content)
+                    else:
+                        data.append(content)
+            except Exception as e:
+                logger.warning(f"Failed to load {json_file}: {e}")
+        
+        return data
+    
+    async def _audit_position(
+        self,
+        position: Dict[str, Any],
+        kb_data: Dict[str, Any],
+        project_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Audit single position using Claude
+        ✅ С Claude - платная часть!
+        """
+        try:
+            prompt = self._build_audit_prompt(position, kb_data, project_context)
+            
+            # ✅ Используем Claude для аудита
+            claude = ClaudeClient()
+            result = claude.call(prompt)
+            
+            result['position'] = position
+            result.setdefault('classification', 'AMBER')
+            result.setdefault('hitl_required', False)
+            
+            if result['classification'] == 'RED':
+                result['hitl_required'] = True
+            
+            return result
+        
+        except Exception as e:
+            logger.error(f"Audit failed for position: {e}")
+            return {
+                "position": position,
+                "status": "ERROR",
+                "error": str(e),
+                "classification": "RED",
+                "hitl_required": True
+            }
+    
+    def _build_audit_prompt(
+        self,
+        position: Dict[str, Any],
+        kb_data: Dict[str, Any],
+        project_context: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """Build audit prompt for Claude"""
+        prompt = f"""Analyzuj tuto pozici stavebniho vykazu vymer a proved audit.
+
+===== POZICE K AUDITU =====
+{json.dumps(position, ensure_ascii=False, indent=2)}
+
+===== KNOWLEDGE BASE =====
+Dostupne kody KROS/URS: {len(kb_data.get('codes', []))} polozek
+Dostupne CSN standardy: {len(kb_data.get('standards', []))} polozek
+Aktualni ceny: {len(kb_data.get('prices', []))} polozek
+
+===== UKOL =====
+1. Zkontroluj kod pozice (KROS/URS)
+2. Zkontroluj popis a jednotku
+3. Zkontroluj cenu (pokud je uvedena)
+4. Zkontroluj mnozstvi (pokud je uvedeno)
+5. Identifikuj pripadne problemy
+
+===== VYSTUP =====
+Vrat JSON:
+{{
+  "classification": "GREEN/AMBER/RED",
+  "issues": ["seznam problemu"],
+  "recommendations": ["doporuceni"],
+  "price_check": "OK/WARNING/ERROR",
+  "code_check": "OK/WARNING/ERROR",
+  "notes": "poznamky"
+}}
+
+Vrat POUZE JSON, bez markdown.
+"""
+        
+        if project_context:
+            prompt += f"\n\n===== KONTEXT PROJEKTU =====\n{json.dumps(project_context, ensure_ascii=False, indent=2)}\n"
+        
+        return prompt
+    
+    # ... остальные методы без изменений ..."""
+Workflow A: Import and Audit Construction Estimates
+Simplified version - user selects positions to analyze
+WITH specialized parsers for better accuracy
 """
 from pathlib import Path
 import logging
