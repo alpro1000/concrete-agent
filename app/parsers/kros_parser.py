@@ -4,7 +4,7 @@ KROS XML Parser
 
 Поддерживает:
 - KROS Table XML (с ценами)
-- KROS UNIXML (без цен)
+- KROS UNIXML (без цен) - УЛУЧШЕННАЯ ПОДДЕРЖКА
 - Старые форматы KROS
 """
 import xml.etree.ElementTree as ET
@@ -21,6 +21,7 @@ class KROSParser:
     
     ✅ БЕЗ Claude/Nanonets fallback
     ✅ Прямой XML parsing
+    ✅ Улучшенная поддержка разных структур UNIXML
     """
     
     def __init__(self):
@@ -53,7 +54,7 @@ class KROSParser:
         
         # Parse based on format
         if xml_format == "KROS_UNIXML":
-            return self._parse_unixml(xml_content)
+            return self._parse_unixml(xml_content, xml_path)
         elif xml_format == "KROS_TABLE":
             return self._parse_table_xml(xml_content)
         else:
@@ -70,9 +71,10 @@ class KROSParser:
         else:
             return "GENERIC"
     
-    def _parse_unixml(self, xml_content: str) -> Dict[str, Any]:
+    def _parse_unixml(self, xml_content: str, xml_path: Path) -> Dict[str, Any]:
         """
         Parse KROS UNIXML format (Soupis prací)
+        ✅ УЛУЧШЕНО: Поддержка разных структур
         """
         logger.info("Parsing KROS UNIXML format")
         
@@ -81,20 +83,55 @@ class KROSParser:
             positions = []
             sections = []
             
-            # Find all sections
-            body = root.find('.//body')
-            if body is None:
-                raise ValueError("No <body> found in UNIXML")
+            # ✅ НОВОЕ: Попробовать разные пути к данным
             
-            for section in body.findall('section'):
-                section_info = self._parse_unixml_section(section)
-                sections.append(section_info)
+            # Вариант 1: Классическая структура с <body>
+            body = root.find('.//body')
+            if body is not None:
+                logger.info("  Found <body> structure")
+                for section in body.findall('section'):
+                    section_info = self._parse_unixml_section(section)
+                    sections.append(section_info)
+                    
+                    for item in section.findall('.//item'):
+                        position = self._parse_unixml_item(item, section_info)
+                        if position:
+                            positions.append(position)
+            
+            # Вариант 2: Прямые <item> без <body>
+            elif root.findall('.//item'):
+                logger.info("  Found direct <item> structure (no <body>)")
+                all_items = root.findall('.//item')
                 
-                # Extract items from section
-                for item in section.findall('.//item'):
-                    position = self._parse_unixml_item(item, section_info)
-                    if position:
-                        positions.append(position)
+                # Попробовать найти sections
+                all_sections = root.findall('.//section')
+                if all_sections:
+                    for section in all_sections:
+                        section_info = self._parse_unixml_section(section)
+                        sections.append(section_info)
+                        
+                        # Найти items внутри этой section
+                        for item in section.findall('.//item'):
+                            position = self._parse_unixml_item(item, section_info)
+                            if position:
+                                positions.append(position)
+                else:
+                    # Нет sections - парсим все items как есть
+                    default_section = {"name": "Unknown", "code": ""}
+                    for item in all_items:
+                        position = self._parse_unixml_item(item, default_section)
+                        if position:
+                            positions.append(position)
+            
+            # Вариант 3: Другие структуры - ищем по всем элементам
+            else:
+                logger.warning("  ⚠️  Non-standard UNIXML structure, trying generic approach")
+                # Попробовать найти любые элементы похожие на позиции
+                for elem in root.iter():
+                    if self._looks_like_position_element(elem):
+                        position = self._extract_position_from_element(elem)
+                        if position:
+                            positions.append(position)
             
             # Extract document info
             doc_info = self._parse_unixml_header(root)
@@ -108,11 +145,98 @@ class KROSParser:
             }
             
             logger.info(f"✅ Parsed {len(positions)} positions from UNIXML")
+            
+            if not positions:
+                logger.warning("⚠️  No positions found - check XML structure")
+                # Вывести структуру для отладки
+                self._debug_xml_structure(root)
+            
             return result
             
         except Exception as e:
-            logger.error(f"Failed to parse UNIXML: {e}")
+            logger.error(f"Failed to parse UNIXML: {e}", exc_info=True)
             raise
+    
+    def _looks_like_position_element(self, elem: ET.Element) -> bool:
+        """Check if element looks like a position"""
+        # Проверить имя тега
+        tag_name = elem.tag.lower()
+        if any(keyword in tag_name for keyword in ['item', 'position', 'polozka', 'row']):
+            return True
+        
+        # Проверить наличие дочерних элементов с типичными полями
+        children_tags = {child.tag.lower() for child in elem}
+        position_tags = {'code', 'name', 'description', 'popis', 'kod', 'quantity', 'mnozstvi', 'unit', 'mj'}
+        
+        return len(children_tags & position_tags) >= 2
+    
+    def _extract_position_from_element(self, elem: ET.Element) -> Optional[Dict[str, Any]]:
+        """Extract position data from generic element"""
+        try:
+            position = {}
+            
+            for child in elem:
+                tag = child.tag.lower()
+                text = child.text or ''
+                
+                # Код
+                if any(kw in tag for kw in ['code', 'kod']):
+                    position['code'] = text
+                
+                # Описание
+                elif any(kw in tag for kw in ['name', 'description', 'popis', 'nazev']):
+                    position['description'] = text
+                
+                # Единица
+                elif any(kw in tag for kw in ['unit', 'mj', 'jednotka']):
+                    position['unit'] = text
+                
+                # Количество
+                elif any(kw in tag for kw in ['quantity', 'mnozstvi', 'pocet']):
+                    position['quantity'] = self._parse_float(text)
+                
+                # Цены
+                elif 'price' in tag or 'cena' in tag:
+                    if 'unit' in tag or 'jednotkova' in tag:
+                        position['unit_price'] = self._parse_float(text)
+                    elif 'total' in tag or 'celkem' in tag:
+                        position['total_price'] = self._parse_float(text)
+            
+            # Вернуть только если есть хоть что-то осмысленное
+            if position.get('description') or position.get('code'):
+                return position
+            
+            return None
+            
+        except Exception as e:
+            logger.debug(f"Failed to extract position from element: {e}")
+            return None
+    
+    def _debug_xml_structure(self, root: ET.Element, max_depth: int = 3):
+        """
+        Вывести структуру XML для отладки
+        Помогает понять почему не нашли позиции
+        """
+        logger.debug("📊 XML Structure (first 3 levels):")
+        
+        def log_tree(elem: ET.Element, depth: int = 0, max_items: int = 3):
+            if depth > max_depth:
+                return
+            
+            indent = "  " * depth
+            
+            # Показать тег и количество детей
+            children_count = len(list(elem))
+            logger.debug(f"{indent}<{elem.tag}> ({children_count} children)")
+            
+            # Показать первых max_items детей
+            for i, child in enumerate(elem):
+                if i >= max_items:
+                    logger.debug(f"{indent}  ... and {children_count - max_items} more")
+                    break
+                log_tree(child, depth + 1, max_items)
+        
+        log_tree(root)
     
     def _parse_table_xml(self, xml_content: str) -> Dict[str, Any]:
         """
@@ -183,9 +307,17 @@ class KROSParser:
     
     def _parse_unixml_section(self, section: ET.Element) -> Dict[str, Any]:
         """Extract section info from UNIXML"""
+        # Попробовать найти header разными способами
         header = section.find('header')
         if header is None:
-            return {"name": "Unknown", "code": ""}
+            header = section.find('Header')
+        if header is None:
+            # Может section сам содержит атрибуты
+            return {
+                "name": section.get('name', 'Unknown Section'),
+                "code": section.get('code', ''),
+                "description": section.get('description', '')
+            }
         
         return {
             "name": self._get_element_text(header, 'name', 'Unknown Section'),
@@ -194,15 +326,45 @@ class KROSParser:
         }
     
     def _parse_unixml_item(self, item: ET.Element, section_info: Dict) -> Optional[Dict[str, Any]]:
-        """Extract position from UNIXML item"""
+        """
+        Extract position from UNIXML item
+        ✅ Улучшенная логика извлечения
+        """
         try:
+            # Попробовать разные варианты полей
+            code = (self._get_element_text(item, 'code', '') or 
+                   self._get_element_text(item, 'Code', '') or
+                   self._get_element_text(item, 'kod', ''))
+            
+            description = (self._get_element_text(item, 'name', '') or
+                         self._get_element_text(item, 'Name', '') or
+                         self._get_element_text(item, 'description', '') or
+                         self._get_element_text(item, 'popis', ''))
+            
+            unit = (self._get_element_text(item, 'unit', '') or
+                   self._get_element_text(item, 'Unit', '') or
+                   self._get_element_text(item, 'mj', '') or
+                   self._get_element_text(item, 'MJ', ''))
+            
+            quantity = (self._get_element_float(item, 'quantity', 0.0) or
+                       self._get_element_float(item, 'Quantity', 0.0) or
+                       self._get_element_float(item, 'mnozstvi', 0.0))
+            
+            unit_price = (self._get_element_float(item, 'unit_price', 0.0) or
+                         self._get_element_float(item, 'unitPrice', 0.0) or
+                         self._get_element_float(item, 'UnitPrice', 0.0))
+            
+            total_price = (self._get_element_float(item, 'total_price', 0.0) or
+                          self._get_element_float(item, 'totalPrice', 0.0) or
+                          self._get_element_float(item, 'TotalPrice', 0.0))
+            
             position = {
-                "code": self._get_element_text(item, 'code', ''),
-                "description": self._get_element_text(item, 'name', ''),
-                "unit": self._get_element_text(item, 'unit', ''),
-                "quantity": self._get_element_float(item, 'quantity', 0.0),
-                "unit_price": self._get_element_float(item, 'unit_price', 0.0),
-                "total_price": self._get_element_float(item, 'total_price', 0.0),
+                "code": code,
+                "description": description,
+                "unit": unit,
+                "quantity": quantity,
+                "unit_price": unit_price,
+                "total_price": total_price,
                 "section": section_info.get("name", ""),
                 "section_code": section_info.get("code", "")
             }
@@ -253,7 +415,13 @@ class KROSParser:
     
     def _parse_unixml_header(self, root: ET.Element) -> Dict[str, Any]:
         """Extract document info from UNIXML header"""
+        # Попробовать найти header разными способами
         header = root.find('.//global_header')
+        if header is None:
+            header = root.find('.//GlobalHeader')
+        if header is None:
+            header = root.find('.//header')
+        
         if header is None:
             return {"document_type": "KROS UNIXML"}
         
@@ -274,7 +442,7 @@ class KROSParser:
         
         # Check for common position field names
         child_tags = {child.tag.lower() for child in children}
-        position_keywords = {'code', 'name', 'description', 'quantity', 'unit', 'price', 'item'}
+        position_keywords = {'code', 'name', 'description', 'quantity', 'unit', 'price', 'item', 'popis', 'kod', 'mj'}
         
         return len(child_tags & position_keywords) >= 2
     
