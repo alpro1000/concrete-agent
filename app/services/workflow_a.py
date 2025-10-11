@@ -215,8 +215,31 @@ class WorkflowA:
             raise
     
     def _is_valid_position(self, position: Dict[str, Any]) -> bool:
-        """Check if position has required fields"""
-        return 'description' in position and position['description']
+        """
+        Check if position has required fields
+        ✅ Более гибкая валидация для разных форматов
+        """
+        # Проверить наличие description
+        has_description = 'description' in position and position['description']
+        
+        # Если нет description, но есть другие поля - тоже валидно
+        has_code = 'code' in position and position['code']
+        has_quantity = 'quantity' in position and position['quantity']
+        
+        # Позиция валидна если:
+        # 1. Есть description, ИЛИ
+        # 2. Есть и code и quantity (даже без description)
+        is_valid = has_description or (has_code and has_quantity)
+        
+        # Дебаг логирование для первых 3 невалидных позиций
+        if not is_valid and not hasattr(self, '_debug_logged_count'):
+            self._debug_logged_count = 0
+        
+        if not is_valid and self._debug_logged_count < 3:
+            self._debug_logged_count += 1
+            logger.debug(f"❌ Invalid position #{self._debug_logged_count}: {position}")
+        
+        return is_valid
     
     def _load_knowledge_base(self) -> Dict[str, Any]:
         """Load knowledge base data"""
