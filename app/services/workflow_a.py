@@ -12,8 +12,8 @@ import json
 from app.core.claude_client import ClaudeClient
 from app.core.config import settings
 
-# ✅ Импортируем SmartParser
-from app.parsers import SmartParser
+# ✅ Импортируем И SmartParser И отдельные парсеры
+from app.parsers import SmartParser, KROSParser, PDFParser, ExcelParser
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +35,13 @@ class WorkflowA:
         """Initialize Workflow A"""
         self.kb_dir = settings.KB_DIR
         
-        # ✅ ПРАВИЛЬНО: SmartParser БЕЗ параметров
+        # ✅ ПРАВИЛЬНО: И SmartParser И отдельные парсеры
         self.smart_parser = SmartParser()
+        
+        # ✅ Отдельные парсеры БЕЗ параметров (для прямого доступа)
+        self.kros_parser = KROSParser()
+        self.pdf_parser = PDFParser()
+        self.excel_parser = ExcelParser()
     
     async def import_and_prepare(
         self,
@@ -180,7 +185,7 @@ class WorkflowA:
         try:
             logger.info(f"Parsing {file_format} document with specialized parser")
             
-            # ✅ SmartParser автоматически выберет оптимальный метод
+            # ✅ SmartParser автоматически выберет оптимальный метод (стандартный vs streaming)
             if file_format == 'excel':
                 result = self.smart_parser.parse_excel(file_path)
             elif file_format == 'xml':
@@ -616,8 +621,8 @@ Vrat POUZE JSON, bez markdown.
         
         if drawing_path.suffix.lower() == '.pdf':
             try:
-                # ✅ Use SmartParser for PDF
-                result = self.smart_parser.parse_pdf(drawing_path)
+                # ✅ Используем ПРЯМОЙ парсер для чертежей
+                result = self.pdf_parser.parse(drawing_path)
                 drawing_data["text"] = result.get("raw_text", "")
                 drawing_data["metadata"] = result.get("document_info", {})
             except Exception as e:
