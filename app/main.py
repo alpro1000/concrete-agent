@@ -69,14 +69,19 @@ async def startup_event():
         from app.core.kb_loader import init_kb_loader
 
         kb_loader = init_kb_loader()
-        logger.info(f"✅ Knowledge Base loaded: {len(kb_loader.data)} categories")
-        
-        # Log each category
-        for category, (data, metadata) in kb_loader.data.items():
-            if isinstance(data, list):
-                logger.info(f"   - {category}: {len(data)} items")
+        logger.info(
+            "✅ Knowledge Base loaded: %s datasets",
+            len(kb_loader.datasets),
+        )
+
+        # Log each dataset summary
+        for key, dataset in kb_loader.datasets.items():
+            if isinstance(dataset, list):
+                logger.info("   - %s: %s items", key, len(dataset))
+            elif isinstance(dataset, dict):
+                logger.info("   - %s: %s keys", key, len(dataset))
             else:
-                logger.info(f"   - {category}: loaded")
+                logger.info("   - %s: %s", key, type(dataset).__name__)
                 
     except Exception as e:
         logger.error(f"⚠️  KB loading failed: {str(e)}")
