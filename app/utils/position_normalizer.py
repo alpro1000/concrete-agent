@@ -3,7 +3,7 @@ Universal Position Normalizer
 Конвертирует позиции из любого формата в стандартный
 """
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 import re
 
 logger = logging.getLogger(__name__)
@@ -11,6 +11,13 @@ logger = logging.getLogger(__name__)
 
 class PositionNormalizer:
     """Normalize positions from different sources into standard format"""
+
+    # Track statistics from the last normalization run
+    last_stats: Dict[str, int] = {
+        "raw_total": 0,
+        "normalized_total": 0,
+        "skipped_total": 0,
+    }
     
     # Mapping различных вариантов названий полей к стандартным
     FIELD_MAPPING = {
@@ -232,7 +239,11 @@ class PositionNormalizer:
         return has_description and has_quantity
     
     @classmethod
-    def normalize_list(cls, positions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def normalize_list(
+        cls,
+        positions: List[Dict[str, Any]],
+        return_stats: bool = False
+    ) -> List[Dict[str, Any]] | Tuple[List[Dict[str, Any]], Dict[str, int]]:
         """
         Normalize a list of positions
         
@@ -255,18 +266,29 @@ class PositionNormalizer:
             else:
                 skipped += 1
                 logger.debug(f"Skipped position {idx + 1}: {str(pos)[:100]}")
-        
+
         logger.info(
             f"Normalized {len(normalized)} positions "
             f"({skipped} invalid/skipped)"
         )
-        
+
         if skipped > 0:
             logger.warning(
                 f"⚠️ {skipped} positions were skipped during normalization. "
                 f"Check logs for details."
             )
-        
+
+        stats = {
+            "raw_total": len(positions),
+            "normalized_total": len(normalized),
+            "skipped_total": skipped,
+        }
+
+        cls.last_stats = stats
+
+        if return_stats:
+            return normalized, stats
+
         return normalized
 
 
@@ -284,14 +306,17 @@ def normalize_position(position: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return PositionNormalizer.normalize(position)
 
 
-def normalize_positions(positions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def normalize_positions(
+    positions: List[Dict[str, Any]],
+    return_stats: bool = False
+) -> List[Dict[str, Any]] | Tuple[List[Dict[str, Any]], Dict[str, int]]:
     """
     Convenience function to normalize a list of positions
     
     Usage:
         normalized = normalize_positions(raw_positions)
     """
-    return PositionNormalizer.normalize_list(positions)
+    return PositionNormalizer.normalize_list(positions, return_stats=return_stats)
 
 
 # ==============================================================================

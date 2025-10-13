@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse
 from app.core.config import settings
 from app.services.workflow_a import WorkflowA
 from app.services.workflow_b import WorkflowB
+from app.state.project_store import project_store
 from app.models.project import (
     Project,
     ProjectStatus,
@@ -36,10 +37,6 @@ ALLOWED_EXTENSIONS = {
     'vykresy': {'.pdf', '.dwg', '.dxf', '.png', '.jpg', '.jpeg', '.txt'},
     'dokumentace': {'.pdf', '.doc', '.docx', '.xlsx', '.xls', '.txt', '.csv'},
 }
-
-# In-memory project store
-project_store: Dict[str, Dict[str, Any]] = {}
-
 
 def create_safe_file_metadata(
     file_path: Path,
@@ -350,6 +347,14 @@ async def upload_project(
             "created_at": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat(),
             "enable_enrichment": enable_enrichment,  # ✨ NEW
+            "progress": 0,
+            "positions_total": 0,
+            "positions_processed": 0,
+            "positions_raw": 0,
+            "positions_skipped": 0,
+            "diagnostics": {},
+            "message": f"Project uploaded successfully. ID: {project_id}",
+            "error": None,
             "files": {
                 "vykaz_vymer": vykaz_vymer_meta.model_dump() if vykaz_vymer_meta else None,
                 "rozpocet": rozpocet_meta.model_dump() if rozpocet_meta else None,
@@ -394,6 +399,7 @@ async def upload_project(
             "workflow": workflow,
             "status": ProjectStatus.UPLOADED,
             "uploaded_at": datetime.now().isoformat(),
+            "progress": 0,
             "files_uploaded": {
                 "vykaz_vymer": vykaz_vymer_meta is not None,
                 "vykresy": len(vykresy_files),
@@ -403,7 +409,11 @@ async def upload_project(
             },
             "enrichment_enabled": enable_enrichment,  # ✨ NEW
             "files": safe_files,
-            "message": f"Project uploaded successfully. ID: {project_id}"
+            "message": f"Project uploaded successfully. ID: {project_id}",
+            "diagnostics": project_store[project_id].get("diagnostics", {}),
+            "positions_total": 0,
+            "positions_raw": 0,
+            "positions_skipped": 0
         }
     
     except HTTPException:
@@ -421,7 +431,7 @@ async def get_project_status(project_id: str):
         raise HTTPException(404, f"Project {project_id} not found")
     
     project = project_store[project_id]
-    
+
     return {
         "project_id": project_id,
         "project_name": project["project_name"],
@@ -431,7 +441,14 @@ async def get_project_status(project_id: str):
         "updated_at": project["updated_at"],
         "progress": project.get("progress", 0),
         "positions_total": project.get("positions_total", 0),
-        "positions_processed": project.get("positions_processed", 0)
+        "positions_processed": project.get("positions_processed", 0),
+        "positions_raw": project.get("positions_raw", 0),
+        "positions_skipped": project.get("positions_skipped", 0),
+        "diagnostics": project.get("diagnostics", {}),
+        "message": project.get("message"),
+        "error": project.get("error"),
+        "error_message": project.get("error"),
+        "enrichment_enabled": project.get("enable_enrichment")
     }
 
 
@@ -465,7 +482,8 @@ async def get_project_results(project_id: str):
         "completed_at": project.get("completed_at"),
         "enrichment_enabled": project.get("enable_enrichment", False),
         "audit_results": project.get("audit_results", {}),
-        "summary": project.get("summary", "")
+        "summary": project.get("summary", ""),
+        "diagnostics": project.get("diagnostics", {})
     }
 
 

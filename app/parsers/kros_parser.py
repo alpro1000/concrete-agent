@@ -48,23 +48,32 @@ class KROSParser:
                 positions = self._parse_generic(root)
             
             logger.info(f"Extracted {len(positions)} raw positions from KROS XML")
-            
-            # Normalize positions
-            normalized_positions = normalize_positions(positions)
-            
-            logger.info(
-                f"✅ KROS XML parsed: {len(normalized_positions)} valid positions"
+
+            # Normalize positions and capture statistics
+            normalized_positions, normalization_stats = normalize_positions(
+                positions,
+                return_stats=True
             )
-            
+
+            logger.info(
+                f"✅ KROS XML parsed: {normalization_stats['normalized_total']} valid positions"
+            )
+
             return {
                 "document_info": {
                     "filename": file_path.name,
                     "format": "kros_xml",
                     "kros_format": kros_format
                 },
-                "positions": normalized_positions
+                "positions": normalized_positions,
+                "diagnostics": {
+                    "raw_total": normalization_stats["raw_total"],
+                    "normalized_total": normalization_stats["normalized_total"],
+                    "skipped_total": normalization_stats["skipped_total"],
+                    "kros_format": kros_format
+                }
             }
-            
+
         except Exception as e:
             logger.error(f"❌ KROS XML parsing failed: {str(e)}", exc_info=True)
             return {
@@ -73,7 +82,13 @@ class KROSParser:
                     "format": "kros_xml",
                     "error": str(e)
                 },
-                "positions": []
+                "positions": [],
+                "diagnostics": {
+                    "raw_total": 0,
+                    "normalized_total": 0,
+                    "skipped_total": 0,
+                    "kros_format": kros_format
+                }
             }
     
     @staticmethod

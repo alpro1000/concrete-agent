@@ -12,8 +12,9 @@ from app.parsers.smart_parser import SmartParser
 from app.parsers.drawing_specs_parser import DrawingSpecsParser
 from app.services.position_enricher import PositionEnricher
 from app.services.specifications_validator import SpecificationsValidator
-from app.utils.position_normalizer import normalize_positions
 from app.core.config import settings
+from app.models.project import ProjectStatus
+from app.state.project_store import project_store
 
 logger = logging.getLogger(__name__)
 
@@ -68,12 +69,55 @@ class WorkflowA:
             
             # Step 1: Parse výkaz výměr
             logger.info("Step 1: Parsing výkaz výměr...")
-            positions = await self._parse_vykaz_vymer(project_dir)
-            
+            parse_result = await self._parse_vykaz_vymer(project_dir)
+            positions = parse_result["positions"]
+            parsing_diagnostics = parse_result["diagnostics"]
+
             if not positions:
-                raise ValueError("No positions found in výkaz výměr")
-            
+                message = (
+                    "No positions found in výkaz výměr"
+                    f" (raw={parsing_diagnostics.get('raw_total', 0)}, "
+                    f"skipped={parsing_diagnostics.get('skipped_total', 0)})"
+                )
+                logger.warning(message)
+                self._update_project_record(
+                    project_id,
+                    status=ProjectStatus.FAILED,
+                    progress=100,
+                    positions_total=0,
+                    positions_processed=0,
+                    positions_raw=parsing_diagnostics.get('raw_total', 0),
+                    positions_skipped=parsing_diagnostics.get('skipped_total', 0),
+                    diagnostics={"parsing": parsing_diagnostics},
+                    message=message,
+                    error=message
+                )
+                return {
+                    "project_id": project_id,
+                    "status": "FAILED",
+                    "workflow": "A",
+                    "success": False,
+                    "error": message,
+                    "diagnostics": {
+                        "parsing": parsing_diagnostics
+                    },
+                    "positions_total": 0,
+                    "positions_raw": parsing_diagnostics.get('raw_total', 0),
+                    "positions_skipped": parsing_diagnostics.get('skipped_total', 0)
+                }
+
             logger.info(f"Parsed {len(positions)} positions from výkaz výměr")
+            self._update_project_record(
+                project_id,
+                status=ProjectStatus.PROCESSING,
+                progress=30,
+                positions_total=len(positions),
+                positions_processed=len(positions),
+                positions_raw=parsing_diagnostics.get('raw_total', len(positions)),
+                positions_skipped=parsing_diagnostics.get('skipped_total', 0),
+                diagnostics={"parsing": parsing_diagnostics},
+                message="Výkaz výměr parsed successfully"
+            )
             
             # Step 2: Parse drawings (if enrichment enabled)
             drawing_specs = []
@@ -107,9 +151,32 @@ class WorkflowA:
             if generate_summary:
                 logger.info("Step 6: Generating summary...")
                 summary = self._generate_enhanced_summary(audit_results, enable_enrichment)
-            
+
             logger.info(f"✅ Workflow A completed for project {project_id}")
-            
+
+            self._update_project_record(
+                project_id,
+                status=ProjectStatus.COMPLETED,
+                progress=100,
+                positions_total=len(positions),
+                positions_processed=len(positions),
+                positions_raw=parsing_diagnostics.get('raw_total', len(positions)),
+                positions_skipped=parsing_diagnostics.get('skipped_total', 0),
+                drawing_specs_count=len(drawing_specs),
+                audit_results=audit_results,
+                summary=summary,
+                completed_at=datetime.now().isoformat(),
+                message="Workflow A completed successfully",
+                error=None,
+                diagnostics={
+                    "parsing": parsing_diagnostics,
+                    "drawing_enrichment": {
+                        "enabled": enable_enrichment,
+                        "drawing_specs_count": len(drawing_specs)
+                    }
+                }
+            )
+
             return {
                 "project_id": project_id,
                 "status": "COMPLETED",
@@ -119,11 +186,25 @@ class WorkflowA:
                 "drawing_specs_count": len(drawing_specs),
                 "audit_results": audit_results,
                 "summary": summary,
-                "completed_at": datetime.now().isoformat()
+                "completed_at": datetime.now().isoformat(),
+                "diagnostics": {
+                    "parsing": parsing_diagnostics,
+                    "drawing_enrichment": {
+                        "enabled": enable_enrichment,
+                        "drawing_specs_count": len(drawing_specs)
+                    }
+                }
             }
-            
+
         except Exception as e:
             logger.error(f"❌ Workflow A failed: {str(e)}", exc_info=True)
+            self._update_project_record(
+                project_id,
+                status=ProjectStatus.FAILED,
+                progress=100,
+                error=str(e),
+                message=str(e)
+            )
             return {
                 "project_id": project_id,
                 "status": "FAILED",
@@ -131,8 +212,8 @@ class WorkflowA:
                 "error": str(e),
                 "positions_count": 0
             }
-    
-    async def _parse_vykaz_vymer(self, project_dir: Path) -> List[Dict[str, Any]]:
+
+    async def _parse_vykaz_vymer(self, project_dir: Path) -> Dict[str, Any]:
         """
         Parse výkaz výměr documents
         
@@ -140,7 +221,7 @@ class WorkflowA:
             project_dir: Project directory
             
         Returns:
-            List of normalized positions
+            Dict with normalized positions and diagnostics
         """
         vykaz_dir = project_dir / "vykaz_vymer"
         
@@ -153,29 +234,68 @@ class WorkflowA:
             raise FileNotFoundError(f"No files found in {vykaz_dir}")
         
         all_positions: List[Dict[str, Any]] = []
-        
+        diagnostics = {
+            "files": [],
+            "raw_total": 0,
+            "normalized_total": 0,
+            "skipped_total": 0
+        }
+
         for file_path in vykaz_files:
             logger.info(f"Parsing: {file_path.name}")
-            
+
             result = self.parser.parse(file_path)
-            
-            if result and result.get('positions'):
-                positions = result['positions']
-                logger.info(f"Got {len(positions)} positions from {file_path.name}")
-                all_positions.extend(positions)
+            file_positions = result.get('positions') or []
+            file_diagnostics = result.get('diagnostics', {})
+
+            raw_count = file_diagnostics.get('raw_total')
+            normalized_count = file_diagnostics.get('normalized_total', len(file_positions))
+            skipped_count = file_diagnostics.get('skipped_total')
+
+            if raw_count is None:
+                raw_count = len(file_positions)
+            if skipped_count is None:
+                skipped_count = max(raw_count - normalized_count, 0)
+
+            diagnostics['files'].append({
+                "filename": file_path.name,
+                "raw_total": raw_count,
+                "normalized_total": normalized_count,
+                "skipped_total": skipped_count,
+                "details": file_diagnostics.get('sheet_summaries') or file_diagnostics
+            })
+
+            diagnostics['raw_total'] += raw_count
+            diagnostics['normalized_total'] += normalized_count
+            diagnostics['skipped_total'] += skipped_count
+
+            if file_positions:
+                logger.info(f"Got {len(file_positions)} positions from {file_path.name}")
+                all_positions.extend(file_positions)
             else:
                 logger.warning(f"No positions found in {file_path.name}")
-        
-        if not all_positions:
-            return []
 
-        normalized_positions = normalize_positions(all_positions)
-        logger.info(
-            "Normalized positions from výkaz výměr: "
-            f"{len(normalized_positions)} total (raw: {len(all_positions)})"
-        )
+        return {
+            "positions": all_positions,
+            "diagnostics": diagnostics
+        }
 
-        return normalized_positions
+    def _update_project_record(self, project_id: str, **updates: Any) -> None:
+        """Safely update the in-memory project store."""
+
+        project = project_store.get(project_id)
+        if not project:
+            logger.debug(
+                "Project %s not found in store while updating with %s",
+                project_id,
+                updates
+            )
+            return
+
+        if updates:
+            project.update(updates)
+
+        project["updated_at"] = datetime.now().isoformat()
     
     async def _parse_drawings(self, project_dir: Path) -> List[Dict[str, Any]]:
         """
