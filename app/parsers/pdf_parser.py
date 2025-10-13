@@ -82,7 +82,7 @@ class PDFParser:
                 file_path, normalized_positions
             )
             logger.info(
-                "Extracted specs from %s: %s", file_path.name, specifications
+                f"Extracted specs from {file_path.name}: {specifications}"
             )
 
             return {
