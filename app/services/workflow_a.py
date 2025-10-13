@@ -1,6 +1,6 @@
 """
-Workflow A - ИСПРАВЛЕНО
-Гибкая валидация + детальное логирование + использование нормализатора
+Workflow A - ENHANCED with Drawing Enrichment
+Audit existing Výkaz výměr + Enrich with Drawing Specifications
 """
 import logging
 import json
@@ -9,6 +9,9 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 
 from app.parsers.smart_parser import SmartParser
+from app.parsers.drawing_specs_parser import DrawingSpecsParser
+from app.services.position_enricher import PositionEnricher
+from app.services.specifications_validator import SpecificationsValidator
 from app.utils.position_normalizer import normalize_positions
 from app.core.config import settings
 
@@ -17,29 +20,44 @@ logger = logging.getLogger(__name__)
 
 class WorkflowA:
     """
-    Workflow A: Audit existing Výkaz výměr
-    ИСПРАВЛЕНО: Использует нормализатор и гибкую валидацию
+    Workflow A: Audit existing Výkaz výměr with Drawing Enrichment
+    
+    Enhanced workflow:
+    1. Parse výkaz výměr (Excel/XML/PDF)
+    2. Parse vykresy (drawings) for technical specifications
+    3. Enrich positions with drawing specifications
+    4. Validate specifications against ČSN standards
+    5. Audit positions
+    6. Generate report
     """
     
     def __init__(self):
         self.parser = SmartParser()
+        self.drawing_parser = DrawingSpecsParser()
+        self.enricher = PositionEnricher()
+        self.validator = SpecificationsValidator()
     
     async def execute(
         self,
         project_id: str,
-        generate_summary: bool = True
+        generate_summary: bool = True,
+        enable_enrichment: bool = True  # NEW: Enable/disable enrichment
     ) -> Dict[str, Any]:
         """
-        Execute Workflow A: Parse and audit positions
+        Execute Workflow A with optional enrichment
         
         Args:
             project_id: Project identifier
             generate_summary: Whether to generate AI summary
+            enable_enrichment: Whether to enrich positions with drawing specs
             
         Returns:
-            Audit results dict
+            Audit results dict with enriched positions
         """
-        logger.info(f"Starting execute() for project {project_id}")
+        logger.info(
+            f"Starting Workflow A for project {project_id} "
+            f"(enrichment={'enabled' if enable_enrichment else 'disabled'})"
+        )
         
         try:
             # Find project directory
@@ -48,74 +66,57 @@ class WorkflowA:
             if not project_dir.exists():
                 raise FileNotFoundError(f"Project directory not found: {project_dir}")
             
-            # Find vykaz vymer file
-            vykaz_dir = project_dir / "vykaz_vymer"
+            # Step 1: Parse výkaz výměr
+            logger.info("Step 1: Parsing výkaz výměr...")
+            positions = await self._parse_vykaz_vymer(project_dir)
             
-            if not vykaz_dir.exists():
-                raise FileNotFoundError(f"Vykaz vymer directory not found: {vykaz_dir}")
+            if not positions:
+                raise ValueError("No positions found in výkaz výměr")
             
-            # Get all files in vykaz_vymer directory
-            vykaz_files = list(vykaz_dir.glob("*"))
+            logger.info(f"Parsed {len(positions)} positions from výkaz výměr")
             
-            if not vykaz_files:
-                raise FileNotFoundError(f"No files found in {vykaz_dir}")
+            # Step 2: Parse drawings (if enrichment enabled)
+            drawing_specs = []
+            if enable_enrichment:
+                logger.info("Step 2: Parsing drawings for specifications...")
+                drawing_specs = await self._parse_drawings(project_dir)
+                logger.info(f"Found {len(drawing_specs)} specifications from drawings")
+            else:
+                logger.info("Step 2: Skipping drawing parsing (enrichment disabled)")
             
-            # Parse each file
-            all_positions = []
+            # Step 3: Enrich positions (if specifications found)
+            if enable_enrichment and drawing_specs:
+                logger.info("Step 3: Enriching positions with drawing specifications...")
+                positions = await self.enricher.enrich_positions(positions, drawing_specs)
+                logger.info("Positions enriched successfully")
+            else:
+                logger.info("Step 3: Skipping enrichment (no specifications or disabled)")
             
-            for file_path in vykaz_files:
-                if file_path.is_file():
-                    logger.info(f"Parsing vykaz vymer: {file_path.name}")
-                    
-                    # Parse document
-                    result = await self._parse_document(file_path)
-                    
-                    if result and result.get('positions'):
-                        positions = result['positions']
-                        logger.info(f"Got {len(positions)} positions from {file_path.name}")
-                        all_positions.extend(positions)
-                    else:
-                        logger.warning(f"No positions found in {file_path.name}")
+            # Step 4: Validate specifications
+            logger.info("Step 4: Validating technical specifications...")
+            positions = self.validator.validate_positions_batch(positions)
+            logger.info("Specifications validated")
             
-            if not all_positions:
-                logger.error("❌ No positions found in any document!")
-                return {
-                    "project_id": project_id,
-                    "status": "FAILED",
-                    "error": "No positions found in documents",
-                    "positions_count": 0
-                }
+            # Step 5: Audit positions
+            logger.info("Step 5: Auditing positions...")
+            audit_results = await self._audit_positions(positions)
+            logger.info("Audit completed")
             
-            logger.info(f"Total positions parsed: {len(all_positions)}")
-            
-            # Validate positions with detailed logging
-            valid_positions = self._validate_positions(all_positions)
-            
-            logger.info(f"Valid positions after validation: {len(valid_positions)}")
-            
-            if not valid_positions:
-                logger.error("❌ No valid positions after validation!")
-                return {
-                    "project_id": project_id,
-                    "status": "FAILED",
-                    "error": "No valid positions after validation",
-                    "positions_count": 0
-                }
-            
-            # Audit positions
-            audit_results = await self._audit_positions(valid_positions)
-            
-            # Generate summary if requested
+            # Step 6: Generate summary
             summary = None
             if generate_summary:
-                summary = self._generate_summary(audit_results)
+                logger.info("Step 6: Generating summary...")
+                summary = self._generate_enhanced_summary(audit_results, enable_enrichment)
             
             logger.info(f"✅ Workflow A completed for project {project_id}")
             
             return {
                 "project_id": project_id,
                 "status": "COMPLETED",
-                "positions_count": len(valid_positions),
+                "workflow": "A",
+                "enrichment_enabled": enable_enrichment,
+                "positions_count": len(positions),
+                "drawing_specs_count": len(drawing_specs),
                 "audit_results": audit_results,
                 "summary": summary,
                 "completed_at": datetime.now().isoformat()
@@ -126,149 +127,111 @@ class WorkflowA:
             return {
                 "project_id": project_id,
                 "status": "FAILED",
+                "workflow": "A",
                 "error": str(e),
                 "positions_count": 0
             }
     
-    async def _parse_document(self, file_path: Path) -> Dict[str, Any]:
+    async def _parse_vykaz_vymer(self, project_dir: Path) -> List[Dict[str, Any]]:
         """
-        Parse document and extract positions
+        Parse výkaz výměr documents
         
         Args:
-            file_path: Path to document
+            project_dir: Project directory
             
         Returns:
-            Parse result with positions
+            List of normalized positions
         """
-        logger.info(f"Importing positions from: {file_path}")
+        vykaz_dir = project_dir / "vykaz_vymer"
         
-        # Detect file format
-        file_ext = file_path.suffix.lower()
-        logger.info(f"Detected file format: {file_ext}")
+        if not vykaz_dir.exists():
+            raise FileNotFoundError(f"Vykaz vymer directory not found: {vykaz_dir}")
         
-        # Parse with smart parser
-        logger.info(f"Parsing {file_ext} document with specialized parser")
-        result = self.parser.parse(file_path)
+        vykaz_files = [f for f in vykaz_dir.glob("*") if f.is_file()]
         
-        # Log raw result sample for debugging
-        if result and result.get('positions'):
-            logger.info(
-                f"Parser returned {len(result['positions'])} positions. "
-                f"Sample (first position): {json.dumps(result['positions'][0], ensure_ascii=False)[:200]}"
-            )
+        if not vykaz_files:
+            raise FileNotFoundError(f"No files found in {vykaz_dir}")
         
-        return result
+        all_positions = []
+        
+        for file_path in vykaz_files:
+            logger.info(f"Parsing: {file_path.name}")
+            
+            result = self.parser.parse(file_path)
+            
+            if result and result.get('positions'):
+                positions = result['positions']
+                logger.info(f"Got {len(positions)} positions from {file_path.name}")
+                all_positions.extend(positions)
+            else:
+                logger.warning(f"No positions found in {file_path.name}")
+        
+        return all_positions
     
-    def _validate_positions(self, positions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    async def _parse_drawings(self, project_dir: Path) -> List[Dict[str, Any]]:
         """
-        Validate positions with detailed logging
-        
-        ИСПРАВЛЕНО: Более гибкая валидация + детальное логирование
+        Parse drawings for technical specifications
         
         Args:
-            positions: List of raw positions
+            project_dir: Project directory
             
         Returns:
-            List of valid positions
+            List of technical specifications from drawings
         """
-        logger.info(f"Validating {len(positions)} positions...")
+        vykresy_dir = project_dir / "vykresy"
         
-        valid_positions = []
-        skipped_count = 0
+        if not vykresy_dir.exists():
+            logger.warning(f"Vykresy directory not found: {vykresy_dir}")
+            return []
         
-        # Track skip reasons
-        skip_reasons = {
-            'missing_description': 0,
-            'empty_description': 0,
-            'missing_quantity': 0,
-            'invalid_quantity': 0,
-            'zero_quantity': 0
-        }
+        drawing_files = [
+            f for f in vykresy_dir.glob("*.pdf")
+            if f.is_file()
+        ]
         
-        for idx, position in enumerate(positions):
-            # Check description
-            if 'description' not in position:
-                skip_reasons['missing_description'] += 1
-                logger.debug(
-                    f"⚠️ Position {idx + 1}: Missing 'description' field. "
-                    f"Available fields: {list(position.keys())}"
-                )
-                skipped_count += 1
-                continue
+        if not drawing_files:
+            logger.warning(f"No PDF drawings found in {vykresy_dir}")
+            return []
+        
+        logger.info(f"Found {len(drawing_files)} drawing files")
+        
+        all_specs = []
+        
+        for drawing_path in drawing_files:
+            logger.info(f"Parsing drawing: {drawing_path.name}")
             
-            desc = position['description']
-            if not desc or str(desc).strip() == '':
-                skip_reasons['empty_description'] += 1
-                logger.debug(
-                    f"⚠️ Position {idx + 1}: Empty description. "
-                    f"Position data: {json.dumps(position, ensure_ascii=False)[:150]}"
-                )
-                skipped_count += 1
-                continue
+            result = self.drawing_parser.parse(drawing_path)
             
-            # Check quantity
-            if 'quantity' not in position:
-                skip_reasons['missing_quantity'] += 1
-                logger.debug(
-                    f"⚠️ Position {idx + 1} ({desc[:30]}): Missing 'quantity' field"
+            if result and result.get('specifications'):
+                specs = result['specifications']
+                logger.info(
+                    f"Extracted {len(specs)} specifications from {drawing_path.name}"
                 )
-                skipped_count += 1
-                continue
-            
-            try:
-                qty = float(position['quantity'])
-                if qty <= 0:
-                    skip_reasons['zero_quantity'] += 1
-                    logger.debug(
-                        f"⚠️ Position {idx + 1} ({desc[:30]}): "
-                        f"Quantity is zero or negative: {qty}"
-                    )
-                    skipped_count += 1
-                    continue
-            except (ValueError, TypeError):
-                skip_reasons['invalid_quantity'] += 1
-                logger.debug(
-                    f"⚠️ Position {idx + 1} ({desc[:30]}): "
-                    f"Cannot convert quantity to number: '{position['quantity']}'"
-                )
-                skipped_count += 1
-                continue
-            
-            # Position is valid
-            valid_positions.append(position)
+                all_specs.extend(specs)
+            else:
+                logger.debug(f"No specifications found in {drawing_path.name}")
         
-        # Summary logging
-        logger.info(f"Parsed {len(valid_positions)} valid positions ({skipped_count} skipped)")
-        
-        if skipped_count > 0:
-            logger.warning(
-                f"⚠️ Skipped {skipped_count} invalid positions. Breakdown: "
-                f"missing_description={skip_reasons['missing_description']}, "
-                f"empty_description={skip_reasons['empty_description']}, "
-                f"missing_quantity={skip_reasons['missing_quantity']}, "
-                f"invalid_quantity={skip_reasons['invalid_quantity']}, "
-                f"zero_quantity={skip_reasons['zero_quantity']}"
-            )
-        
-        return valid_positions
+        return all_specs
     
     async def _audit_positions(
-        self, 
+        self,
         positions: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """
-        Audit positions (placeholder - implement actual audit logic)
+        Audit positions with enhanced classification
+        
+        Takes into account:
+        - Basic position data (code, price, quantity)
+        - Technical specifications (if enriched)
+        - Validation results
         
         Args:
-            positions: List of valid positions
+            positions: List of positions (potentially enriched)
             
         Returns:
-            Audit results
+            Audit results with statistics
         """
         logger.info(f"Auditing {len(positions)} positions...")
-        
-        # TODO: Implement actual audit logic with Claude AI
-        # For now, return simple stats
         
         audit_results = {
             "total_positions": len(positions),
@@ -278,32 +241,68 @@ class WorkflowA:
             "positions": []
         }
         
+        # Statistics for enrichment
+        enrichment_stats = {
+            'matched': 0,
+            'partial': 0,
+            'unmatched': 0
+        }
+        
+        # Statistics for validation
+        validation_stats = {
+            'passed': 0,
+            'warning': 0,
+            'failed': 0,
+            'no_specs': 0
+        }
+        
         for position in positions:
-            # Simple audit: check if code and unit_price present
-            has_code = 'code' in position and position['code']
-            has_price = 'unit_price' in position and position['unit_price']
+            # Determine classification based on multiple factors
+            classification = self._classify_position(position)
             
-            if has_code and has_price:
-                classification = "GREEN"
-                audit_results["green"] += 1
-            elif has_code or has_price:
-                classification = "AMBER"
-                audit_results["amber"] += 1
-            else:
-                classification = "RED"
-                audit_results["red"] += 1
+            # Update statistics
+            audit_results[classification.lower()] += 1
             
-            audit_results["positions"].append({
+            # Track enrichment status
+            if 'enrichment_status' in position:
+                status = position['enrichment_status']
+                enrichment_stats[status] = enrichment_stats.get(status, 0) + 1
+            
+            # Track validation status
+            if 'validation_status' in position:
+                val_status = position['validation_status']
+                validation_stats[val_status] = validation_stats.get(val_status, 0) + 1
+            
+            # Create audit position
+            audit_position = {
                 "position_number": position.get('position_number', ''),
                 "description": position.get('description', '')[:100],
                 "quantity": position.get('quantity', 0),
                 "unit": position.get('unit', ''),
                 "classification": classification,
-                "issues": [] if classification == "GREEN" else [
-                    "Missing KROS code" if not has_code else None,
-                    "Missing unit price" if not has_price else None
-                ]
-            })
+                "issues": self._get_issues(position),
+                "recommendations": self._get_recommendations(position)
+            }
+            
+            # Add enrichment info if present
+            if 'technical_specs' in position:
+                audit_position['technical_specs'] = position['technical_specs']
+            
+            if 'drawing_source' in position:
+                audit_position['drawing_source'] = position['drawing_source']
+            
+            if 'validation_results' in position:
+                audit_position['validation_summary'] = {
+                    'status': position['validation_status'],
+                    'errors_count': len(position['validation_results'].get('errors', [])),
+                    'warnings_count': len(position['validation_results'].get('warnings', []))
+                }
+            
+            audit_results["positions"].append(audit_position)
+        
+        # Add enrichment and validation statistics
+        audit_results['enrichment_stats'] = enrichment_stats
+        audit_results['validation_stats'] = validation_stats
         
         logger.info(
             f"Audit complete: "
@@ -312,14 +311,121 @@ class WorkflowA:
             f"RED={audit_results['red']}"
         )
         
+        if enrichment_stats['matched'] > 0:
+            logger.info(
+                f"Enrichment: "
+                f"matched={enrichment_stats['matched']}, "
+                f"partial={enrichment_stats.get('partial', 0)}, "
+                f"unmatched={enrichment_stats.get('unmatched', 0)}"
+            )
+        
+        if validation_stats.get('failed', 0) > 0:
+            logger.warning(
+                f"Validation: {validation_stats['failed']} positions failed validation"
+            )
+        
         return audit_results
     
-    def _generate_summary(self, audit_results: Dict[str, Any]) -> str:
+    def _classify_position(self, position: Dict[str, Any]) -> str:
         """
-        Generate human-readable summary
+        Classify position as GREEN, AMBER, or RED
+        
+        Classification logic:
+        - RED: Critical issues (missing code, validation failed, critical spec mismatch)
+        - AMBER: Needs attention (missing price, validation warnings, partial match)
+        - GREEN: All good
         
         Args:
-            audit_results: Audit results dict
+            position: Position to classify
+            
+        Returns:
+            Classification: "GREEN", "AMBER", or "RED"
+        """
+        issues = []
+        
+        # Check basic requirements
+        has_code = 'code' in position and position['code']
+        has_price = 'unit_price' in position and position['unit_price']
+        
+        # Check validation status
+        validation_status = position.get('validation_status')
+        validation_failed = validation_status == 'failed'
+        validation_warning = validation_status == 'warning'
+        
+        # Check enrichment
+        enrichment_status = position.get('enrichment_status')
+        enrichment_partial = enrichment_status == 'partial'
+        
+        # Determine classification
+        if not has_code:
+            issues.append("Missing KROS code")
+        
+        if validation_failed:
+            issues.append("Validation failed")
+        
+        # RED: Critical issues
+        if not has_code or validation_failed:
+            return "RED"
+        
+        # AMBER: Needs attention
+        if not has_price or validation_warning or enrichment_partial:
+            return "AMBER"
+        
+        # GREEN: All good
+        return "GREEN"
+    
+    def _get_issues(self, position: Dict[str, Any]) -> List[str]:
+        """Get list of issues for position"""
+        issues = []
+        
+        if not position.get('code'):
+            issues.append("Missing KROS code")
+        
+        if not position.get('unit_price'):
+            issues.append("Missing unit price")
+        
+        # Add validation errors
+        if position.get('validation_results'):
+            validation = position['validation_results']
+            issues.extend(validation.get('errors', []))
+        
+        return issues
+    
+    def _get_recommendations(self, position: Dict[str, Any]) -> List[str]:
+        """Get list of recommendations for position"""
+        recommendations = []
+        
+        # Add validation warnings as recommendations
+        if position.get('validation_results'):
+            validation = position['validation_results']
+            recommendations.extend(validation.get('warnings', []))
+        
+        # Add enrichment-based recommendations
+        if position.get('enrichment_status') == 'unmatched':
+            recommendations.append(
+                "Nebyla nalezena odpovídající specifikace ve výkresech. "
+                "Ověřte správnost materiálu."
+            )
+        
+        if position.get('enrichment_status') == 'partial':
+            recommendations.append(
+                "Částečná shoda se specifikací. "
+                "Doporučeno ověřit parametry materiálu."
+            )
+        
+        return recommendations
+    
+    def _generate_enhanced_summary(
+        self,
+        audit_results: Dict[str, Any],
+        enrichment_enabled: bool
+    ) -> str:
+        """
+        Generate enhanced summary with enrichment statistics
+        
+        Args:
+            audit_results: Audit results
+            enrichment_enabled: Whether enrichment was enabled
             
         Returns:
             Summary text
@@ -334,8 +440,8 @@ class WorkflowA:
         red_pct = (red / total * 100) if total > 0 else 0
         
         summary = f"""
-Audit Summary
-=============
+Audit Summary (Enhanced with Drawing Specifications)
+====================================================
 
 Total Positions: {total}
 
@@ -344,13 +450,53 @@ Classification:
   🟡 AMBER: {amber} ({amber_pct:.1f}%) - Minor issues, needs attention
   🔴 RED: {red} ({red_pct:.1f}%) - Critical issues, requires correction
 
-Recommendations:
 """
+        
+        # Add enrichment statistics
+        if enrichment_enabled:
+            enrichment_stats = audit_results.get('enrichment_stats', {})
+            matched = enrichment_stats.get('matched', 0)
+            partial = enrichment_stats.get('partial', 0)
+            unmatched = enrichment_stats.get('unmatched', 0)
+            
+            if matched > 0 or partial > 0:
+                matched_pct = (matched / total * 100) if total > 0 else 0
+                summary += f"""
+Enrichment with Drawings:
+  ✅ Matched: {matched} ({matched_pct:.1f}%) - Full technical specifications found
+  ⚠️ Partial: {partial} - Some specifications found
+  ❌ Unmatched: {unmatched} - No specifications in drawings
+
+"""
+        
+        # Add validation statistics
+        validation_stats = audit_results.get('validation_stats', {})
+        if validation_stats:
+            passed = validation_stats.get('passed', 0)
+            warning = validation_stats.get('warning', 0)
+            failed = validation_stats.get('failed', 0)
+            
+            summary += f"""
+Standards Validation (ČSN EN 206):
+  ✅ Passed: {passed} - Compliant with standards
+  ⚠️ Warnings: {warning} - Minor compliance issues
+  ❌ Failed: {failed} - Non-compliant
+  
+"""
+        
+        # Recommendations
+        summary += "Recommendations:\n"
         
         if red > 0:
             summary += f"  - Review {red} RED positions immediately\n"
         if amber > 0:
             summary += f"  - Check {amber} AMBER positions for completeness\n"
+        if enrichment_enabled:
+            unmatched = enrichment_stats.get('unmatched', 0)
+            if unmatched > 0:
+                summary += f"  - {unmatched} positions have no drawing specifications - verify manually\n"
+        if validation_stats.get('failed', 0) > 0:
+            summary += f"  - {validation_stats['failed']} positions failed standards validation - correct immediately\n"
         if green == total:
             summary += "  - All positions are correctly specified ✓\n"
         
@@ -367,10 +513,11 @@ if __name__ == "__main__":
     async def test_workflow():
         workflow = WorkflowA()
         
-        # Test with a project
+        # Test with enrichment enabled
         result = await workflow.execute(
             project_id="proj_test123",
-            generate_summary=True
+            generate_summary=True,
+            enable_enrichment=True
         )
         
         print(json.dumps(result, indent=2, ensure_ascii=False))
