@@ -3,6 +3,7 @@ Position Enricher
 Обогащает позиции из сметы техническими данными из чертежей
 Использует Claude для сопоставления и извлечения параметров
 """
+import asyncio
 import logging
 import json
 from typing import Dict, Any, List, Optional
@@ -102,8 +103,8 @@ class PositionEnricher:
             # Prepare Claude prompt
             prompt = self._create_enrichment_prompt(position, drawing_specs)
             
-            # Call Claude for matching and extraction
-            response = await self.claude.complete(prompt)
+            # Call Claude for matching and extraction using updated SDK method
+            response = await asyncio.to_thread(self.claude.call, prompt)
             
             # Parse Claude's response
             enrichment_data = self._parse_enrichment_response(response)
