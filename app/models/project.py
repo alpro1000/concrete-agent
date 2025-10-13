@@ -113,6 +113,28 @@ class UploadedFile(BaseModel):
     size: int = Field(..., description="File size in bytes")
 
 
+class FileMetadata(BaseModel):
+    """
+    Metadata about uploaded file
+    Compatible with ETL pipeline and file tracking
+    """
+    original_filename: str = Field(..., description="Original filename from upload")
+    stored_filename: str = Field(..., description="Filename stored on disk")
+    file_path: str = Field(..., description="Full path to file")
+    file_type: str = Field(..., description="File type extension (pdf, xml, xlsx, etc)")
+    file_size: int = Field(..., description="File size in bytes")
+    mime_type: Optional[str] = Field(None, description="MIME type")
+    upload_timestamp: datetime = Field(default_factory=datetime.utcnow, description="Upload timestamp")
+    
+    # ETL stage tracking
+    stage: str = Field("raw", description="Current ETL stage (raw/staging/curated)")
+    processed: bool = Field(False, description="Whether file has been processed")
+    
+    # Additional metadata
+    checksum: Optional[str] = Field(None, description="File checksum (MD5/SHA256)")
+    encoding: Optional[str] = Field(None, description="File encoding (for text files)")
+
+
 class ProjectResponse(BaseModel):
     """Response model for project information"""
     project_id: str
@@ -223,6 +245,22 @@ class AuditReport(BaseModel):
     # Overall assessment
     overall_risk: AuditClassification
     recommendations: List[str] = []
+
+
+class ErrorResponse(BaseModel):
+    """Standard error response"""
+    error: str = Field(..., description="Error type")
+    message: str = Field(..., description="Error message")
+    detail: Optional[str] = Field(None, description="Detailed error information")
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class SuccessResponse(BaseModel):
+    """Standard success response"""
+    success: bool = Field(True, description="Success flag")
+    message: str = Field(..., description="Success message")
+    data: Optional[Dict[str, Any]] = Field(None, description="Optional response data")
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
 # =============================================================================
