@@ -66,8 +66,9 @@ async def startup_event():
     
     # Load Knowledge Base
     try:
-        from app.core.kb_loader import kb_loader
-        kb_loader.load()
+        from app.core.kb_loader import init_kb_loader
+
+        kb_loader = init_kb_loader()
         logger.info(f"✅ Knowledge Base loaded: {len(kb_loader.data)} categories")
         
         # Log each category
