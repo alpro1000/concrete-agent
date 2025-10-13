@@ -17,9 +17,12 @@ from app.models.project import (
     ProjectResponse,
     ProjectStatusResponse,
     UploadedFile,
+    FileMetadata,
     Position,
     PositionAudit,
     AuditReport,
+    ErrorResponse,
+    SuccessResponse,
     
     # Helper functions
     db_project_to_response,
@@ -41,9 +44,12 @@ __all__ = [
     "ProjectResponse",
     "ProjectStatusResponse",
     "UploadedFile",
+    "FileMetadata",
     "Position",
     "PositionAudit",
     "AuditReport",
+    "ErrorResponse",
+    "SuccessResponse",
     
     # === Helper Functions ===
     "db_project_to_response",
