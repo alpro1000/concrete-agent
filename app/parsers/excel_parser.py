@@ -199,44 +199,132 @@ class ExcelParser:
 
         logger.debug(f"Sheet headers: {headers}")
         
-        positions = []
-        
-        # Process data rows
+        positions: List[Dict[str, Any]] = []
+
+        header_value_set = {
+            ExcelParser._normalize_header_value(value)
+            for value in header_search.get("header_values", [])
+            if value
+        }
+
+        header_types = [self._map_header_to_field(header) for header in headers]
+
+        required_fields = {"code", "description", "unit", "quantity"}
+
+        skipped_entries: List[Dict[str, Any]] = []
+        positions_skipped = 0
+        last_data_row: Optional[int] = None
+
+        # Process data rows - always until sheet.max_row
         for row_idx in range(header_row + 1, sheet.max_row + 1):
             row = sheet[row_idx]
-            
-            # Skip empty rows
-            if all(not cell.value for cell in row):
+
+            raw_values: List[str] = []
+            for cell in row:
+                if cell.value is None:
+                    continue
+
+                if isinstance(cell.value, str):
+                    value_str = cell.value.strip()
+                    if not value_str:
+                        continue
+                    raw_values.append(value_str)
+                else:
+                    raw_values.append(str(cell.value))
+
+            if not raw_values:
+                positions_skipped += 1
+                skipped_entries.append({
+                    "row": row_idx,
+                    "reason": "empty_row"
+                })
                 continue
-            
-            # Create position dict
-            position = {}
+
+            last_data_row = row_idx
+
+            normalized_row_values = {
+                ExcelParser._normalize_header_value(value) for value in raw_values
+            }
+
+            if header_value_set and len(normalized_row_values & header_value_set) >= 2:
+                positions_skipped += 1
+                skipped_entries.append({
+                    "row": row_idx,
+                    "reason": "header_repeat"
+                })
+                continue
+
+            row_text = " ".join(raw_values).lower()
+
+            keyword_reason = self._detect_service_keyword(row_text)
+            if keyword_reason:
+                positions_skipped += 1
+                skipped_entries.append({
+                    "row": row_idx,
+                    "reason": "service_keyword",
+                    "keyword": keyword_reason
+                })
+                continue
+
+            position: Dict[str, Any] = {}
+            canonical_row: Dict[str, Any] = {}
+
             for col_idx, cell in enumerate(row):
-                if col_idx < len(headers):
-                    header = headers[col_idx]
-                    value = cell.value
-                    
-                    if value is not None:
-                        # Convert to string and clean
-                        if isinstance(value, (int, float)):
-                            position[header] = value
-                        else:
-                            value_str = str(value).strip()
-                            if value_str:
-                                position[header] = value_str
-            
-            # Skip separator rows
-            if self._is_separator_row(position):
+                header = headers[col_idx] if col_idx < len(headers) else f"col_{col_idx}"
+                canonical_field = header_types[col_idx] if col_idx < len(header_types) else None
+
+                cleaned_value = self._clean_cell_value(cell.value)
+                if cleaned_value is None:
+                    continue
+
+                position[header] = cleaned_value
+
+                if canonical_field and canonical_field not in canonical_row:
+                    canonical_row[canonical_field] = cleaned_value
+
+            summary_reason = self._detect_sum_row(position)
+            if summary_reason:
+                positions_skipped += 1
+                skipped_entries.append({
+                    "row": row_idx,
+                    "reason": summary_reason
+                })
                 continue
-            
-            # Add metadata
+
+            if not position:
+                positions_skipped += 1
+                skipped_entries.append({
+                    "row": row_idx,
+                    "reason": "no_data_after_cleaning"
+                })
+                continue
+
+            missing_fields = [field for field in required_fields if field not in canonical_row]
+            if missing_fields:
+                positions_skipped += 1
+                skipped_entries.append({
+                    "row": row_idx,
+                    "reason": "missing_required_fields",
+                    "missing": missing_fields,
+                    "available": sorted(canonical_row.keys())
+                })
+                continue
+
             position['_source'] = f"sheet_{sheet_name}_row_{row_idx}"
-            
-            if position:
-                positions.append(position)
-        
+
+            positions.append(position)
+
         logger.debug(f"Extracted {len(positions)} raw positions from sheet")
-        
+
+        sheet_diagnostics["summary"] = {
+            "positions_found": len(positions),
+            "positions_skipped": positions_skipped,
+            "last_data_row": last_data_row,
+            "rows_scanned": sheet.max_row - header_row,
+        }
+
+        sheet_diagnostics["skipped"] = skipped_entries
+
         return positions, sheet_diagnostics
 
     @staticmethod
@@ -357,26 +445,112 @@ class ExcelParser:
         }
     
     @staticmethod
-    def _is_separator_row(position: Dict[str, Any]) -> bool:
-        """Check if row is a separator or section header"""
+    def _clean_cell_value(value: Any) -> Optional[Any]:
+        """Clean cell value by trimming strings and ignoring empty content."""
+        if value is None:
+            return None
+
+        if isinstance(value, str):
+            cleaned = value.strip()
+            if not cleaned:
+                return None
+            return cleaned
+
+        return value
+
+    @staticmethod
+    def _map_header_to_field(header: str) -> Optional[str]:
+        """Map normalized header to canonical field name using keyword heuristics."""
+        if not header:
+            return None
+
+        header_lower = header.lower()
+
+        # Avoid treating unit price columns as units
+        if "jednotkova" in header_lower and "cena" in header_lower:
+            return None
+
+        code_keywords = ["kod", "code", "oznaceni", "cislo", "c.", "signatura"]
+        description_keywords = [
+            "popis", "opis", "nazev", "description", "text", "polozka", "name",
+            "prace", "item", "druh_prace",
+        ]
+        unit_keywords = ["jednotka", "mj", "m_j", "merna", "unit", "jedn."]
+        quantity_keywords = [
+            "mnozstvi", "quantity", "qty", "pocet", "mno", "mn", "qtty",
+        ]
+
+        normalized = header_lower.replace(" ", "_")
+
+        for keyword in quantity_keywords:
+            if keyword in normalized:
+                return "quantity"
+
+        for keyword in unit_keywords:
+            if keyword in normalized:
+                return "unit"
+
+        for keyword in code_keywords:
+            if keyword in normalized:
+                return "code"
+
+        for keyword in description_keywords:
+            if keyword in normalized:
+                return "description"
+
+        return None
+
+    @staticmethod
+    def _detect_service_keyword(row_text: str) -> Optional[str]:
+        """Detect if row contains known service keywords (summary, notes, etc.)."""
+        if not row_text:
+            return None
+
+        keywords = {
+            "rekapitulace": "rekapitulace",
+            "souhrn": "souhrn",
+            "soucet": "soucet",
+            "součet": "součet",
+            "sum": "sum",
+            "subtotal": "subtotal",
+            "summary": "summary",
+            "celkem": "celkem",
+            "spolu": "spolu",
+            "pozn": "pozn",
+            "poznám": "poznám",
+            "note": "note",
+        }
+
+        for key, value in keywords.items():
+            if key in row_text:
+                return value
+
+        return None
+
+    @staticmethod
+    def _detect_sum_row(position: Dict[str, Any]) -> Optional[str]:
+        """Detect if a row represents a sum or total row based on its values."""
         if not position:
-            return True
-        
-        # Get all text from row
-        all_values = ' '.join(str(v) for v in position.values() if v)
-        
-        # Separators often have repeated characters or are very short
-        if re.match(r'^[\-\=\*\s\.]+$', all_values):
-            return True
-        
-        if len(all_values) < 3:
-            return True
-        
-        # Check for section headers (often in uppercase)
+            return None
+
+        all_values = " ".join(str(v) for v in position.values() if v)
+        if not all_values:
+            return None
+
+        if re.match(r"^[-=*.\s]+$", all_values):
+            return "separator_row"
+
         if all_values.isupper() and len(all_values) < 50:
-            return True
-        
-        return False
+            return "section_header"
+
+        lowered = all_values.lower()
+        if any(keyword in lowered for keyword in ["celkem", "sum", "souhrn", "rekapitulace", "spolu"]):
+            return "sum_row"
+
+        if len(all_values) < 3:
+            return "short_row"
+
+        return None
     
     def get_supported_extensions(self) -> set:
         """Return supported file extensions"""
