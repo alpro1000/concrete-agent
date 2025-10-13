@@ -11,6 +11,7 @@ import re
 import unicodedata
 
 from app.utils.position_normalizer import normalize_positions
+from app.core.registry import registry
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +123,7 @@ class ExcelParser:
                     "header_detection": []
                 }
             }
-    
+
     def _parse_sheet(
         self, sheet: Worksheet, sheet_name: str
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
@@ -682,3 +683,6 @@ if __name__ == "__main__":
     else:
         print("Usage: python excel_parser.py <path_to_excel>")
         print("Example: python excel_parser.py data/raw/project1/vykaz_vymer/estimate.xlsx")
+
+
+registry.register_parser("excel", ExcelParser)

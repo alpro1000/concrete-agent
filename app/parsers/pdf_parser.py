@@ -9,6 +9,7 @@ import pdfplumber
 import re
 
 from app.utils.position_normalizer import normalize_positions
+from app.core.registry import registry
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,13 @@ class PDFParser:
                 f"from {total_pages} pages"
             )
 
+            specifications = self.extract_specifications(
+                file_path, normalized_positions
+            )
+            logger.info(
+                "Extracted specs from %s: %s", file_path.name, specifications
+            )
+
             return {
                 "document_info": {
                     "filename": file_path.name,
@@ -85,6 +93,7 @@ class PDFParser:
                     "tables_found": len(positions)
                 },
                 "positions": normalized_positions,
+                "specifications": specifications,
                 "diagnostics": {
                     "raw_total": normalization_stats["raw_total"],
                     "normalized_total": normalization_stats["normalized_total"],
@@ -179,8 +188,33 @@ class PDFParser:
                 positions.append(position)
         
         logger.debug(f"Converted table to {len(positions)} raw positions")
-        
+
         return positions
+
+    def extract_specifications(
+        self,
+        pdf_path: Path,
+        positions: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Derive lightweight specifications from parsed positions."""
+
+        source_positions = positions or []
+        specs: List[Dict[str, Any]] = []
+
+        for position in source_positions:
+            spec = {
+                key: position.get(key)
+                for key in ("description", "material", "quantity", "unit")
+                if position.get(key) not in (None, "")
+            }
+
+            if spec and spec not in specs:
+                specs.append(spec)
+
+        if not specs and pdf_path.exists():
+            logger.debug("No structured specs found in %s", pdf_path)
+
+        return specs
     
     @staticmethod
     def _is_separator_row(position: Dict[str, Any]) -> bool:
@@ -208,6 +242,9 @@ class PDFParser:
     def get_supported_extensions(self) -> set:
         """Return supported file extensions"""
         return {'.pdf'}
+
+
+registry.register_parser("pdf", PDFParser)
 
 
 # ==============================================================================
