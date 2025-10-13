@@ -4,18 +4,17 @@ KROS Parser - ИСПРАВЛЕНО
 """
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 import xml.etree.ElementTree as ET
 
-from app.parsers.xc4_parser import parse_xml_tree as parse_aspe_xml_tree
 from app.utils.position_normalizer import normalize_positions
 
 logger = logging.getLogger(__name__)
 
 
 class KROSParser:
-    """Parse KROS XML files (UNIXML, Tabulární and AspeEsticon XC4 formats)"""
-
+    """Parse KROS XML files (UNIXML and Tabulární formats)"""
+    
     def parse(self, file_path: Path) -> Dict[str, Any]:
         """
         Parse KROS XML file
@@ -30,30 +29,24 @@ class KROSParser:
             }
         """
         logger.info(f"🧱 Parsing KROS XML: {file_path.name}")
-
-        kros_format = "UNKNOWN"
-
+        
         try:
             tree = ET.parse(file_path)
             root = tree.getroot()
-
+            
             # Detect KROS format
             kros_format = self._detect_format(root)
             logger.info(f"Detected KROS format: {kros_format}")
             
             # Parse based on format
-            parser_diagnostics: Dict[str, Any] = {}
-
             if kros_format == "KROS_UNIXML":
                 positions = self._parse_unixml(root)
             elif kros_format == "KROS_TABULAR":
                 positions = self._parse_tabular(root)
-            elif kros_format == "ASPE_XC4":
-                positions, parser_diagnostics = self._parse_aspe_xc4(root)
             else:
                 logger.warning("Unknown KROS format, trying generic XML parsing")
                 positions = self._parse_generic(root)
-
+            
             logger.info(f"Extracted {len(positions)} raw positions from KROS XML")
 
             # Normalize positions and capture statistics
@@ -66,11 +59,6 @@ class KROSParser:
                 f"✅ KROS XML parsed: {normalization_stats['normalized_total']} valid positions"
             )
 
-            parser_diagnostics = parser_diagnostics or {
-                "parsed": len(positions),
-                "skipped": []
-            }
-
             return {
                 "document_info": {
                     "filename": file_path.name,
@@ -82,8 +70,7 @@ class KROSParser:
                     "raw_total": normalization_stats["raw_total"],
                     "normalized_total": normalization_stats["normalized_total"],
                     "skipped_total": normalization_stats["skipped_total"],
-                    "kros_format": kros_format,
-                    "parsing": parser_diagnostics
+                    "kros_format": kros_format
                 }
             }
 
@@ -100,8 +87,7 @@ class KROSParser:
                     "raw_total": 0,
                     "normalized_total": 0,
                     "skipped_total": 0,
-                    "kros_format": kros_format,
-                    "parsing": {"parsed": 0, "skipped": []}
+                    "kros_format": kros_format
                 }
             }
     
@@ -116,31 +102,12 @@ class KROSParser:
         # Check for UNIXML markers
         if root.find(".//Polozky") is not None or root.find(".//Polozka") is not None:
             return "KROS_UNIXML"
-
+        
         # Check for Tabular markers
         if root.find(".//TZ") is not None or root.find(".//Row") is not None:
             return "KROS_TABULAR"
-
-        # Check for AspeEsticon XC4 markers
-        if root.find(".//objekty") is not None and root.find(".//polozka") is not None:
-            source = root.findtext(".//zdroj")
-            if source and source.strip().lower() == "aspeesticon":
-                return "ASPE_XC4"
-            return "ASPE_XC4"
-
+        
         return "UNKNOWN"
-
-    def _parse_aspe_xc4(self, root: ET.Element) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-        """Parse AspeEsticon XC4 XML format."""
-
-        logger.info("Parsing AspeEsticon XC4 format")
-        positions, diagnostics = parse_aspe_xml_tree(root)
-        logger.info(
-            "Parsed %s positions (%s skipped)",
-            len(positions),
-            len(diagnostics.get("skipped", []))
-        )
-        return positions, diagnostics
     
     def _parse_unixml(self, root: ET.Element) -> List[Dict[str, Any]]:
         """
