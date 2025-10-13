@@ -9,9 +9,10 @@ import json
 import logging
 import uuid
 import aiofiles
+import mimetypes
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Form, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 
 from app.core.config import settings
 from app.services.workflow_a import WorkflowA
@@ -40,15 +41,59 @@ ALLOWED_EXTENSIONS = {
 project_store: Dict[str, Dict[str, Any]] = {}
 
 
+def create_safe_file_metadata(
+    file_path: Path,
+    file_type: str,
+    project_id: str,
+    uploaded_at: Optional[datetime] = None
+) -> Dict[str, Any]:
+    """Create safe metadata for a stored file without exposing server paths."""
+
+    file_path = Path(file_path)
+    if uploaded_at is None:
+        uploaded_at = datetime.now()
+
+    # Determine file size (0 if file missing)
+    try:
+        file_size = file_path.stat().st_size
+    except FileNotFoundError:
+        file_size = 0
+
+    return {
+        "file_id": f"{project_id}:{file_type}:{file_path.name}",
+        "filename": file_path.name,
+        "file_type": file_type,
+        "size": file_size,
+        "uploaded_at": uploaded_at.isoformat(),
+    }
+
+
+def _parse_uploaded_at(value: Union[str, datetime, None]) -> datetime:
+    """Parse uploaded_at value from FileMetadata safely."""
+
+    if isinstance(value, datetime):
+        return value
+
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            pass
+
+    return datetime.now()
+
+
 def _normalize_optional_file(file: Any) -> Optional[UploadFile]:
     """Convert empty string to None"""
     if file is None:
         return None
     if isinstance(file, str) and file == "":
         return None
-    if isinstance(file, UploadFile) and not file.filename:
-        return None
-    return file if isinstance(file, UploadFile) else None
+    if hasattr(file, "filename"):
+        if not getattr(file, "filename"):
+            return None
+        return file
+    return None
 
 
 def _normalize_file_list(files: Any) -> List[UploadFile]:
@@ -59,12 +104,12 @@ def _normalize_file_list(files: Any) -> List[UploadFile]:
         return []
     if not isinstance(files, list):
         files = [files]
-    
+
     result = []
     for f in files:
-        if isinstance(f, UploadFile) and f.filename:
+        if hasattr(f, "filename") and getattr(f, "filename"):
             result.append(f)
-    
+
     return result
 
 
@@ -94,7 +139,7 @@ async def _save_file_streaming(
     )
 
 
-@router.get("/")
+@router.get("/", operation_id="get_root_status")
 async def root():
     """Health check endpoint"""
     return {
@@ -205,55 +250,103 @@ async def upload_project(
         # Create project directory
         project_dir = settings.DATA_DIR / "raw" / project_id
         project_dir.mkdir(parents=True, exist_ok=True)
-        
+
+        safe_files: List[Dict[str, Any]] = []
+        file_locations: Dict[str, str] = {}
+
         # Save files
         vykaz_vymer_meta = None
         if vykaz_vymer:
             vykaz_dir = project_dir / "vykaz_vymer"
             vykaz_path = vykaz_dir / vykaz_vymer.filename
-            
+
             vykaz_vymer_meta = await _save_file_streaming(vykaz_vymer, vykaz_path)
             logger.info(
                 f"✅ Validace OK: {vykaz_vymer.filename} "
                 f"({vykaz_vymer_meta.size / 1024:.1f} KB)"
             )
             logger.info(f"💾 Uloženo: {vykaz_vymer.filename} ({vykaz_vymer_meta.size / 1024:.1f} KB)")
-        
+
+            safe_meta = create_safe_file_metadata(
+                file_path=vykaz_path,
+                file_type="vykaz_vymer",
+                project_id=project_id,
+                uploaded_at=_parse_uploaded_at(vykaz_vymer_meta.uploaded_at)
+            )
+            safe_files.append(safe_meta)
+            file_locations[safe_meta["file_id"]] = str(vykaz_path)
+
         rozpocet_meta = None
         if rozpocet:
             rozpocet_dir = project_dir / "rozpocet"
             rozpocet_path = rozpocet_dir / rozpocet.filename
-            
+
             rozpocet_meta = await _save_file_streaming(rozpocet, rozpocet_path)
             logger.info(f"💾 Uloženo: {rozpocet.filename} ({rozpocet_meta.size / 1024:.1f} KB)")
-        
+
+            safe_meta = create_safe_file_metadata(
+                file_path=rozpocet_path,
+                file_type="rozpocet",
+                project_id=project_id,
+                uploaded_at=_parse_uploaded_at(rozpocet_meta.uploaded_at)
+            )
+            safe_files.append(safe_meta)
+            file_locations[safe_meta["file_id"]] = str(rozpocet_path)
+
         # Save vykresy
         vykresy_dir = project_dir / "vykresy"
         for vykres in vykresy_files:
             vykres_path = vykresy_dir / vykres.filename
-            await _save_file_streaming(vykres, vykres_path)
+            vykres_meta = await _save_file_streaming(vykres, vykres_path)
             logger.info(f"💾 Uloženo: {vykres.filename}")
-        
+
+            safe_meta = create_safe_file_metadata(
+                file_path=vykres_path,
+                file_type="vykresy",
+                project_id=project_id,
+                uploaded_at=_parse_uploaded_at(vykres_meta.uploaded_at)
+            )
+            safe_files.append(safe_meta)
+            file_locations[safe_meta["file_id"]] = str(vykres_path)
+
         # Save dokumentace
         dokumentace_dir = project_dir / "dokumentace"
         for doc in dokumentace_files:
             doc_path = dokumentace_dir / doc.filename
-            await _save_file_streaming(doc, doc_path)
+            doc_meta = await _save_file_streaming(doc, doc_path)
             logger.info(f"💾 Uloženo: {doc.filename}")
-        
+
+            safe_meta = create_safe_file_metadata(
+                file_path=doc_path,
+                file_type="dokumentace",
+                project_id=project_id,
+                uploaded_at=_parse_uploaded_at(doc_meta.uploaded_at)
+            )
+            safe_files.append(safe_meta)
+            file_locations[safe_meta["file_id"]] = str(doc_path)
+
         # Save zmeny
         zmeny_dir = project_dir / "zmeny"
         for zmena in zmeny_files:
             zmena_path = zmeny_dir / zmena.filename
-            await _save_file_streaming(zmena, zmena_path)
+            zmena_meta = await _save_file_streaming(zmena, zmena_path)
             logger.info(f"💾 Uloženo: {zmena.filename}")
+
+            safe_meta = create_safe_file_metadata(
+                file_path=zmena_path,
+                file_type="zmeny",
+                project_id=project_id,
+                uploaded_at=_parse_uploaded_at(zmena_meta.uploaded_at)
+            )
+            safe_files.append(safe_meta)
+            file_locations[safe_meta["file_id"]] = str(zmena_path)
         
         # Store project metadata
         project_store[project_id] = {
             "project_id": project_id,
             "project_name": project_name,
             "workflow": workflow,
-            "status": ProjectStatus.PENDING,
+            "status": ProjectStatus.UPLOADED,
             "created_at": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat(),
             "enable_enrichment": enable_enrichment,  # ✨ NEW
@@ -264,7 +357,9 @@ async def upload_project(
                 "dokumentace": [f.filename for f in dokumentace_files],
                 "zmeny": [f.filename for f in zmeny_files]
             },
-            "project_dir": str(project_dir)
+            "project_dir": str(project_dir),
+            "files_metadata": safe_files,
+            "file_locations": file_locations,
         }
         
         logger.info(f"✅ Nahrání dokončeno: {project_id}")
@@ -297,6 +392,7 @@ async def upload_project(
             "project_id": project_id,
             "project_name": project_name,
             "workflow": workflow,
+            "status": ProjectStatus.UPLOADED,
             "uploaded_at": datetime.now().isoformat(),
             "files_uploaded": {
                 "vykaz_vymer": vykaz_vymer_meta is not None,
@@ -306,6 +402,7 @@ async def upload_project(
                 "zmeny": len(zmeny_files)
             },
             "enrichment_enabled": enable_enrichment,  # ✨ NEW
+            "files": safe_files,
             "message": f"Project uploaded successfully. ID: {project_id}"
         }
     
@@ -405,6 +502,75 @@ async def list_projects(
         "limit": limit,
         "offset": offset
     }
+
+
+@router.get("/api/projects/{project_id}/files")
+async def list_project_files(project_id: str):
+    """List uploaded files with safe metadata"""
+
+    if project_id not in project_store:
+        raise HTTPException(404, f"Project {project_id} not found")
+
+    project = project_store[project_id]
+    files_metadata = project.get("files_metadata", [])
+
+    return {
+        "project_id": project_id,
+        "project_name": project.get("project_name"),
+        "total_files": len(files_metadata),
+        "files": files_metadata,
+    }
+
+
+@router.get("/api/projects/{project_id}/files/{file_id}/download")
+async def download_project_file(project_id: str, file_id: str):
+    """Securely download a project file using logical identifiers"""
+
+    if project_id not in project_store:
+        raise HTTPException(404, f"Project {project_id} not found")
+
+    project = project_store[project_id]
+
+    # Validate file_id format: project_id:file_type:filename
+    try:
+        file_project_id, file_type, filename = file_id.split(":", 2)
+    except ValueError:
+        raise HTTPException(400, "Invalid file_id format")
+
+    if not file_project_id or not file_type or not filename:
+        raise HTTPException(400, "Invalid file_id format")
+
+    if file_project_id != project_id:
+        raise HTTPException(403, "File does not belong to this project")
+
+    safe_filename = Path(filename).name
+    if safe_filename != filename:
+        raise HTTPException(400, "Invalid filename")
+
+    file_locations = project.get("file_locations", {})
+    file_path_str = file_locations.get(file_id)
+    if not file_path_str:
+        raise HTTPException(404, "File not found")
+
+    file_path = Path(file_path_str)
+    project_dir = Path(project["project_dir"]).resolve()
+
+    try:
+        resolved_file = file_path.resolve(strict=True)
+    except FileNotFoundError:
+        raise HTTPException(404, "File not found")
+
+    # Ensure file is inside project directory to prevent traversal
+    if not str(resolved_file).startswith(str(project_dir)):
+        raise HTTPException(403, "Access denied")
+
+    media_type, _ = mimetypes.guess_type(str(resolved_file))
+
+    return FileResponse(
+        path=resolved_file,
+        filename=safe_filename,
+        media_type=media_type or "application/octet-stream"
+    )
 
 
 @router.get("/api/projects/{project_id}/export/excel")
