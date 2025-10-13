@@ -1,152 +1,302 @@
 """
-Project Models - ИСПРАВЛЕНО
-Added project_id to ProjectResponse
+Project models for Czech Building Audit System
+Combines SQLAlchemy (DB) and Pydantic (API) models
 """
-from enum import Enum
-from typing import Dict, Any, Optional
+from sqlalchemy import Column, Integer, String, Float, DateTime, Text, Enum as SQLEnum
+from sqlalchemy.ext.declarative import declarative_base
 from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any
 from datetime import datetime
+from enum import Enum
+
+# SQLAlchemy Base
+Base = declarative_base()
 
 
-class WorkflowType(str, Enum):
-    """Project workflow type"""
-    A = "A"  # Audit existing vykaz vymer
-    B = "B"  # Generate from drawings
-
+# =============================================================================
+# ENUMS
+# =============================================================================
 
 class ProjectStatus(str, Enum):
     """Project processing status"""
-    PENDING = "PENDING"
-    PROCESSING = "PROCESSING"
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
+    UPLOADED = "uploaded"
+    PROCESSING = "processing"
+    PARSED = "parsed"
+    STAGING = "staging"
+    CURATED = "curated"
+    AUDIT_IN_PROGRESS = "audit_in_progress"
+    AUDIT_COMPLETED = "audit_completed"
+    HITL_REVIEW = "hitl_review"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
-class PositionClassification(str, Enum):
-    """Position audit classification"""
-    GREEN = "GREEN"    # All good
-    AMBER = "AMBER"    # Needs attention
-    RED = "RED"        # Critical issues
+class AuditClassification(str, Enum):
+    """Audit classification for positions"""
+    GREEN = "green"  # All checks passed
+    AMBER = "amber"  # Minor issues, needs attention
+    RED = "red"      # Critical issues, requires review
 
 
-class FileMetadata(BaseModel):
-    """Metadata for uploaded file"""
-    filename: str
-    size: int
-    uploaded_at: str
-    file_type: str
+class WorkflowType(str, Enum):
+    """Workflow type"""
+    A = "A"  # With výkaz výměr (bill of quantities)
+    B = "B"  # Without výkaz (generate from drawings)
+
+
+# =============================================================================
+# SQLAlchemy DATABASE MODEL
+# =============================================================================
+
+class Project(Base):
+    """
+    Project database model (SQLAlchemy)
+    Stores project metadata and processing status
+    """
+    __tablename__ = "projects"
     
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "filename": "vykaz.xml",
-                "size": 524288,
-                "uploaded_at": "2025-10-11T12:00:00",
-                "file_type": "xml"
-            }
-        }
+    # Primary key
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(String(255), unique=True, index=True, nullable=False)
+    
+    # Basic info
+    name = Column(String(500), nullable=False)
+    description = Column(Text, nullable=True)
+    
+    # Status tracking
+    status = Column(SQLEnum(ProjectStatus), default=ProjectStatus.UPLOADED, nullable=False)
+    workflow = Column(SQLEnum(WorkflowType), nullable=True)
+    
+    # File paths (ETL pipeline)
+    raw_file_path = Column(String(1000), nullable=True)
+    staging_file_path = Column(String(1000), nullable=True)
+    curated_file_path = Column(String(1000), nullable=True)
+    audit_report_path = Column(String(1000), nullable=True)
+    
+    # Timestamps
+    uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    processed_at = Column(DateTime, nullable=True)
+    audit_completed_at = Column(DateTime, nullable=True)
+    
+    # Audit statistics
+    total_positions = Column(Integer, default=0)
+    green_count = Column(Integer, default=0)
+    amber_count = Column(Integer, default=0)
+    red_count = Column(Integer, default=0)
+    
+    # Error tracking
+    error_message = Column(Text, nullable=True)
+    
+    def __repr__(self):
+        return f"<Project {self.project_id}: {self.name} ({self.status.value})>"
+
+
+# =============================================================================
+# PYDANTIC API MODELS
+# =============================================================================
+
+class ProjectCreate(BaseModel):
+    """Request model for creating a new project"""
+    name: str = Field(..., description="Project name", min_length=1, max_length=500)
+    description: Optional[str] = Field(None, description="Optional project description")
+    workflow: Optional[WorkflowType] = Field(
+        WorkflowType.A, 
+        description="Workflow type: A (with výkaz) or B (without)"
+    )
+
+
+class UploadedFile(BaseModel):
+    """Information about an uploaded file"""
+    filename: str = Field(..., description="Original filename")
+    saved_as: str = Field(..., description="Saved filename with path")
+    file_type: str = Field(..., description="File type (pdf, xml, xlsx)")
+    size: int = Field(..., description="File size in bytes")
 
 
 class ProjectResponse(BaseModel):
-    """Response for project upload - ИСПРАВЛЕНО"""
-    success: bool
-    project_id: str  # ✅ ДОБАВЛЕНО - главное исправление!
-    project_name: str
-    workflow: str
-    uploaded_at: str
-    files_uploaded: Dict[str, Any]
-    message: str
+    """Response model for project information"""
+    project_id: str
+    name: str
+    description: Optional[str] = None
+    status: ProjectStatus
+    workflow: WorkflowType
+    uploaded_at: datetime
+    
+    # Optional fields
+    processed_at: Optional[datetime] = None
+    audit_completed_at: Optional[datetime] = None
+    
+    # Files
+    files: List[Dict[str, Any]] = []
+    
+    # Statistics
+    total_positions: int = 0
+    green_count: int = 0
+    amber_count: int = 0
+    red_count: int = 0
+    
+    # Progress
+    progress: int = Field(0, ge=0, le=100, description="Processing progress percentage")
+    message: str = Field("", description="Status message")
     
     class Config:
-        json_schema_extra = {
-            "example": {
-                "success": True,
-                "project_id": "proj_21db12226dcf",  # ✅ ТЕПЕРЬ ЕСТЬ!
-                "project_name": "RD Valcha",
-                "workflow": "A",
-                "uploaded_at": "2025-10-11T17:54:03",
-                "files_uploaded": {
-                    "vykaz_vymer": True,
-                    "vykresy": 1,
-                    "rozpocet": False,
-                    "dokumentace": 0,
-                    "zmeny": 0
-                },
-                "message": "Project uploaded successfully. ID: proj_21db12226dcf"
-            }
-        }
+        from_attributes = True
 
 
 class ProjectStatusResponse(BaseModel):
-    """Response for project status query"""
+    """Detailed project status response"""
     project_id: str
-    project_name: str
     status: ProjectStatus
-    workflow: WorkflowType
-    created_at: str
-    updated_at: str
-    progress: Optional[int] = 0
-    positions_total: Optional[int] = 0
-    positions_processed: Optional[int] = 0
+    progress: int = Field(..., ge=0, le=100)
+    message: str
     
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "project_id": "proj_21db12226dcf",
-                "project_name": "RD Valcha",
-                "status": "PROCESSING",
-                "workflow": "A",
-                "created_at": "2025-10-11T17:54:03",
-                "updated_at": "2025-10-11T17:54:15",
-                "progress": 65,
-                "positions_total": 298,
-                "positions_processed": 195
-            }
-        }
+    # Processing info
+    positions_processed: int = 0
+    positions_total: int = 0
+    
+    # Audit results
+    green_count: int = 0
+    amber_count: int = 0
+    red_count: int = 0
+    
+    # Timestamps
+    uploaded_at: datetime
+    processed_at: Optional[datetime] = None
+    audit_completed_at: Optional[datetime] = None
+    
+    # Error info (if failed)
+    error_message: Optional[str] = None
+
+
+class Position(BaseModel):
+    """Building position/item model"""
+    position_number: str = Field(..., description="Position number (PČ)")
+    code: Optional[str] = Field(None, description="KROS/ÚRS code")
+    name: str = Field(..., description="Position name/description")
+    unit: str = Field(..., description="Unit of measurement (MJ)")
+    quantity: float = Field(..., gt=0, description="Quantity (Množství)")
+    unit_price: Optional[float] = Field(None, description="Unit price (J.cena)")
+    total_price: Optional[float] = Field(None, description="Total price (Cena celkem)")
+    
+    # Additional fields
+    category: Optional[str] = None
+    section: Optional[str] = None
 
 
 class PositionAudit(BaseModel):
     """Audit result for a single position"""
-    position_number: str
-    code: str
-    description: str
-    quantity: float
-    unit: str
-    classification: PositionClassification
-    issues: list[str] = []
-    recommendations: list[str] = []
+    position: Position
+    classification: AuditClassification  # GREEN/AMBER/RED
+    confidence_score: float = Field(..., ge=0, le=1, description="Confidence in classification")
     
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "position_number": "1.1.1",
-                "code": "121-01-001",
-                "description": "Beton základů C20/25",
-                "quantity": 25.5,
-                "unit": "m³",
-                "classification": "GREEN",
-                "issues": [],
-                "recommendations": []
-            }
-        }
+    # Audit findings
+    findings: List[str] = Field(default_factory=list, description="List of audit findings")
+    warnings: List[str] = Field(default_factory=list, description="Warnings")
+    errors: List[str] = Field(default_factory=list, description="Critical errors")
+    
+    # HITL flag
+    requires_hitl: bool = Field(False, description="Requires human-in-the-loop review")
+    hitl_reason: Optional[str] = Field(None, description="Reason for HITL")
+    
+    # Matching info
+    matched_code: Optional[str] = None
+    matched_name: Optional[str] = None
+    price_difference_pct: Optional[float] = None
 
 
-class AuditResult(BaseModel):
-    """Complete audit result"""
+class AuditReport(BaseModel):
+    """Complete audit report for a project"""
     project_id: str
-    summary: Dict[str, Any]
-    positions: list[PositionAudit]
+    project_name: str
+    audit_timestamp: datetime
     
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "project_id": "proj_21db12226dcf",
-                "summary": {
-                    "total_positions": 298,
-                    "green": 285,
-                    "amber": 10,
-                    "red": 3
-                },
-                "positions": []
-            }
-        }
+    # Summary statistics
+    total_positions: int
+    green_count: int
+    amber_count: int
+    red_count: int
+    hitl_count: int
+    
+    # Detailed results
+    positions: List[PositionAudit]
+    
+    # Overall assessment
+    overall_risk: AuditClassification
+    recommendations: List[str] = []
+
+
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
+def db_project_to_response(db_project: Project) -> ProjectResponse:
+    """
+    Convert SQLAlchemy Project to Pydantic ProjectResponse
+    
+    Args:
+        db_project: SQLAlchemy Project instance
+        
+    Returns:
+        Pydantic ProjectResponse
+    """
+    # Calculate progress based on status
+    progress_map = {
+        ProjectStatus.UPLOADED: 10,
+        ProjectStatus.PROCESSING: 30,
+        ProjectStatus.PARSED: 50,
+        ProjectStatus.STAGING: 60,
+        ProjectStatus.CURATED: 70,
+        ProjectStatus.AUDIT_IN_PROGRESS: 85,
+        ProjectStatus.AUDIT_COMPLETED: 95,
+        ProjectStatus.HITL_REVIEW: 98,
+        ProjectStatus.COMPLETED: 100,
+        ProjectStatus.FAILED: 0,
+    }
+    
+    progress = progress_map.get(db_project.status, 0)
+    
+    # Generate status message
+    if db_project.status == ProjectStatus.FAILED:
+        message = f"Failed: {db_project.error_message or 'Unknown error'}"
+    elif db_project.status == ProjectStatus.COMPLETED:
+        message = f"Audit completed: {db_project.green_count}G / {db_project.amber_count}A / {db_project.red_count}R"
+    else:
+        message = f"Processing: {db_project.status.value}"
+    
+    return ProjectResponse(
+        project_id=db_project.project_id,
+        name=db_project.name,
+        description=db_project.description,
+        status=db_project.status,
+        workflow=db_project.workflow or WorkflowType.A,
+        uploaded_at=db_project.uploaded_at,
+        processed_at=db_project.processed_at,
+        audit_completed_at=db_project.audit_completed_at,
+        files=[],  # TODO: Extract from file paths
+        total_positions=db_project.total_positions,
+        green_count=db_project.green_count,
+        amber_count=db_project.amber_count,
+        red_count=db_project.red_count,
+        progress=progress,
+        message=message,
+    )
+
+
+def calculate_audit_summary(positions: List[PositionAudit]) -> Dict[str, int]:
+    """
+    Calculate audit summary statistics
+    
+    Args:
+        positions: List of audited positions
+        
+    Returns:
+        Dict with counts for each classification
+    """
+    summary = {
+        "total": len(positions),
+        "green": sum(1 for p in positions if p.classification == AuditClassification.GREEN),
+        "amber": sum(1 for p in positions if p.classification == AuditClassification.AMBER),
+        "red": sum(1 for p in positions if p.classification == AuditClassification.RED),
+        "hitl": sum(1 for p in positions if p.requires_hitl),
+    }
+    return summary
