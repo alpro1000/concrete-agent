@@ -540,6 +540,8 @@ class ExcelParser:
 
         matched_fields = sorted({field for _, field, _ in matches})
 
+        minimum_distinct_matches = 2
+
         return {
             "matches": [
                 {
@@ -551,7 +553,7 @@ class ExcelParser:
             ],
             "matched_fields": matched_fields,
             "match_count": len(matched_fields),
-            "is_header": len(matched_fields) >= 3,
+            "is_header": len(matched_fields) >= minimum_distinct_matches,
         }
 
     @staticmethod
