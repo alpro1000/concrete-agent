@@ -65,15 +65,18 @@ class PDFParser:
                             )
             
             logger.info(f"Total raw positions extracted: {len(positions)}")
-            
-            # Normalize all positions
-            normalized_positions = normalize_positions(positions)
-            
+
+            # Normalize all positions and capture statistics
+            normalized_positions, normalization_stats = normalize_positions(
+                positions,
+                return_stats=True
+            )
+
             logger.info(
-                f"✅ PDF parsed: {len(normalized_positions)} valid positions "
+                f"✅ PDF parsed: {normalization_stats['normalized_total']} valid positions "
                 f"from {total_pages} pages"
             )
-            
+
             return {
                 "document_info": {
                     "filename": file_path.name,
@@ -81,9 +84,15 @@ class PDFParser:
                     "total_pages": total_pages,
                     "tables_found": len(positions)
                 },
-                "positions": normalized_positions
+                "positions": normalized_positions,
+                "diagnostics": {
+                    "raw_total": normalization_stats["raw_total"],
+                    "normalized_total": normalization_stats["normalized_total"],
+                    "skipped_total": normalization_stats["skipped_total"],
+                    "pages_processed": total_pages
+                }
             }
-            
+
         except Exception as e:
             logger.error(f"❌ PDF parsing failed: {str(e)}", exc_info=True)
             return {
@@ -92,7 +101,13 @@ class PDFParser:
                     "format": "pdf",
                     "error": str(e)
                 },
-                "positions": []
+                "positions": [],
+                "diagnostics": {
+                    "raw_total": 0,
+                    "normalized_total": 0,
+                    "skipped_total": 0,
+                    "pages_processed": 0
+                }
             }
     
     def _table_to_positions(

@@ -38,6 +38,7 @@ class ExcelParser:
             logger.info(f"Excel has {len(workbook.sheetnames)} sheets: {workbook.sheetnames}")
             
             all_positions = []
+            sheet_summaries: List[Dict[str, Any]] = []
             
             # Process each sheet
             for sheet_name in workbook.sheetnames:
@@ -46,24 +47,34 @@ class ExcelParser:
                 sheet = workbook[sheet_name]
                 sheet_positions = self._parse_sheet(sheet, sheet_name)
                 
+                raw_count = len(sheet_positions)
+
                 if sheet_positions:
                     logger.info(
-                        f"Extracted {len(sheet_positions)} positions from sheet '{sheet_name}'"
+                        f"Extracted {raw_count} positions from sheet '{sheet_name}'"
                     )
                     all_positions.extend(sheet_positions)
                 else:
                     logger.debug(f"No positions found in sheet '{sheet_name}'")
-            
+
+                sheet_summaries.append({
+                    "sheet_name": sheet_name,
+                    "raw_positions": raw_count
+                })
+
             logger.info(f"Total raw positions from all sheets: {len(all_positions)}")
-            
-            # Normalize all positions
-            normalized_positions = normalize_positions(all_positions)
-            
+
+            # Normalize all positions and capture statistics
+            normalized_positions, normalization_stats = normalize_positions(
+                all_positions,
+                return_stats=True
+            )
+
             logger.info(
-                f"✅ Excel parsed: {len(normalized_positions)} valid positions "
+                f"✅ Excel parsed: {normalization_stats['normalized_total']} valid positions "
                 f"from {len(workbook.sheetnames)} sheet(s)"
             )
-            
+
             return {
                 "document_info": {
                     "filename": file_path.name,
@@ -71,9 +82,15 @@ class ExcelParser:
                     "sheets": workbook.sheetnames,
                     "total_sheets": len(workbook.sheetnames)
                 },
-                "positions": normalized_positions
+                "positions": normalized_positions,
+                "diagnostics": {
+                    "raw_total": normalization_stats["raw_total"],
+                    "normalized_total": normalization_stats["normalized_total"],
+                    "skipped_total": normalization_stats["skipped_total"],
+                    "sheet_summaries": sheet_summaries
+                }
             }
-            
+
         except Exception as e:
             logger.error(f"❌ Excel parsing failed: {str(e)}", exc_info=True)
             return {
@@ -82,7 +99,13 @@ class ExcelParser:
                     "format": "excel",
                     "error": str(e)
                 },
-                "positions": []
+                "positions": [],
+                "diagnostics": {
+                    "raw_total": 0,
+                    "normalized_total": 0,
+                    "skipped_total": 0,
+                    "sheet_summaries": []
+                }
             }
     
     def _parse_sheet(self, sheet: Worksheet, sheet_name: str) -> List[Dict[str, Any]]:
