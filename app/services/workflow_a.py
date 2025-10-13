@@ -245,8 +245,35 @@ class WorkflowA:
             logger.info(f"Parsing: {file_path.name}")
 
             result = self.parser.parse(file_path)
-            file_positions = result.get('positions') or []
-            file_diagnostics = result.get('diagnostics', {})
+
+            if isinstance(result, dict):
+                file_positions = result.get('positions') or []
+                file_diagnostics = result.get('diagnostics', {})
+            elif isinstance(result, list):
+                logger.warning(
+                    "Parser for %s returned legacy list format; wrapping into diagnostics",
+                    file_path.name,
+                )
+                file_positions = result
+                file_diagnostics = {
+                    "raw_total": len(file_positions),
+                    "normalized_total": len(file_positions),
+                    "skipped_total": 0,
+                    "parser_format": "legacy_list",
+                }
+            else:
+                logger.warning(
+                    "Parser for %s returned unexpected type %s; treating as empty result",
+                    file_path.name,
+                    type(result).__name__,
+                )
+                file_positions = []
+                file_diagnostics = {
+                    "raw_total": 0,
+                    "normalized_total": 0,
+                    "skipped_total": 0,
+                    "parser_format": "unknown",
+                }
 
             raw_count = file_diagnostics.get('raw_total')
             normalized_count = file_diagnostics.get('normalized_total', len(file_positions))
