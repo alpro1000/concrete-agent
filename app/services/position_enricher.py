@@ -61,7 +61,11 @@ class PositionEnricher:
         }
         
         for idx, position in enumerate(positions, start=1):
-            logger.info(f"Enriching position {idx}/{len(positions)}: {position.get('description', 'N/A')[:50]}")
+            logger.info(
+                f"Enriching position {idx}/{len(positions)} "
+                f"[{position.get('code', 'N/A')}]: "
+                f"{position.get('description', 'N/A')[:50]}"
+            )
             
             enriched = await self.enrich_single_position(position, drawing_specs)
             
@@ -113,7 +117,8 @@ class PositionEnricher:
             enriched_position = self._merge_enrichment(position, enrichment_data)
             
             logger.debug(
-                f"Position enriched: {position.get('description', 'N/A')[:30]} - "
+                f"Position enriched: [{position.get('code', 'N/A')}] "
+                f"{position.get('description', 'N/A')[:30]} - "
                 f"Status: {enriched_position.get('enrichment_status')}"
             )
             
@@ -163,9 +168,11 @@ class PositionEnricher:
             
             simplified_specs.append(simplified)
         
+        code = position.get('code', 'N/A')
+
         prompt = f"""Máš pozici z výkazu výměr (stavební smety):
 
-**Pozice:**
+**Pozice (kód: {code}):**
 {json.dumps(position, ensure_ascii=False, indent=2)}
 
 **Specifikace materiálů z výkresů:**
@@ -307,6 +314,7 @@ Pokud nenajdeš žádnou odpovídající specifikaci, vrať:
         """
         # Copy original position
         enriched = position.copy()
+        enriched['code'] = position.get('code')
         
         # Determine enrichment status
         if enrichment_data.get('matched') and enrichment_data.get('matching_confidence', 0) >= 0.7:

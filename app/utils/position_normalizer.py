@@ -170,7 +170,10 @@ class PositionNormalizer:
                     # Skip numeric-looking fields
                     if not re.match(r'^[\d\s\.,\-]+$', value):
                         normalized['description'] = value
-                        logger.debug(f"Extracted description from field '{key}': {value[:50]}")
+                        logger.debug(
+                            f"Extracted description from field '{key}' "
+                            f"[{normalized.get('code', 'N/A')}]: {value[:50]}"
+                        )
                         break
         
         # If code missing, try to find code-like field
