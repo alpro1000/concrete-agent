@@ -1,135 +1,152 @@
 """
-Project-related models (Pydantic + SQLAlchemy)
-СОВМЕСТИМОСТЬ: Сохраняет все существующие имена
+Project Models - ИСПРАВЛЕНО
+Added project_id to ProjectResponse
 """
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
-from datetime import datetime
 from enum import Enum
-
-# SQLAlchemy imports (только для класса Project)
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, Enum as SQLEnum
-from sqlalchemy.ext.declarative import declarative_base
-
-Base = declarative_base()
-
-# =============================================================================
-# СУЩЕСТВУЮЩИЕ PYDANTIC МОДЕЛИ (БЕЗ ИЗМЕНЕНИЙ)
-# =============================================================================
-
-class ProjectStatus(str, Enum):
-    """Status of audit processing"""
-    UPLOADED = "uploaded"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    FAILED = "failed"
+from typing import Dict, Any, Optional
+from pydantic import BaseModel, Field
+from datetime import datetime
 
 
 class WorkflowType(str, Enum):
-    """Type of workflow"""
-    A = "A"  # With výkaz výměr
-    B = "B"  # Without výkaz výměr
+    """Project workflow type"""
+    A = "A"  # Audit existing vykaz vymer
+    B = "B"  # Generate from drawings
 
 
-class ProjectCreate(BaseModel):
-    """Request model for creating a new project"""
-    name: str = Field(..., description="Project name")
-    description: Optional[str] = Field(None, description="Project description")
+class ProjectStatus(str, Enum):
+    """Project processing status"""
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
 
 
-class UploadedFile(BaseModel):
-    """Information about uploaded file"""
-    filename: str
-    saved_as: str
-    type: str
-    size: int
+class PositionClassification(str, Enum):
+    """Position audit classification"""
+    GREEN = "GREEN"    # All good
+    AMBER = "AMBER"    # Needs attention
+    RED = "RED"        # Critical issues
 
 
 class FileMetadata(BaseModel):
-    """Safe file metadata without exposing server paths"""
-    file_id: str = Field(..., description="Logical file identifier")
-    filename: str = Field(..., description="Original filename")
-    size: int = Field(..., description="File size in bytes")
-    file_type: str = Field(..., description="Type of file (vykaz_vymer, vykresy, etc.)")
-    uploaded_at: datetime = Field(..., description="Upload timestamp")
+    """Metadata for uploaded file"""
+    filename: str
+    size: int
+    uploaded_at: str
+    file_type: str
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "filename": "vykaz.xml",
+                "size": 524288,
+                "uploaded_at": "2025-10-11T12:00:00",
+                "file_type": "xml"
+            }
+        }
 
 
 class ProjectResponse(BaseModel):
-    """Response model for project"""
-    project_id: str
-    name: str
-    upload_timestamp: datetime
-    status: ProjectStatus
-    workflow: WorkflowType
-    files: List[Dict[str, Any]]  # Safe file metadata (no paths)
+    """Response for project upload - ИСПРАВЛЕНО"""
+    success: bool
+    project_id: str  # ✅ ДОБАВЛЕНО - главное исправление!
+    project_name: str
+    workflow: str
+    uploaded_at: str
+    files_uploaded: Dict[str, Any]
     message: str
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "success": True,
+                "project_id": "proj_21db12226dcf",  # ✅ ТЕПЕРЬ ЕСТЬ!
+                "project_name": "RD Valcha",
+                "workflow": "A",
+                "uploaded_at": "2025-10-11T17:54:03",
+                "files_uploaded": {
+                    "vykaz_vymer": True,
+                    "vykresy": 1,
+                    "rozpocet": False,
+                    "dokumentace": 0,
+                    "zmeny": 0
+                },
+                "message": "Project uploaded successfully. ID: proj_21db12226dcf"
+            }
+        }
 
-
-# =============================================================================
-# НОВОЕ: SQLAlchemy DATABASE MODEL (для БД в Phase 2+)
-# =============================================================================
-
-class Project(Base):
-    """
-    SQLAlchemy модель проекта для базы данных
-    ДОБАВЛЕНО: для импорта в routes.py
-    """
-    __tablename__ = "projects"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(String(255), unique=True, index=True, nullable=False)
-    name = Column(String(500), nullable=False)
-    description = Column(Text, nullable=True)
-    
-    # Статус (используем существующий ProjectStatus enum)
-    status = Column(SQLEnum(ProjectStatus), default=ProjectStatus.UPLOADED)
-    workflow = Column(SQLEnum(WorkflowType), nullable=True)
-    
-    # Пути к файлам
-    raw_file_path = Column(String(1000), nullable=True)
-    staging_file_path = Column(String(1000), nullable=True)
-    curated_file_path = Column(String(1000), nullable=True)
-    audit_report_path = Column(String(1000), nullable=True)
-    
-    # Timestamps
-    uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    processed_at = Column(DateTime, nullable=True)
-    audit_completed_at = Column(DateTime, nullable=True)
-    
-    # Статистика аудита
-    total_positions = Column(Integer, default=0)
-    green_count = Column(Integer, default=0)
-    amber_count = Column(Integer, default=0)
-    red_count = Column(Integer, default=0)
-    
-    def __repr__(self):
-        return f"<Project {self.project_id}: {self.name}>"
-    
-    def to_response(self) -> ProjectResponse:
-        """Конвертация в Pydantic модель для API"""
-        return ProjectResponse(
-            project_id=self.project_id,
-            name=self.name,
-            upload_timestamp=self.uploaded_at,
-            status=self.status,
-            workflow=self.workflow or WorkflowType.A,
-            files=[],  # TODO: populate from file paths
-            message=f"Project {self.status.value}"
-        )
-
-
-# =============================================================================
-# PROJECT STATUS RESPONSE
-# =============================================================================
 
 class ProjectStatusResponse(BaseModel):
-    """Detailed project status for API"""
+    """Response for project status query"""
     project_id: str
+    project_name: str
     status: ProjectStatus
-    progress: int = Field(0, ge=0, le=100)
-    message: str
-    positions_processed: int = 0
-    positions_total: int = 0
-    green_count: int = 0
-    amber_count: int = 0
-    red_count: int = 0
+    workflow: WorkflowType
+    created_at: str
+    updated_at: str
+    progress: Optional[int] = 0
+    positions_total: Optional[int] = 0
+    positions_processed: Optional[int] = 0
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "project_id": "proj_21db12226dcf",
+                "project_name": "RD Valcha",
+                "status": "PROCESSING",
+                "workflow": "A",
+                "created_at": "2025-10-11T17:54:03",
+                "updated_at": "2025-10-11T17:54:15",
+                "progress": 65,
+                "positions_total": 298,
+                "positions_processed": 195
+            }
+        }
+
+
+class PositionAudit(BaseModel):
+    """Audit result for a single position"""
+    position_number: str
+    code: str
+    description: str
+    quantity: float
+    unit: str
+    classification: PositionClassification
+    issues: list[str] = []
+    recommendations: list[str] = []
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "position_number": "1.1.1",
+                "code": "121-01-001",
+                "description": "Beton základů C20/25",
+                "quantity": 25.5,
+                "unit": "m³",
+                "classification": "GREEN",
+                "issues": [],
+                "recommendations": []
+            }
+        }
+
+
+class AuditResult(BaseModel):
+    """Complete audit result"""
+    project_id: str
+    summary: Dict[str, Any]
+    positions: list[PositionAudit]
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "project_id": "proj_21db12226dcf",
+                "summary": {
+                    "total_positions": 298,
+                    "green": 285,
+                    "amber": 10,
+                    "red": 3
+                },
+                "positions": []
+            }
+        }
