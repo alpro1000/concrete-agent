@@ -136,7 +136,7 @@ class ExcelParser:
         Returns:
             Tuple of raw position dicts (not normalized yet) and diagnostics
         """
-        if not sheet or sheet.max_row < 2:
+        if not sheet or sheet.max_row < 1:
             logger.debug(f"Sheet '{sheet_name}' is empty or too small")
             diagnostics = {
                 "header_found": False,
@@ -148,182 +148,247 @@ class ExcelParser:
             }
             return [], diagnostics
         
-        # Find header row
-        header_search = self._find_header_row(sheet)
-        header_row = header_search.get("row_index")
-
-        sheet_diagnostics = {
-            "header_found": header_row is not None,
-            "header_row": header_row,
-            "header_values": header_search.get("header_values", []),
-            "matched_keywords": header_search.get("matched_keywords", []),
-            "searched_rows": header_search.get("searched_rows"),
-        }
-
-        if header_row is None:
-            reason = (
-                "Header row not found within scan range"
-                if sheet.max_row > 0
-                else "Sheet is empty"
-            )
-            sheet_diagnostics["reason"] = reason
-            sheet_diagnostics["best_candidate"] = header_search.get("best_candidate")
-            sheet_diagnostics["sample_rows"] = header_search.get("sample_rows", [])
-            logger.warning(
-                "No header row found in sheet '%s'. Reason: %s. Best candidate: %s",
-                sheet_name,
-                reason,
-                header_search.get("best_candidate"),
-            )
-            return [], sheet_diagnostics
-
-        logger.info(
-            "Found header row at row %s with values: %s",
-            header_row,
-            header_search.get("header_values", []),
-        )
-        
-        # Extract headers
-        headers = []
-        for cell in sheet[header_row]:
-            if cell.value:
-                # Clean header
-                header = ExcelParser._normalize_header_value(cell.value)
-                if header:
-                    header = header.replace(' ', '_')
-                    headers.append(header)
-                else:
-                    headers.append(f"col_{len(headers)}")
-            else:
-                headers.append(f"col_{len(headers)}")
-
-        logger.debug(f"Sheet headers: {headers}")
-        
         positions: List[Dict[str, Any]] = []
-
-        header_value_set = {
-            ExcelParser._normalize_header_value(value)
-            for value in header_search.get("header_values", [])
-            if value
-        }
-
-        header_types = [self._map_header_to_field(header) for header in headers]
-
-        required_fields = {"code", "description", "unit", "quantity"}
-
         skipped_entries: List[Dict[str, Any]] = []
+        header_blocks: List[Dict[str, Any]] = []
+
         positions_skipped = 0
         last_data_row: Optional[int] = None
 
-        # Process data rows - always until sheet.max_row
-        for row_idx in range(header_row + 1, sheet.max_row + 1):
+        active_header_info: List[Dict[str, Any]] = []
+        active_header_keys: List[str] = []
+        field_to_column: Dict[str, int] = {}
+
+        first_header: Optional[Dict[str, Any]] = None
+        best_candidate: Optional[Dict[str, Any]] = None
+        sample_rows: List[List[str]] = []
+
+        required_fields = {"description", "quantity"}
+
+        def record_skip(row_index: int, reason: str, **extra: Any) -> None:
+            nonlocal positions_skipped
+            positions_skipped += 1
+            entry: Dict[str, Any] = {"row": row_index, "reason": reason}
+            for key, value in extra.items():
+                if value is not None:
+                    entry[key] = value
+            skipped_entries.append(entry)
+
+            extra_info = ", ".join(f"{key}={value}" for key, value in extra.items() if value is not None)
+            logger.debug(
+                "Skipping row %s in sheet '%s': %s%s",
+                row_index,
+                sheet_name,
+                reason,
+                f" ({extra_info})" if extra_info else "",
+            )
+
+        for row_idx in range(1, sheet.max_row + 1):
             row = sheet[row_idx]
 
             raw_values: List[str] = []
+            normalized_values: List[str] = []
+            has_values = False
+
             for cell in row:
-                if cell.value is None:
-                    continue
+                raw_value = ""
+                if cell.value is not None:
+                    if isinstance(cell.value, str):
+                        raw_value = cell.value.strip()
+                    else:
+                        raw_value = str(cell.value).strip()
 
-                if isinstance(cell.value, str):
-                    value_str = cell.value.strip()
-                    if not value_str:
-                        continue
-                    raw_values.append(value_str)
-                else:
-                    raw_values.append(str(cell.value))
+                if raw_value:
+                    has_values = True
 
-            if not raw_values:
-                positions_skipped += 1
-                skipped_entries.append({
+                raw_values.append(raw_value)
+                normalized_values.append(ExcelParser._normalize_header_value(cell.value))
+
+            if len(sample_rows) < 5:
+                sample_rows.append(raw_values)
+
+            candidate = self._detect_header_candidate(normalized_values)
+            if candidate and (
+                not best_candidate or candidate["match_count"] > best_candidate["match_count"]
+            ):
+                best_candidate = {
+                    "row_index": row_idx,
+                    "match_count": candidate["match_count"],
+                    "matched_fields": candidate["matched_fields"],
+                    "raw_headers": raw_values,
+                }
+
+            if candidate and candidate["is_header"]:
+                active_header_info = []
+                active_header_keys = []
+                field_to_column = {}
+
+                for col_idx, raw_header in enumerate(raw_values):
+                    normalized_header = normalized_values[col_idx]
+                    header_key = normalized_header.replace(" ", "_") if normalized_header else f"col_{col_idx}"
+                    if header_key in active_header_keys:
+                        header_key = f"{header_key}_{col_idx}"
+
+                    canonical_field = self._map_header_to_field(normalized_header)
+
+                    active_header_info.append({
+                        "index": col_idx,
+                        "raw": raw_header,
+                        "normalized": normalized_header,
+                        "field": canonical_field,
+                        "header_key": header_key,
+                    })
+                    active_header_keys.append(header_key)
+
+                    if canonical_field and canonical_field not in field_to_column:
+                        field_to_column[canonical_field] = col_idx
+
+                header_block = {
                     "row": row_idx,
-                    "reason": "empty_row"
-                })
+                    "raw_headers": raw_values,
+                    "normalized_headers": normalized_values,
+                    "canonical_fields": [info["field"] for info in active_header_info],
+                    "field_mapping": field_to_column.copy(),
+                    "matched_fields": candidate["matched_fields"],
+                }
+                header_blocks.append(header_block)
+
+                logger.info(
+                    "🔎 Header detected in sheet '%s' at row %s: matched=%s, mapping=%s",
+                    sheet_name,
+                    row_idx,
+                    candidate["matched_fields"],
+                    field_to_column,
+                )
+
+                if first_header is None:
+                    first_header = {
+                        "row": row_idx,
+                        "raw_headers": raw_values,
+                        "matched_fields": candidate["matched_fields"],
+                    }
+
+                # Header rows should not be processed as data
                 continue
 
-            last_data_row = row_idx
-
-            normalized_row_values = {
-                ExcelParser._normalize_header_value(value) for value in raw_values
-            }
-
-            if header_value_set and len(normalized_row_values & header_value_set) >= 2:
-                positions_skipped += 1
-                skipped_entries.append({
-                    "row": row_idx,
-                    "reason": "header_repeat"
-                })
+            if not has_values:
+                record_skip(row_idx, "empty_row")
                 continue
 
-            row_text = " ".join(raw_values).lower()
+            if not active_header_info:
+                preview = " ".join(value for value in raw_values if value)[:120]
+                record_skip(row_idx, "no_active_header", preview=preview)
+                continue
 
-            keyword_reason = self._detect_service_keyword(row_text)
+            row_text = " ".join(value for value in raw_values if value)
+            keyword_reason = self._detect_service_keyword(row_text.lower())
             if keyword_reason:
-                positions_skipped += 1
-                skipped_entries.append({
-                    "row": row_idx,
-                    "reason": "service_keyword",
-                    "keyword": keyword_reason
-                })
+                record_skip(row_idx, "service_keyword", keyword=keyword_reason)
                 continue
 
             position: Dict[str, Any] = {}
             canonical_row: Dict[str, Any] = {}
 
             for col_idx, cell in enumerate(row):
-                header = headers[col_idx] if col_idx < len(headers) else f"col_{col_idx}"
-                canonical_field = header_types[col_idx] if col_idx < len(header_types) else None
+                header_key = (
+                    active_header_keys[col_idx]
+                    if col_idx < len(active_header_keys)
+                    else f"col_{col_idx}"
+                )
 
                 cleaned_value = self._clean_cell_value(cell.value)
                 if cleaned_value is None:
                     continue
 
-                position[header] = cleaned_value
+                if header_key in position:
+                    existing_value = position[header_key]
+                    if isinstance(existing_value, list):
+                        existing_value.append(cleaned_value)
+                    else:
+                        position[header_key] = [existing_value, cleaned_value]
+                else:
+                    position[header_key] = cleaned_value
+
+                header_info = (
+                    active_header_info[col_idx]
+                    if col_idx < len(active_header_info)
+                    else None
+                )
+                canonical_field = header_info["field"] if header_info else None
 
                 if canonical_field and canonical_field not in canonical_row:
                     canonical_row[canonical_field] = cleaned_value
 
             summary_reason = self._detect_sum_row(position)
             if summary_reason:
-                positions_skipped += 1
-                skipped_entries.append({
-                    "row": row_idx,
-                    "reason": summary_reason
-                })
+                record_skip(row_idx, summary_reason)
                 continue
 
             if not position:
-                positions_skipped += 1
-                skipped_entries.append({
-                    "row": row_idx,
-                    "reason": "no_data_after_cleaning"
-                })
+                record_skip(row_idx, "no_data_after_cleaning")
                 continue
 
-            missing_fields = [field for field in required_fields if field not in canonical_row]
+            missing_fields = [
+                field
+                for field in required_fields
+                if field not in canonical_row or canonical_row[field] in (None, "")
+            ]
             if missing_fields:
-                positions_skipped += 1
-                skipped_entries.append({
-                    "row": row_idx,
-                    "reason": "missing_required_fields",
-                    "missing": missing_fields,
-                    "available": sorted(canonical_row.keys())
-                })
+                record_skip(
+                    row_idx,
+                    "missing_required_fields",
+                    missing=missing_fields,
+                    available=sorted(canonical_row.keys()),
+                )
                 continue
+
+            if "unit" not in canonical_row:
+                logger.debug(
+                    "Row %s in sheet '%s' accepted without unit value",
+                    row_idx,
+                    sheet_name,
+                )
 
             position['_source'] = f"sheet_{sheet_name}_row_{row_idx}"
 
             positions.append(position)
+            last_data_row = row_idx
+
+            logger.debug(
+                "Accepted row %s in sheet '%s' with fields %s",
+                row_idx,
+                sheet_name,
+                sorted(canonical_row.keys()),
+            )
 
         logger.debug(f"Extracted {len(positions)} raw positions from sheet")
 
-        sheet_diagnostics["summary"] = {
-            "positions_found": len(positions),
-            "positions_skipped": positions_skipped,
-            "last_data_row": last_data_row,
-            "rows_scanned": sheet.max_row - header_row,
+        sheet_diagnostics = {
+            "header_found": bool(header_blocks),
+            "header_row": first_header["row"] if first_header else None,
+            "header_values": first_header["raw_headers"] if first_header else [],
+            "matched_keywords": first_header["matched_fields"] if first_header else [],
+            "searched_rows": sheet.max_row,
+            "header_blocks": header_blocks,
+            "skipped": skipped_entries,
+            "summary": {
+                "positions_found": len(positions),
+                "positions_skipped": positions_skipped,
+                "last_data_row": last_data_row,
+                "rows_scanned": sheet.max_row,
+            },
         }
 
-        sheet_diagnostics["skipped"] = skipped_entries
+        if not header_blocks:
+            sheet_diagnostics["reason"] = "No header detected in sheet"
+            sheet_diagnostics["best_candidate"] = best_candidate
+            sheet_diagnostics["sample_rows"] = sample_rows
+
+            logger.warning(
+                "No header detected in sheet '%s'. Best candidate: %s",
+                sheet_name,
+                best_candidate,
+            )
 
         return positions, sheet_diagnostics
 
@@ -457,6 +522,37 @@ class ExcelParser:
             return cleaned
 
         return value
+
+    def _detect_header_candidate(self, normalized_values: List[str]) -> Optional[Dict[str, Any]]:
+        """Detect whether a row is a header candidate based on recognized keywords."""
+        matches: List[Tuple[int, str, str]] = []
+
+        for idx, normalized in enumerate(normalized_values):
+            if not normalized:
+                continue
+
+            canonical_field = self._map_header_to_field(normalized)
+            if canonical_field:
+                matches.append((idx, canonical_field, normalized))
+
+        if not matches:
+            return None
+
+        matched_fields = sorted({field for _, field, _ in matches})
+
+        return {
+            "matches": [
+                {
+                    "index": idx,
+                    "field": field,
+                    "value": value,
+                }
+                for idx, field, value in matches
+            ],
+            "matched_fields": matched_fields,
+            "match_count": len(matched_fields),
+            "is_header": len(matched_fields) >= 3,
+        }
 
     @staticmethod
     def _map_header_to_field(header: str) -> Optional[str]:
