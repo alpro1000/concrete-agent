@@ -4,10 +4,11 @@ Excel Parser - ИСПРАВЛЕНО
 """
 import logging
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 import openpyxl
 from openpyxl.worksheet.worksheet import Worksheet
 import re
+import unicodedata
 
 from app.utils.position_normalizer import normalize_positions
 
@@ -45,8 +46,8 @@ class ExcelParser:
                 logger.info(f"Processing sheet: {sheet_name}")
                 
                 sheet = workbook[sheet_name]
-                sheet_positions = self._parse_sheet(sheet, sheet_name)
-                
+                sheet_positions, sheet_diag = self._parse_sheet(sheet, sheet_name)
+
                 raw_count = len(sheet_positions)
 
                 if sheet_positions:
@@ -57,10 +58,13 @@ class ExcelParser:
                 else:
                     logger.debug(f"No positions found in sheet '{sheet_name}'")
 
-                sheet_summaries.append({
+                sheet_summary = {
                     "sheet_name": sheet_name,
-                    "raw_positions": raw_count
-                })
+                    "raw_positions": raw_count,
+                }
+                sheet_summary.update(sheet_diag)
+
+                sheet_summaries.append(sheet_summary)
 
             logger.info(f"Total raw positions from all sheets: {len(all_positions)}")
 
@@ -75,6 +79,15 @@ class ExcelParser:
                 f"from {len(workbook.sheetnames)} sheet(s)"
             )
 
+            header_detection = [
+                {
+                    "sheet_name": summary.get("sheet_name"),
+                    "header_found": summary.get("header_found", False),
+                    "header_row": summary.get("header_row"),
+                }
+                for summary in sheet_summaries
+            ]
+
             return {
                 "document_info": {
                     "filename": file_path.name,
@@ -87,7 +100,8 @@ class ExcelParser:
                     "raw_total": normalization_stats["raw_total"],
                     "normalized_total": normalization_stats["normalized_total"],
                     "skipped_total": normalization_stats["skipped_total"],
-                    "sheet_summaries": sheet_summaries
+                    "sheet_summaries": sheet_summaries,
+                    "header_detection": header_detection,
                 }
             }
 
@@ -104,11 +118,14 @@ class ExcelParser:
                     "raw_total": 0,
                     "normalized_total": 0,
                     "skipped_total": 0,
-                    "sheet_summaries": []
+                    "sheet_summaries": [],
+                    "header_detection": []
                 }
             }
     
-    def _parse_sheet(self, sheet: Worksheet, sheet_name: str) -> List[Dict[str, Any]]:
+    def _parse_sheet(
+        self, sheet: Worksheet, sheet_name: str
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """
         Parse a single Excel sheet
         
@@ -117,33 +134,69 @@ class ExcelParser:
             sheet_name: Name of the sheet
             
         Returns:
-            List of raw position dicts (not normalized yet)
+            Tuple of raw position dicts (not normalized yet) and diagnostics
         """
         if not sheet or sheet.max_row < 2:
             logger.debug(f"Sheet '{sheet_name}' is empty or too small")
-            return []
+            diagnostics = {
+                "header_found": False,
+                "header_row": None,
+                "header_values": [],
+                "matched_keywords": [],
+                "searched_rows": sheet.max_row if sheet else 0,
+                "reason": "Sheet is empty or too small",
+            }
+            return [], diagnostics
         
         # Find header row
-        header_row = self._find_header_row(sheet)
-        
+        header_search = self._find_header_row(sheet)
+        header_row = header_search.get("row_index")
+
+        sheet_diagnostics = {
+            "header_found": header_row is not None,
+            "header_row": header_row,
+            "header_values": header_search.get("header_values", []),
+            "matched_keywords": header_search.get("matched_keywords", []),
+            "searched_rows": header_search.get("searched_rows"),
+        }
+
         if header_row is None:
-            logger.warning(f"No header row found in sheet '{sheet_name}'")
-            return []
-        
-        logger.debug(f"Found header row at row {header_row}")
+            reason = (
+                "Header row not found within scan range"
+                if sheet.max_row > 0
+                else "Sheet is empty"
+            )
+            sheet_diagnostics["reason"] = reason
+            sheet_diagnostics["best_candidate"] = header_search.get("best_candidate")
+            sheet_diagnostics["sample_rows"] = header_search.get("sample_rows", [])
+            logger.warning(
+                "No header row found in sheet '%s'. Reason: %s. Best candidate: %s",
+                sheet_name,
+                reason,
+                header_search.get("best_candidate"),
+            )
+            return [], sheet_diagnostics
+
+        logger.info(
+            "Found header row at row %s with values: %s",
+            header_row,
+            header_search.get("header_values", []),
+        )
         
         # Extract headers
         headers = []
         for cell in sheet[header_row]:
             if cell.value:
                 # Clean header
-                header = str(cell.value).lower().strip()
-                header = re.sub(r'[^\w\s]', '', header)
-                header = re.sub(r'\s+', '_', header)
-                headers.append(header)
+                header = ExcelParser._normalize_header_value(cell.value)
+                if header:
+                    header = header.replace(' ', '_')
+                    headers.append(header)
+                else:
+                    headers.append(f"col_{len(headers)}")
             else:
                 headers.append(f"col_{len(headers)}")
-        
+
         logger.debug(f"Sheet headers: {headers}")
         
         positions = []
@@ -184,41 +237,124 @@ class ExcelParser:
         
         logger.debug(f"Extracted {len(positions)} raw positions from sheet")
         
-        return positions
-    
+        return positions, sheet_diagnostics
+
     @staticmethod
-    def _find_header_row(sheet: Worksheet) -> Optional[int]:
+    def _normalize_header_value(value: Any) -> str:
+        """Normalize header values by lowering and stripping diacritics/symbols."""
+        if value is None:
+            return ""
+
+        text = str(value).strip().lower()
+        if not text:
+            return ""
+
+        normalized = unicodedata.normalize("NFKD", text)
+        normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+        normalized = re.sub(r"[^a-z0-9\s]", " ", normalized)
+        normalized = re.sub(r"\s+", " ", normalized)
+        return normalized.strip()
+
+    @staticmethod
+    def _find_header_row(sheet: Worksheet) -> Dict[str, Any]:
         """
         Find the row that contains column headers
-        
+
         Looks for rows with typical header keywords
-        
+
         Returns:
-            Row number (1-indexed) or None if not found
+            Detailed information about detected header row search
         """
         header_keywords = [
-            'popis', 'opis', 'nazev', 'description', 'desc',
-            'mnozstvi', 'množství', 'qty', 'quantity',
-            'cena', 'price', 'kc', 'czk',
-            'mj', 'unit', 'jednotka'
+            "text",
+            "popis",
+            "opis",
+            "nazev",
+            "description",
+            "desc",
+            "jednotka",
+            "mj",
+            "m.j.",
+            "množství",
+            "mnozstvi",
+            "qty",
+            "quantity",
+            "j.cena",
+            "jednotkova cena",
+            "jednotková cena",
+            "cena celkem",
+            "cena",
+            "price",
+            "kc",
+            "czk",
+            "kod",
+            "kd",
+            "typ",
+            "normohodiny",
+            "dph",
+            "souhrn",
+            "cena bez dph",
+            "unit",
         ]
-        
-        # Check first 20 rows for headers
-        for row_idx in range(1, min(21, sheet.max_row + 1)):
+
+        normalized_keywords = {
+            ExcelParser._normalize_header_value(keyword)
+            for keyword in header_keywords
+        }
+        normalized_keywords.discard("")
+
+        search_limit = min(100, sheet.max_row)
+        sample_rows: List[List[str]] = []
+        best_candidate: Optional[Dict[str, Any]] = None
+
+        for row_idx in range(1, search_limit + 1):
             row = sheet[row_idx]
-            row_text = ' '.join(
-                str(cell.value).lower() 
-                for cell in row 
-                if cell.value
-            )
-            
-            # If row contains at least 2 header keywords, it's likely a header
-            matches = sum(1 for keyword in header_keywords if keyword in row_text)
-            if matches >= 2:
-                return row_idx
-        
-        # Default to first row if no header found
-        return 1
+            raw_values = [
+                str(cell.value).strip() if cell.value is not None else ""
+                for cell in row
+            ]
+
+            if len(sample_rows) < 5:
+                sample_rows.append(raw_values)
+
+            normalized_cells = [
+                ExcelParser._normalize_header_value(cell.value)
+                for cell in row
+                if cell.value is not None
+            ]
+
+            row_text = " ".join(value for value in normalized_cells if value)
+            matched_keywords = {
+                keyword for keyword in normalized_keywords if keyword in row_text
+            }
+
+            if matched_keywords:
+                candidate = {
+                    "row_index": row_idx,
+                    "matches": sorted(matched_keywords),
+                    "header_values": raw_values,
+                }
+                if not best_candidate or len(matched_keywords) > len(best_candidate["matches"]):
+                    best_candidate = candidate
+
+            if len(matched_keywords) >= 2:
+                return {
+                    "row_index": row_idx,
+                    "header_values": raw_values,
+                    "matched_keywords": sorted(matched_keywords),
+                    "searched_rows": row_idx,
+                    "sample_rows": sample_rows,
+                    "best_candidate": best_candidate,
+                }
+
+        return {
+            "row_index": None,
+            "header_values": [],
+            "matched_keywords": [],
+            "searched_rows": search_limit,
+            "sample_rows": sample_rows,
+            "best_candidate": best_candidate,
+        }
     
     @staticmethod
     def _is_separator_row(position: Dict[str, Any]) -> bool:
