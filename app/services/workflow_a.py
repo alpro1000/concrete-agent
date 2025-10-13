@@ -5,7 +5,7 @@ Audit existing Výkaz výměr + Enrich with Drawing Specifications
 import logging
 import json
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from datetime import datetime
 
 from app.parsers.smart_parser import SmartParser
@@ -152,7 +152,7 @@ class WorkflowA:
         if not vykaz_files:
             raise FileNotFoundError(f"No files found in {vykaz_dir}")
         
-        all_positions = []
+        all_positions: List[Dict[str, Any]] = []
         
         for file_path in vykaz_files:
             logger.info(f"Parsing: {file_path.name}")
@@ -166,7 +166,16 @@ class WorkflowA:
             else:
                 logger.warning(f"No positions found in {file_path.name}")
         
-        return all_positions
+        if not all_positions:
+            return []
+
+        normalized_positions = normalize_positions(all_positions)
+        logger.info(
+            "Normalized positions from výkaz výměr: "
+            f"{len(normalized_positions)} total (raw: {len(all_positions)})"
+        )
+
+        return normalized_positions
     
     async def _parse_drawings(self, project_dir: Path) -> List[Dict[str, Any]]:
         """
