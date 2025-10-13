@@ -1,261 +1,255 @@
 """
-Excel Parser for construction estimates
-БЕЗ CLAUDE FALLBACK - только локальный парсинг
-
-Поддерживает:
-- .xlsx (Office 2007+)
-- .xls (Office 97-2003)
-- Чешские форматы выказов
+Excel Parser - ИСПРАВЛЕНО
+Теперь использует универсальный нормализатор для всех форматов
 """
 import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-import pandas as pd
+import openpyxl
+from openpyxl.worksheet.worksheet import Worksheet
 import re
+
+from app.utils.position_normalizer import normalize_positions
 
 logger = logging.getLogger(__name__)
 
 
 class ExcelParser:
-    """
-    Excel parser для строительных смет
+    """Parse construction estimates from Excel files"""
     
-    ✅ БЕЗ Claude fallback - только pandas
-    ✅ Полная поддержка чешских столбцов
-    """
-    
-    # Расширенные чешские столбцы
-    CZECH_COLUMNS = {
-        'number': ['pč', 'p.č.', 'číslo', 'cislo', 'number', 'no'],
-        'type': ['typ', 'type'],
-        'code': ['kód', 'kod', 'code'],
-        'description': ['popis', 'název', 'nazev', 'description', 'name'],
-        'unit': ['mj', 'm.j.', 'jednotka', 'unit'],
-        'quantity': ['množství', 'mnozstvi', 'quantity', 'počet', 'pocet'],
-        'unit_price': ['j.cena', 'j. cena', 'jednotková', 'unit price', 'cena'],
-        'total_price': ['cena celkem', 'celkem', 'total', 'celková cena']
-    }
-    
-    def __init__(self):
-        """БЕЗ claude_client параметра!"""
-        pass
-    
-    def parse(self, excel_path: Path) -> Dict[str, Any]:
+    def parse(self, file_path: Path) -> Dict[str, Any]:
         """
-        Parse Excel estimate
+        Parse Excel file and extract positions
         
         Args:
-            excel_path: Path to Excel file
+            file_path: Path to Excel file (.xlsx, .xls)
             
         Returns:
-            Dict with parsed data
+            {
+                "document_info": {...},
+                "positions": [...]
+            }
         """
-        logger.info(f"📊 Parsing Excel: {excel_path}")
+        logger.info(f"📊 Parsing Excel: {file_path.name}")
         
-        return self._parse_with_pandas(excel_path)
-    
-    def _parse_with_pandas(self, excel_path: Path) -> Dict[str, Any]:
-        """Parse Excel using pandas"""
-        logger.info("Using pandas parser...")
-        
-        # Read Excel file
         try:
-            excel_file = pd.ExcelFile(excel_path)
-            sheet_names = excel_file.sheet_names
-            logger.info(f"Found {len(sheet_names)} sheets: {sheet_names}")
-        except Exception as e:
-            logger.error(f"Failed to read Excel file: {e}")
-            raise
-        
-        all_positions = []
-        sections = []
-        
-        # Parse each sheet
-        for sheet_name in sheet_names:
-            logger.info(f"Parsing sheet: {sheet_name}")
+            workbook = openpyxl.load_workbook(file_path, data_only=True)
             
-            try:
-                df = pd.read_excel(excel_path, sheet_name=sheet_name)
+            logger.info(f"Excel has {len(workbook.sheetnames)} sheets: {workbook.sheetnames}")
+            
+            all_positions = []
+            
+            # Process each sheet
+            for sheet_name in workbook.sheetnames:
+                logger.info(f"Processing sheet: {sheet_name}")
                 
-                # Parse positions from dataframe
-                positions = self._parse_dataframe(df, sheet_name)
+                sheet = workbook[sheet_name]
+                sheet_positions = self._parse_sheet(sheet, sheet_name)
                 
-                if positions:
-                    all_positions.extend(positions)
-                    sections.append({
-                        "name": sheet_name,
-                        "positions_count": len(positions)
-                    })
-                    
-                    logger.info(f"  Found {len(positions)} positions in {sheet_name}")
-                
-            except Exception as e:
-                logger.warning(f"Failed to parse sheet {sheet_name}: {e}")
-                continue
-        
-        result = {
-            "positions": all_positions,
-            "total_positions": len(all_positions),
-            "document_info": {
-                "document_type": "Excel Estimate",
-                "format": "EXCEL_PANDAS",
-                "sheets": len(sheet_names),
-                "sheet_names": sheet_names
-            },
-            "sections": sections
-        }
-        
-        logger.info(f"✅ Parsed {len(all_positions)} total positions from Excel")
-        return result
+                if sheet_positions:
+                    logger.info(
+                        f"Extracted {len(sheet_positions)} positions from sheet '{sheet_name}'"
+                    )
+                    all_positions.extend(sheet_positions)
+                else:
+                    logger.debug(f"No positions found in sheet '{sheet_name}'")
+            
+            logger.info(f"Total raw positions from all sheets: {len(all_positions)}")
+            
+            # Normalize all positions
+            normalized_positions = normalize_positions(all_positions)
+            
+            logger.info(
+                f"✅ Excel parsed: {len(normalized_positions)} valid positions "
+                f"from {len(workbook.sheetnames)} sheet(s)"
+            )
+            
+            return {
+                "document_info": {
+                    "filename": file_path.name,
+                    "format": "excel",
+                    "sheets": workbook.sheetnames,
+                    "total_sheets": len(workbook.sheetnames)
+                },
+                "positions": normalized_positions
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Excel parsing failed: {str(e)}", exc_info=True)
+            return {
+                "document_info": {
+                    "filename": file_path.name,
+                    "format": "excel",
+                    "error": str(e)
+                },
+                "positions": []
+            }
     
-    def _parse_dataframe(self, df: pd.DataFrame, sheet_name: str) -> List[Dict[str, Any]]:
-        """Parse positions from pandas DataFrame"""
-        if df.empty:
+    def _parse_sheet(self, sheet: Worksheet, sheet_name: str) -> List[Dict[str, Any]]:
+        """
+        Parse a single Excel sheet
+        
+        Args:
+            sheet: openpyxl Worksheet object
+            sheet_name: Name of the sheet
+            
+        Returns:
+            List of raw position dicts (not normalized yet)
+        """
+        if not sheet or sheet.max_row < 2:
+            logger.debug(f"Sheet '{sheet_name}' is empty or too small")
             return []
+        
+        # Find header row
+        header_row = self._find_header_row(sheet)
+        
+        if header_row is None:
+            logger.warning(f"No header row found in sheet '{sheet_name}'")
+            return []
+        
+        logger.debug(f"Found header row at row {header_row}")
+        
+        # Extract headers
+        headers = []
+        for cell in sheet[header_row]:
+            if cell.value:
+                # Clean header
+                header = str(cell.value).lower().strip()
+                header = re.sub(r'[^\w\s]', '', header)
+                header = re.sub(r'\s+', '_', header)
+                headers.append(header)
+            else:
+                headers.append(f"col_{len(headers)}")
+        
+        logger.debug(f"Sheet headers: {headers}")
         
         positions = []
         
-        # Normalize column names (lowercase, strip)
-        df.columns = [str(col).lower().strip() for col in df.columns]
-        
-        # Find relevant columns - ✅ CASE-INSENSITIVE!
-        code_col = self._find_column(df.columns, self.CZECH_COLUMNS['code'])
-        desc_col = self._find_column(df.columns, self.CZECH_COLUMNS['description'])
-        unit_col = self._find_column(df.columns, self.CZECH_COLUMNS['unit'])
-        qty_col = self._find_column(df.columns, self.CZECH_COLUMNS['quantity'])
-        price_col = self._find_column(df.columns, self.CZECH_COLUMNS['unit_price'])
-        total_col = self._find_column(df.columns, self.CZECH_COLUMNS['total_price'])
-        
-        logger.info(f"  Column mapping: code={code_col}, desc={desc_col}, unit={unit_col}, qty={qty_col}, price={price_col}")
-        
-        # If no description column found, skip this sheet
-        if desc_col is None:
-            logger.warning(f"  No description column found in {sheet_name}")
-            return []
-        
-        # Parse each row
-        for idx, row in df.iterrows():
-            try:
-                # Get description - this is required
-                description = self._get_cell_value(row, desc_col, '')
-                
-                # Skip empty rows or header-like rows
-                if not description or self._is_header_row(description):
-                    continue
-                
-                position = {
-                    "code": self._get_cell_value(row, code_col, ''),
-                    "description": description,
-                    "unit": self._get_cell_value(row, unit_col, ''),
-                    "quantity": self._parse_czech_number(self._get_cell_value(row, qty_col, '0')),
-                    "unit_price": self._parse_czech_number(self._get_cell_value(row, price_col, '0')),
-                    "total_price": self._parse_czech_number(self._get_cell_value(row, total_col, '0')),
-                    "sheet": sheet_name,
-                    "row_number": int(idx) + 2  # +2 for Excel row number (1-indexed + header)
-                }
-                
-                # Calculate total if not present
-                if position["quantity"] and position["unit_price"] and not position["total_price"]:
-                    position["total_price"] = position["quantity"] * position["unit_price"]
-                
-                positions.append(position)
-                
-            except Exception as e:
-                logger.warning(f"  Failed to parse row {idx}: {e}")
+        # Process data rows
+        for row_idx in range(header_row + 1, sheet.max_row + 1):
+            row = sheet[row_idx]
+            
+            # Skip empty rows
+            if all(not cell.value for cell in row):
                 continue
+            
+            # Create position dict
+            position = {}
+            for col_idx, cell in enumerate(row):
+                if col_idx < len(headers):
+                    header = headers[col_idx]
+                    value = cell.value
+                    
+                    if value is not None:
+                        # Convert to string and clean
+                        if isinstance(value, (int, float)):
+                            position[header] = value
+                        else:
+                            value_str = str(value).strip()
+                            if value_str:
+                                position[header] = value_str
+            
+            # Skip separator rows
+            if self._is_separator_row(position):
+                continue
+            
+            # Add metadata
+            position['_source'] = f"sheet_{sheet_name}_row_{row_idx}"
+            
+            if position:
+                positions.append(position)
+        
+        logger.debug(f"Extracted {len(positions)} raw positions from sheet")
         
         return positions
     
-    def _find_column(self, columns: List[str], keywords: List[str]) -> Optional[str]:
+    @staticmethod
+    def _find_header_row(sheet: Worksheet) -> Optional[int]:
         """
-        Find column name by keywords
-        ✅ CASE-INSENSITIVE поиск!
+        Find the row that contains column headers
+        
+        Looks for rows with typical header keywords
+        
+        Returns:
+            Row number (1-indexed) or None if not found
         """
-        for col in columns:
-            col_clean = col.lower().strip()
-            for keyword in keywords:
-                keyword_clean = keyword.lower().strip()
-                if keyword_clean in col_clean or col_clean == keyword_clean:
-                    return col
-        return None
-    
-    def _get_cell_value(self, row: pd.Series, col: Optional[str], default: Any = '') -> Any:
-        """Safely get cell value"""
-        if col is None or col not in row.index:
-            return default
-        
-        value = row[col]
-        
-        # Handle NaN/None
-        if pd.isna(value):
-            return default
-        
-        return value
-    
-    def _is_header_row(self, text: str) -> bool:
-        """Check if text looks like a header row"""
-        text_lower = str(text).lower().strip()
-        
-        # Skip common header keywords
         header_keywords = [
-            'code', 'kód', 'kod', 'popis', 'description',
-            'jednotka', 'unit', 'mj', 'množství', 'quantity',
-            'cena', 'price', 'celkem', 'total'
+            'popis', 'opis', 'nazev', 'description', 'desc',
+            'mnozstvi', 'množství', 'qty', 'quantity',
+            'cena', 'price', 'kc', 'czk',
+            'mj', 'unit', 'jednotka'
         ]
         
-        # If short and matches header keyword exactly
-        if len(text_lower) < 20:
-            return any(keyword == text_lower for keyword in header_keywords)
+        # Check first 20 rows for headers
+        for row_idx in range(1, min(21, sheet.max_row + 1)):
+            row = sheet[row_idx]
+            row_text = ' '.join(
+                str(cell.value).lower() 
+                for cell in row 
+                if cell.value
+            )
+            
+            # If row contains at least 2 header keywords, it's likely a header
+            matches = sum(1 for keyword in header_keywords if keyword in row_text)
+            if matches >= 2:
+                return row_idx
+        
+        # Default to first row if no header found
+        return 1
+    
+    @staticmethod
+    def _is_separator_row(position: Dict[str, Any]) -> bool:
+        """Check if row is a separator or section header"""
+        if not position:
+            return True
+        
+        # Get all text from row
+        all_values = ' '.join(str(v) for v in position.values() if v)
+        
+        # Separators often have repeated characters or are very short
+        if re.match(r'^[\-\=\*\s\.]+$', all_values):
+            return True
+        
+        if len(all_values) < 3:
+            return True
+        
+        # Check for section headers (often in uppercase)
+        if all_values.isupper() and len(all_values) < 50:
+            return True
         
         return False
     
-    def _parse_czech_number(self, value: Any) -> float:
-        """
-        Parse Czech number format
-        ✅ Улучшенный парсинг
+    def get_supported_extensions(self) -> set:
+        """Return supported file extensions"""
+        return {'.xlsx', '.xls'}
+
+
+# ==============================================================================
+# USAGE EXAMPLE
+# ==============================================================================
+
+if __name__ == "__main__":
+    import sys
+    
+    if len(sys.argv) > 1:
+        excel_path = Path(sys.argv[1])
         
-        Examples:
-        - "1 220,168" → 1220.168
-        - "15,50" → 15.50
-        - "1 000" → 1000.0
-        """
-        if isinstance(value, (int, float)):
-            return float(value)
+        parser = ExcelParser()
+        result = parser.parse(excel_path)
         
-        if isinstance(value, str):
-            try:
-                text = value.strip()
-                
-                # Remove spaces and non-breaking spaces
-                text = text.replace(' ', '').replace('\xa0', '')
-                
-                # Remove currency
-                text = text.replace('Kč', '').replace('CZK', '').replace('EUR', '').replace('€', '')
-                text = text.strip()
-                
-                # Handle Czech decimal separator
-                # If has both . and , → European format
-                if '.' in text and ',' in text:
-                    text = text.replace('.', '')  # Remove thousands
-                    text = text.replace(',', '.')  # Comma is decimal
-                elif ',' in text:
-                    # Check if comma is thousands or decimal
-                    parts = text.split(',')
-                    if len(parts) == 2 and len(parts[1]) <= 2:
-                        # Decimal: 15,50
-                        text = text.replace(',', '.')
-                    else:
-                        # Thousands: 1,220
-                        text = text.replace(',', '')
-                
-                # Clean any remaining non-numeric
-                text = re.sub(r'[^\d.-]', '', text)
-                
-                if not text or text == '-':
-                    return 0.0
-                
-                return float(text)
-            except (ValueError, AttributeError):
-                return 0.0
+        print(f"\n📊 Parsing Results:")
+        print(f"File: {result['document_info']['filename']}")
+        print(f"Sheets: {result['document_info'].get('sheets', [])}")
+        print(f"Positions found: {len(result['positions'])}")
         
-        return 0.0
+        if result['positions']:
+            print(f"\n📝 First 3 positions:")
+            for pos in result['positions'][:3]:
+                print(f"\n  Position: {pos.get('position_number', 'N/A')}")
+                print(f"  Description: {pos.get('description', 'N/A')[:50]}")
+                print(f"  Quantity: {pos.get('quantity', 0)} {pos.get('unit', '')}")
+                if 'unit_price' in pos:
+                    print(f"  Price: {pos['unit_price']} CZK")
+    else:
+        print("Usage: python excel_parser.py <path_to_excel>")
+        print("Example: python excel_parser.py data/raw/project1/vykaz_vymer/estimate.xlsx")
