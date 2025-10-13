@@ -1,465 +1,387 @@
 """
-API Routes - UPDATED with Enrichment Support
-Добавлена поддержка обогащения позиций из чертежей
+Project models for Czech Building Audit System
+Combines SQLAlchemy (DB) and Pydantic (API) models
+UPDATED: Compatible with routes.py usage patterns
 """
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
+from sqlalchemy import Column, Integer, String, Float, DateTime, Text, Enum as SQLEnum
+from sqlalchemy.ext.declarative import declarative_base
+from pydantic import BaseModel, Field, ConfigDict
+from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
-import json
-import logging
-import uuid
-import aiofiles
+from enum import Enum
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Form, Query
-from fastapi.responses import FileResponse, JSONResponse
-
-from app.core.config import settings
-from app.services.workflow_a import WorkflowA
-from app.services.workflow_b import WorkflowB
-from app.models.project import (
-    Project,
-    ProjectStatus,
-    ProjectResponse,
-    ProjectStatusResponse,
-    WorkflowType,
-    FileMetadata,
-)
-
-logger = logging.getLogger(__name__)
-router = APIRouter()
-
-# Constants
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
-ALLOWED_EXTENSIONS = {
-    'vykaz': {'.xml', '.xlsx', '.xls', '.pdf', '.csv'},
-    'vykresy': {'.pdf', '.dwg', '.dxf', '.png', '.jpg', '.jpeg', '.txt'},
-    'dokumentace': {'.pdf', '.doc', '.docx', '.xlsx', '.xls', '.txt', '.csv'},
-}
-
-# In-memory project store
-project_store: Dict[str, Dict[str, Any]] = {}
+# SQLAlchemy Base
+Base = declarative_base()
 
 
-def _normalize_optional_file(file: Any) -> Optional[UploadFile]:
-    """Convert empty string to None"""
-    if file is None:
-        return None
-    if isinstance(file, str) and file == "":
-        return None
-    if isinstance(file, UploadFile) and not file.filename:
-        return None
-    return file if isinstance(file, UploadFile) else None
+# =============================================================================
+# ENUMS
+# =============================================================================
+
+class ProjectStatus(str, Enum):
+    """Project processing status"""
+    UPLOADED = "uploaded"
+    PROCESSING = "processing"
+    PARSED = "parsed"
+    STAGING = "staging"
+    CURATED = "curated"
+    AUDIT_IN_PROGRESS = "audit_in_progress"
+    AUDIT_COMPLETED = "audit_completed"
+    HITL_REVIEW = "hitl_review"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
-def _normalize_file_list(files: Any) -> List[UploadFile]:
-    """Convert file list, filtering empty values"""
-    if files is None:
-        return []
-    if isinstance(files, str) and files == "":
-        return []
-    if not isinstance(files, list):
-        files = [files]
+class AuditClassification(str, Enum):
+    """Audit classification for positions"""
+    GREEN = "green"  # All checks passed
+    AMBER = "amber"  # Minor issues, needs attention
+    RED = "red"      # Critical issues, requires review
+
+
+class WorkflowType(str, Enum):
+    """Workflow type"""
+    A = "A"  # With výkaz výměr (bill of quantities)
+    B = "B"  # Without výkaz (generate from drawings)
+
+
+# =============================================================================
+# SQLAlchemy DATABASE MODEL
+# =============================================================================
+
+class Project(Base):
+    """
+    Project database model (SQLAlchemy)
+    Stores project metadata and processing status
+    """
+    __tablename__ = "projects"
     
-    result = []
-    for f in files:
-        if isinstance(f, UploadFile) and f.filename:
-            result.append(f)
+    # Primary key
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(String(255), unique=True, index=True, nullable=False)
     
-    return result
+    # Basic info
+    name = Column(String(500), nullable=False)
+    description = Column(Text, nullable=True)
+    
+    # Status tracking
+    status = Column(SQLEnum(ProjectStatus), default=ProjectStatus.UPLOADED, nullable=False)
+    workflow = Column(SQLEnum(WorkflowType), nullable=True)
+    
+    # File paths (ETL pipeline)
+    raw_file_path = Column(String(1000), nullable=True)
+    staging_file_path = Column(String(1000), nullable=True)
+    curated_file_path = Column(String(1000), nullable=True)
+    audit_report_path = Column(String(1000), nullable=True)
+    
+    # Timestamps
+    uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    processed_at = Column(DateTime, nullable=True)
+    audit_completed_at = Column(DateTime, nullable=True)
+    
+    # Audit statistics
+    total_positions = Column(Integer, default=0)
+    green_count = Column(Integer, default=0)
+    amber_count = Column(Integer, default=0)
+    red_count = Column(Integer, default=0)
+    
+    # Error tracking
+    error_message = Column(Text, nullable=True)
+    
+    def __repr__(self):
+        return f"<Project {self.project_id}: {self.name} ({self.status.value})>"
 
 
-async def _save_file_streaming(
-    file: UploadFile, 
-    save_path: Path
-) -> FileMetadata:
-    """Save uploaded file with streaming"""
-    save_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    file_size = 0
-    chunk_size = 1024 * 1024  # 1MB chunks
-    
-    async with aiofiles.open(save_path, 'wb') as f:
-        while chunk := await file.read(chunk_size):
-            file_size += len(chunk)
-            if file_size > MAX_FILE_SIZE:
-                save_path.unlink(missing_ok=True)
-                raise HTTPException(400, f"File {file.filename} exceeds 50MB limit")
-            await f.write(chunk)
-    
-    return FileMetadata(
-        filename=file.filename,
-        size=file_size,
-        uploaded_at=datetime.now().isoformat(),
-        file_type=Path(file.filename).suffix[1:]
+# =============================================================================
+# PYDANTIC API MODELS
+# =============================================================================
+
+class ProjectCreate(BaseModel):
+    """Request model for creating a new project"""
+    name: str = Field(..., description="Project name", min_length=1, max_length=500)
+    description: Optional[str] = Field(None, description="Optional project description")
+    workflow: Optional[WorkflowType] = Field(
+        WorkflowType.A, 
+        description="Workflow type: A (with výkaz) or B (without)"
     )
 
 
-@router.get("/")
-async def root():
-    """Health check endpoint"""
-    return {
-        "service": "Czech Building Audit System",
-        "status": "running",
-        "version": "2.0.0",
-        "features": {
-            "workflow_a": settings.ENABLE_WORKFLOW_A,
-            "workflow_b": settings.ENABLE_WORKFLOW_B,
-            "drawing_enrichment": True,  # NEW FEATURE
-            "csn_validation": True        # NEW FEATURE
-        }
-    }
+class UploadedFile(BaseModel):
+    """Information about an uploaded file"""
+    filename: str = Field(..., description="Original filename")
+    saved_as: str = Field(..., description="Saved filename with path")
+    file_type: str = Field(..., description="File type (pdf, xml, xlsx)")
+    size: int = Field(..., description="File size in bytes")
 
 
-@router.post("/api/upload", response_model=ProjectResponse)
-async def upload_project(
-    background_tasks: BackgroundTasks,
-    
-    # Required parameters
-    project_name: str = Form(..., description="Project name"),
-    workflow: str = Form(..., description="Workflow type: 'A' or 'B'"),
-    
-    # Main files
-    vykaz_vymer: Union[UploadFile, str, None] = File(
-        None, 
-        description="Výkaz výměr (required for Workflow A)"
-    ),
-    
-    vykresy: Union[List[UploadFile], List[str], List[Any]] = File(
-        default=[],
-        description="Drawings (required for both workflows)"
-    ),
-    
-    # Optional files
-    rozpocet: Union[UploadFile, str, None] = File(
-        None,
-        description="Budget with prices (optional)"
-    ),
-    
-    dokumentace: Union[List[UploadFile], List[str], List[Any]] = File(
-        default=[],
-        description="Project documentation (optional)"
-    ),
-    
-    zmeny: Union[List[UploadFile], List[str], List[Any]] = File(
-        default=[],
-        description="Changes and amendments (optional)"
-    ),
-    
-    # Options
-    generate_summary: bool = Form(default=True, description="Generate summary"),
-    auto_start_audit: bool = Form(default=True, description="Auto-start audit"),
-    
-    # ✨ NEW: Enrichment option
-    enable_enrichment: bool = Form(
-        default=True,
-        description="Enable position enrichment with drawing specifications"
-    )
-    
-) -> ProjectResponse:
+class FileMetadata(BaseModel):
     """
-    Upload project for audit
-    
-    **NEW in v2.0:** Drawing Enrichment Support
-    - Automatically extracts material specifications from drawings
-    - Matches positions with drawing specs using AI
-    - Validates against ČSN standards
-    - Enriches positions with technical parameters
-    
-    Set enable_enrichment=true to use this feature (default: true)
+    Metadata about uploaded file
+    CRITICAL: Field names MUST match usage in routes.py!
     """
+    # Core fields (used in routes.py)
+    filename: str = Field(..., description="Original filename")
+    size: int = Field(..., description="File size in bytes")
+    uploaded_at: str = Field(..., description="Upload timestamp (ISO format)")
+    file_type: str = Field(..., description="File extension without dot (pdf, xml, xlsx)")
     
-    try:
-        # Validate workflow
-        workflow = workflow.upper()
-        if workflow not in ['A', 'B']:
-            raise HTTPException(400, "workflow must be 'A' or 'B'")
-        
-        # Normalize files
-        vykaz_vymer = _normalize_optional_file(vykaz_vymer)
-        rozpocet = _normalize_optional_file(rozpocet)
-        vykresy_files = _normalize_file_list(vykresy)
-        dokumentace_files = _normalize_file_list(dokumentace)
-        zmeny_files = _normalize_file_list(zmeny)
-        
-        # Validate required files
-        if workflow == 'A' and not vykaz_vymer:
-            raise HTTPException(400, "vykaz_vymer required for Workflow A")
-        
-        if workflow == 'B' and not vykresy_files:
-            raise HTTPException(400, "vykresy required for Workflow B")
-        
-        # Create project ID
-        project_id = f"proj_{uuid.uuid4().hex[:12]}"
-        
-        logger.info(
-            f"📤 Nové nahrání: {project_id} - {project_name} "
-            f"(Workflow {workflow}, Enrichment: {'enabled' if enable_enrichment else 'disabled'})"
-        )
-        logger.info(
-            f"Soubory po filtraci: "
-            f"vykresy={len(vykresy_files)}, "
-            f"dokumentace={len(dokumentace_files)}, "
-            f"zmeny={len(zmeny_files)}"
-        )
-        
-        # Create project directory
-        project_dir = settings.DATA_DIR / "raw" / project_id
-        project_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Save files
-        vykaz_vymer_meta = None
-        if vykaz_vymer:
-            vykaz_dir = project_dir / "vykaz_vymer"
-            vykaz_path = vykaz_dir / vykaz_vymer.filename
-            
-            vykaz_vymer_meta = await _save_file_streaming(vykaz_vymer, vykaz_path)
-            logger.info(
-                f"✅ Validace OK: {vykaz_vymer.filename} "
-                f"({vykaz_vymer_meta.size / 1024:.1f} KB)"
-            )
-            logger.info(f"💾 Uloženo: {vykaz_vymer.filename} ({vykaz_vymer_meta.size / 1024:.1f} KB)")
-        
-        rozpocet_meta = None
-        if rozpocet:
-            rozpocet_dir = project_dir / "rozpocet"
-            rozpocet_path = rozpocet_dir / rozpocet.filename
-            
-            rozpocet_meta = await _save_file_streaming(rozpocet, rozpocet_path)
-            logger.info(f"💾 Uloženo: {rozpocet.filename} ({rozpocet_meta.size / 1024:.1f} KB)")
-        
-        # Save vykresy
-        vykresy_dir = project_dir / "vykresy"
-        for vykres in vykresy_files:
-            vykres_path = vykresy_dir / vykres.filename
-            await _save_file_streaming(vykres, vykres_path)
-            logger.info(f"💾 Uloženo: {vykres.filename}")
-        
-        # Save dokumentace
-        dokumentace_dir = project_dir / "dokumentace"
-        for doc in dokumentace_files:
-            doc_path = dokumentace_dir / doc.filename
-            await _save_file_streaming(doc, doc_path)
-            logger.info(f"💾 Uloženo: {doc.filename}")
-        
-        # Save zmeny
-        zmeny_dir = project_dir / "zmeny"
-        for zmena in zmeny_files:
-            zmena_path = zmeny_dir / zmena.filename
-            await _save_file_streaming(zmena, zmena_path)
-            logger.info(f"💾 Uloženo: {zmena.filename}")
-        
-        # Store project metadata
-        project_store[project_id] = {
-            "project_id": project_id,
-            "project_name": project_name,
-            "workflow": workflow,
-            "status": ProjectStatus.PENDING,
-            "created_at": datetime.now().isoformat(),
-            "updated_at": datetime.now().isoformat(),
-            "enable_enrichment": enable_enrichment,  # ✨ NEW
-            "files": {
-                "vykaz_vymer": vykaz_vymer_meta.dict() if vykaz_vymer_meta else None,
-                "rozpocet": rozpocet_meta.dict() if rozpocet_meta else None,
-                "vykresy": [f.filename for f in vykresy_files],
-                "dokumentace": [f.filename for f in dokumentace_files],
-                "zmeny": [f.filename for f in zmeny_files]
-            },
-            "project_dir": str(project_dir)
-        }
-        
-        logger.info(f"✅ Nahrání dokončeno: {project_id}")
-        
-        # Start processing in background if requested
-        if auto_start_audit:
-            logger.info(
-                f"🚀 Začínám zpracování projektu {project_id} "
-                f"(Workflow {workflow}, Enrichment: {'ON' if enable_enrichment else 'OFF'})"
-            )
-            
-            if workflow == 'A':
-                workflow_service = WorkflowA()
-                background_tasks.add_task(
-                    workflow_service.execute,
-                    project_id,
-                    generate_summary,
-                    enable_enrichment  # ✨ NEW: Pass enrichment flag
-                )
-            elif workflow == 'B':
-                workflow_service = WorkflowB()
-                background_tasks.add_task(
-                    workflow_service.execute,
-                    project_id
-                )
-        
-        # ✅ Return project_id in response
-        return {
-            "success": True,
-            "project_id": project_id,
-            "project_name": project_name,
-            "workflow": workflow,
-            "uploaded_at": datetime.now().isoformat(),
-            "files_uploaded": {
-                "vykaz_vymer": vykaz_vymer_meta is not None,
-                "vykresy": len(vykresy_files),
-                "rozpocet": rozpocet_meta is not None,
-                "dokumentace": len(dokumentace_files),
-                "zmeny": len(zmeny_files)
-            },
-            "enrichment_enabled": enable_enrichment,  # ✨ NEW
-            "message": f"Project uploaded successfully. ID: {project_id}"
-        }
+    # Optional fields
+    mime_type: Optional[str] = Field(None, description="MIME type")
+    checksum: Optional[str] = Field(None, description="File checksum (MD5/SHA256)")
     
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Upload error: {str(e)}", exc_info=True)
-        raise HTTPException(500, f"Upload failed: {str(e)}")
-
-
-@router.get("/api/projects/{project_id}/status", response_model=ProjectStatusResponse)
-async def get_project_status(project_id: str):
-    """Get project processing status"""
+    # ETL stage tracking
+    stage: str = Field(default="raw", description="Current ETL stage (raw/staging/curated)")
+    processed: bool = Field(default=False, description="Whether file has been processed")
     
-    if project_id not in project_store:
-        raise HTTPException(404, f"Project {project_id} not found")
-    
-    project = project_store[project_id]
-    
-    return {
-        "project_id": project_id,
-        "project_name": project["project_name"],
-        "status": project["status"],
-        "workflow": project["workflow"],
-        "created_at": project["created_at"],
-        "updated_at": project["updated_at"],
-        "progress": project.get("progress", 0),
-        "positions_total": project.get("positions_total", 0),
-        "positions_processed": project.get("positions_processed", 0)
-    }
-
-
-@router.get("/api/projects/{project_id}/results")
-async def get_project_results(project_id: str):
-    """
-    Get detailed project results including enriched positions
-    
-    ✨ NEW: Returns enriched positions with technical specifications
-    """
-    
-    if project_id not in project_store:
-        raise HTTPException(404, f"Project {project_id} not found")
-    
-    project = project_store[project_id]
-    
-    # Check if processing is complete
-    if project["status"] != ProjectStatus.COMPLETED:
-        return {
-            "project_id": project_id,
-            "status": project["status"],
-            "message": "Project is still processing"
-        }
-    
-    # Return full results
-    return {
-        "project_id": project_id,
-        "project_name": project["project_name"],
-        "workflow": project["workflow"],
-        "status": project["status"],
-        "completed_at": project.get("completed_at"),
-        "enrichment_enabled": project.get("enable_enrichment", False),
-        "audit_results": project.get("audit_results", {}),
-        "summary": project.get("summary", "")
-    }
-
-
-@router.get("/api/projects")
-async def list_projects(
-    limit: int = Query(default=50, le=100),
-    offset: int = Query(default=0, ge=0)
-):
-    """List all projects with pagination"""
-    
-    all_projects = list(project_store.values())
-    total = len(all_projects)
-    
-    # Sort by created_at desc
-    all_projects.sort(key=lambda x: x['created_at'], reverse=True)
-    
-    # Paginate
-    projects = all_projects[offset:offset + limit]
-    
-    return {
-        "projects": [
-            {
-                "project_id": p["project_id"],
-                "project_name": p["project_name"],
-                "workflow": p["workflow"],
-                "status": p["status"],
-                "enrichment_enabled": p.get("enable_enrichment", False),
-                "created_at": p["created_at"],
-                "positions_count": p.get("positions_total", 0)
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "filename": "estimate.xlsx",
+                "size": 1048576,
+                "uploaded_at": "2025-10-13T10:30:00",
+                "file_type": "xlsx"
             }
-            for p in projects
-        ],
-        "total": total,
-        "limit": limit,
-        "offset": offset
-    }
-
-
-@router.get("/api/projects/{project_id}/export/excel")
-async def export_to_excel(project_id: str):
-    """
-    Export project results to Excel
-    
-    ✨ NEW: Includes enriched technical specifications in export
-    """
-    
-    if project_id not in project_store:
-        raise HTTPException(404, f"Project {project_id} not found")
-    
-    project = project_store[project_id]
-    
-    if project["status"] != ProjectStatus.COMPLETED:
-        raise HTTPException(400, "Project not completed yet")
-    
-    # Generate Excel file
-    try:
-        from app.utils.excel_exporter import export_enriched_results
-        
-        excel_path = await export_enriched_results(project)
-        
-        return FileResponse(
-            path=excel_path,
-            filename=f"{project['project_name']}_audit_results.xlsx",
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-        
-    except Exception as e:
-        logger.error(f"Export failed: {str(e)}", exc_info=True)
-        raise HTTPException(500, f"Export failed: {str(e)}")
-
-
-@router.get("/api/health")
-async def health_check():
-    """
-    Detailed health check with system status
-    """
-    return {
-        "status": "healthy",
-        "version": "2.0.0",
-        "timestamp": datetime.now().isoformat(),
-        "features": {
-            "workflow_a": settings.ENABLE_WORKFLOW_A,
-            "workflow_b": settings.ENABLE_WORKFLOW_B,
-            "drawing_enrichment": True,
-            "csn_validation": True
-        },
-        "stats": {
-            "total_projects": len(project_store),
-            "pending": sum(1 for p in project_store.values() if p["status"] == ProjectStatus.PENDING),
-            "processing": sum(1 for p in project_store.values() if p["status"] == ProjectStatus.PROCESSING),
-            "completed": sum(1 for p in project_store.values() if p["status"] == ProjectStatus.COMPLETED),
-            "failed": sum(1 for p in project_store.values() if p["status"] == ProjectStatus.FAILED)
         }
+    )
+
+
+class ProjectResponse(BaseModel):
+    """
+    Response model for project information
+    FLEXIBLE: Supports both upload response and status response formats
+    """
+    # Core fields (always present)
+    project_id: str
+    
+    # Name field (support both variants)
+    project_name: Optional[str] = Field(None, description="Project name")
+    name: Optional[str] = Field(None, description="Project name (alternative)")
+    
+    # Status and workflow
+    workflow: Union[WorkflowType, str]
+    status: Optional[ProjectStatus] = None
+    
+    # Timestamps (flexible format)
+    uploaded_at: Union[datetime, str]
+    created_at: Optional[Union[datetime, str]] = None
+    processed_at: Optional[Union[datetime, str]] = None
+    audit_completed_at: Optional[Union[datetime, str]] = None
+    updated_at: Optional[Union[datetime, str]] = None
+    
+    # Upload response fields
+    success: Optional[bool] = Field(None, description="Success flag for upload")
+    files_uploaded: Optional[Dict[str, Any]] = Field(None, description="Files uploaded info")
+    enrichment_enabled: Optional[bool] = Field(None, description="Enrichment status")
+    
+    # Status response fields
+    files: Optional[List[Dict[str, Any]]] = Field(None, description="List of files")
+    
+    # Optional metadata
+    description: Optional[str] = None
+    
+    # Statistics
+    total_positions: int = 0
+    positions_total: int = 0
+    green_count: int = 0
+    amber_count: int = 0
+    red_count: int = 0
+    
+    # Progress
+    progress: int = Field(0, ge=0, le=100, description="Processing progress percentage")
+    message: str = Field("", description="Status message")
+    
+    model_config = ConfigDict(
+        from_attributes=True,
+        extra="allow"  # Allow extra fields
+    )
+
+
+class ProjectStatusResponse(BaseModel):
+    """
+    Detailed project status response
+    FLEXIBLE: Matches routes.py return format
+    """
+    # Core fields
+    project_id: str
+    project_name: Optional[str] = None
+    status: Union[ProjectStatus, str]
+    workflow: Union[WorkflowType, str]
+    
+    # Progress info
+    progress: int = Field(0, ge=0, le=100)
+    message: Optional[str] = Field(None, description="Status message")
+    
+    # Processing info
+    positions_processed: int = 0
+    positions_total: int = 0
+    
+    # Audit results (optional)
+    green_count: int = 0
+    amber_count: int = 0
+    red_count: int = 0
+    
+    # Timestamps (flexible string or datetime)
+    created_at: Optional[Union[datetime, str]] = None
+    updated_at: Optional[Union[datetime, str]] = None
+    uploaded_at: Optional[Union[datetime, str]] = None
+    processed_at: Optional[Union[datetime, str]] = None
+    audit_completed_at: Optional[Union[datetime, str]] = None
+    completed_at: Optional[Union[datetime, str]] = None
+    
+    # Error info (if failed)
+    error_message: Optional[str] = None
+    
+    # Enrichment info
+    enrichment_enabled: Optional[bool] = None
+    
+    model_config = ConfigDict(extra="allow")
+
+
+class Position(BaseModel):
+    """Building position/item model"""
+    position_number: str = Field(..., description="Position number (PČ)")
+    code: Optional[str] = Field(None, description="KROS/ÚRS code")
+    name: str = Field(..., description="Position name/description")
+    unit: str = Field(..., description="Unit of measurement (MJ)")
+    quantity: float = Field(..., gt=0, description="Quantity (Množství)")
+    unit_price: Optional[float] = Field(None, description="Unit price (J.cena)")
+    total_price: Optional[float] = Field(None, description="Total price (Cena celkem)")
+    
+    # Additional fields
+    category: Optional[str] = None
+    section: Optional[str] = None
+
+
+class PositionAudit(BaseModel):
+    """Audit result for a single position"""
+    position: Position
+    classification: AuditClassification  # GREEN/AMBER/RED
+    confidence_score: float = Field(..., ge=0, le=1, description="Confidence in classification")
+    
+    # Audit findings
+    findings: List[str] = Field(default_factory=list, description="List of audit findings")
+    warnings: List[str] = Field(default_factory=list, description="Warnings")
+    errors: List[str] = Field(default_factory=list, description="Critical errors")
+    
+    # HITL flag
+    requires_hitl: bool = Field(False, description="Requires human-in-the-loop review")
+    hitl_reason: Optional[str] = Field(None, description="Reason for HITL")
+    
+    # Matching info
+    matched_code: Optional[str] = None
+    matched_name: Optional[str] = None
+    price_difference_pct: Optional[float] = None
+
+
+class AuditReport(BaseModel):
+    """Complete audit report for a project"""
+    project_id: str
+    project_name: str
+    audit_timestamp: datetime
+    
+    # Summary statistics
+    total_positions: int
+    green_count: int
+    amber_count: int
+    red_count: int
+    hitl_count: int
+    
+    # Detailed results
+    positions: List[PositionAudit]
+    
+    # Overall assessment
+    overall_risk: AuditClassification
+    recommendations: List[str] = []
+
+
+class ErrorResponse(BaseModel):
+    """Standard error response"""
+    error: str = Field(..., description="Error type")
+    message: str = Field(..., description="Error message")
+    detail: Optional[str] = Field(None, description="Detailed error information")
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class SuccessResponse(BaseModel):
+    """Standard success response"""
+    success: bool = Field(True, description="Success flag")
+    message: str = Field(..., description="Success message")
+    data: Optional[Dict[str, Any]] = Field(None, description="Optional response data")
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
+def db_project_to_response(db_project: Project) -> ProjectResponse:
+    """
+    Convert SQLAlchemy Project to Pydantic ProjectResponse
+    
+    Args:
+        db_project: SQLAlchemy Project instance
+        
+    Returns:
+        Pydantic ProjectResponse
+    """
+    # Calculate progress based on status
+    progress_map = {
+        ProjectStatus.UPLOADED: 10,
+        ProjectStatus.PROCESSING: 30,
+        ProjectStatus.PARSED: 50,
+        ProjectStatus.STAGING: 60,
+        ProjectStatus.CURATED: 70,
+        ProjectStatus.AUDIT_IN_PROGRESS: 85,
+        ProjectStatus.AUDIT_COMPLETED: 95,
+        ProjectStatus.HITL_REVIEW: 98,
+        ProjectStatus.COMPLETED: 100,
+        ProjectStatus.FAILED: 0,
     }
+    
+    progress = progress_map.get(db_project.status, 0)
+    
+    # Generate status message
+    if db_project.status == ProjectStatus.FAILED:
+        message = f"Failed: {db_project.error_message or 'Unknown error'}"
+    elif db_project.status == ProjectStatus.COMPLETED:
+        message = f"Audit completed: {db_project.green_count}G / {db_project.amber_count}A / {db_project.red_count}R"
+    else:
+        message = f"Processing: {db_project.status.value}"
+    
+    return ProjectResponse(
+        project_id=db_project.project_id,
+        name=db_project.name,
+        description=db_project.description,
+        status=db_project.status,
+        workflow=db_project.workflow or WorkflowType.A,
+        uploaded_at=db_project.uploaded_at,
+        processed_at=db_project.processed_at,
+        audit_completed_at=db_project.audit_completed_at,
+        files=[],  # TODO: Extract from file paths
+        total_positions=db_project.total_positions,
+        green_count=db_project.green_count,
+        amber_count=db_project.amber_count,
+        red_count=db_project.red_count,
+        progress=progress,
+        message=message,
+    )
+
+
+def calculate_audit_summary(positions: List[PositionAudit]) -> Dict[str, int]:
+    """
+    Calculate audit summary statistics
+    
+    Args:
+        positions: List of audited positions
+        
+    Returns:
+        Dict with counts for each classification
+    """
+    summary = {
+        "total": len(positions),
+        "green": sum(1 for p in positions if p.classification == AuditClassification.GREEN),
+        "amber": sum(1 for p in positions if p.classification == AuditClassification.AMBER),
+        "red": sum(1 for p in positions if p.classification == AuditClassification.RED),
+        "hitl": sum(1 for p in positions if p.requires_hitl),
+    }
+    return summary
