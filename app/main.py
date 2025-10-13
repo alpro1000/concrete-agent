@@ -1,296 +1,107 @@
 """
-FastAPI Main Application
-С автоматической загрузкой Knowledge Base
-
-⚠️ ЭТОТ ФАЙЛ НАСТРАИВАЕТСЯ ОДИН РАЗ И БОЛЬШЕ НЕ МЕНЯЕТСЯ!
-Все новые файлы KB добавляются просто в папки B1-B8
+FastAPI Application Entry Point
+Czech Building Audit System
 """
-
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
-from contextlib import asynccontextmanager
 import logging
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 
 from app.core.config import settings
-from app.core.kb_loader import get_knowledge_base
-from app.api import routes, routes_resources
+from app.api.routes import router as main_router
 
-# Настройка логирования
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-
-# === LIFESPAN: Загрузка KB при старте ===
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Lifecycle events
-    
-    startup: Загружаем Knowledge Base ОДИН РАЗ
-    shutdown: Очистка ресурсов
-    """
-    # === STARTUP ===
-    logger.info("🚀 Starting Czech Building Audit System...")
-    
-    try:
-        # Загружаем Knowledge Base
-        kb = get_knowledge_base()
-        logger.info(f"✅ Knowledge Base loaded: {len(kb.data)} categories")
-        
-        # Проверяем критичные данные
-        kros_codes = kb.get_kros_codes()
-        if kros_codes:
-            logger.info(f"✅ KROS codes available: {len(kros_codes)} positions")
-        else:
-            logger.warning("⚠️  No KROS codes found in B1!")
-        
-        current_prices = kb.get_current_prices()
-        if current_prices:
-            logger.info(f"✅ Current prices available: {len(current_prices)} material types")
-        else:
-            logger.warning("⚠️  No current prices found in B3!")
-        
-        productivity = kb.get_productivity_rates()
-        if productivity:
-            logger.info(f"✅ Productivity rates available: {len(productivity)} work types")
-        else:
-            logger.warning("⚠️  No productivity rates found in B4!")
-        
-        logger.info("✅ System ready!")
-        
-    except Exception as e:
-        logger.error(f"❌ Failed to load Knowledge Base: {e}")
-        raise
-    
-    yield  # Приложение работает
-    
-    # === SHUTDOWN ===
-    logger.info("🛑 Shutting down...")
-
-
-# === СОЗДАНИЕ ПРИЛОЖЕНИЯ ===
-
+# Create FastAPI app
 app = FastAPI(
     title="Czech Building Audit System",
-    description="Automated construction project auditing with Claude AI",
-    version="1.0.0",
-    lifespan=lifespan  # ← Автоматическая загрузка KB здесь!
+    description="AI-powered construction audit system for Czech market",
+    version="2.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json"
 )
 
-
-# === CORS ===
-
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # В production указать конкретные домены
+    allow_origins=["*"],  # In production, specify exact origins
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Include API routes
+app.include_router(main_router)
 
-# === ROUTES ===
-
-# API endpoints
-app.include_router(routes.router)
-app.include_router(routes_resources.router)  # Resource calculation endpoints
-
-# NEW: Workflow-specific endpoints
-try:
-    from app.api import routes_workflow_a, routes_workflow_b
-    app.include_router(routes_workflow_a.router)
-    app.include_router(routes_workflow_b.router)
-    logger.info("✅ Workflow A/B routes loaded")
-except Exception as e:
-    logger.warning(f"⚠️  Failed to load new workflow routes: {e}")
+# Mount static files (if web directory exists)
+web_dir = settings.BASE_DIR / "web"
+if web_dir.exists():
+    app.mount("/web", StaticFiles(directory=str(web_dir)), name="web")
+    logger.info(f"📁 Static files mounted: {web_dir}")
 
 
-# === STATIC FILES (Frontend) ===
-
-if settings.WEB_DIR.exists():
-    app.mount(
-        "/web",
-        StaticFiles(directory=str(settings.WEB_DIR), html=True),
-        name="web"
-    )
-
-
-# === ROOT ENDPOINT ===
-
-@app.get("/")
-async def root():
-    """
-    Root endpoint - информация о сервисе
+@app.on_event("startup")
+async def startup_event():
+    """Application startup"""
+    logger.info("=" * 80)
+    logger.info("🚀 Czech Building Audit System Starting...")
+    logger.info("=" * 80)
+    logger.info(f"📂 Base directory: {settings.BASE_DIR}")
+    logger.info(f"📂 Data directory: {settings.DATA_DIR}")
+    logger.info(f"📚 KB directory: {settings.KB_DIR}")
+    logger.info(f"📝 Prompts directory: {settings.PROMPTS_DIR}")
+    logger.info(f"📊 Logs directory: {settings.LOGS_DIR}")
+    logger.info("-" * 80)
+    logger.info(f"⚙️  Workflow A enabled: {settings.ENABLE_WORKFLOW_A}")
+    logger.info(f"⚙️  Workflow B enabled: {settings.ENABLE_WORKFLOW_B}")
+    logger.info(f"⚙️  KROS matching: {settings.ENABLE_KROS_MATCHING}")
+    logger.info("-" * 80)
     
-    Также показывает статус Knowledge Base
-    """
-    kb = get_knowledge_base()
-    
-    return {
-        "service": "Czech Building Audit System",
-        "version": "1.0.0",
-        "status": "running",
-        "knowledge_base": {
-            "loaded_at": kb.loaded_at.isoformat() if kb.loaded_at else None,
-            "categories": len(kb.data),
-            "status": "ready" if kb.data else "empty"
-        },
-        "endpoints": {
-            "api_docs": "/docs",
-            "upload": "/api/upload",
-            "audit": "/api/audit/{project_id}",
-            "resources": "/api/resources/*",
-            "frontend": "/web/index.html"
-        }
-    }
-
-
-@app.get("/health")
-async def health_check():
-    """
-    Health check endpoint
-    
-    Проверяет что KB загружена и доступна
-    """
-    kb = get_knowledge_base()
-    
-    # Проверяем критичные категории
-    has_kros = bool(kb.get_kros_codes())
-    has_prices = bool(kb.get_current_prices())
-    has_benchmarks = bool(kb.get_productivity_rates())
-    
-    all_healthy = has_kros and has_prices and has_benchmarks
-    
-    return {
-        "status": "healthy" if all_healthy else "degraded",
-        "kb_loaded": kb.loaded_at is not None,
-        "checks": {
-            "kros_codes": "ok" if has_kros else "missing",
-            "current_prices": "ok" if has_prices else "missing",
-            "benchmarks": "ok" if has_benchmarks else "missing"
-        }
-    }
-
-
-@app.get("/kb/status")
-async def kb_status():
-    """
-    Детальная информация о Knowledge Base
-    
-    Показывает что загружено в каждой категории
-    """
-    kb = get_knowledge_base()
-    
-    status = {}
-    
-    for category in kb.CATEGORIES:
-        if category in kb.data:
-            files = list(kb.data[category].keys())
-            metadata = kb.metadata.get(category, {})
-            
-            status[category] = {
-                "files_count": len(files),
-                "files": files[:5],  # Первые 5 файлов
-                "last_updated": metadata.get("last_updated"),
-                "version": metadata.get("version")
-            }
-        else:
-            status[category] = {
-                "status": "not_loaded",
-                "files_count": 0
-            }
-    
-    return {
-        "loaded_at": kb.loaded_at.isoformat() if kb.loaded_at else None,
-        "categories": status
-    }
-
-
-@app.post("/kb/reload")
-async def kb_reload():
-    """
-    🔄 Перезагрузка Knowledge Base
-    
-    Используется когда добавили новые файлы без перезапуска сервиса.
-    В production можно защитить паролем или API ключом.
-    """
+    # Load Knowledge Base
     try:
-        # Сбрасываем singleton
-        from app.core import kb_loader
-        kb_loader._kb_instance = None
+        from app.core.kb_loader import kb_loader
+        kb_loader.load()
+        logger.info(f"✅ Knowledge Base loaded: {len(kb_loader.data)} categories")
         
-        # Загружаем заново
-        kb = get_knowledge_base()
-        
-        return {
-            "status": "success",
-            "message": "Knowledge Base reloaded",
-            "loaded_at": kb.loaded_at.isoformat(),
-            "categories": len(kb.data)
-        }
-    
+        # Log each category
+        for category, (data, metadata) in kb_loader.data.items():
+            if isinstance(data, list):
+                logger.info(f"   - {category}: {len(data)} items")
+            else:
+                logger.info(f"   - {category}: loaded")
+                
     except Exception as e:
-        logger.error(f"Failed to reload KB: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to reload Knowledge Base: {str(e)}"
-        )
+        logger.error(f"⚠️  KB loading failed: {str(e)}")
+    
+    logger.info("=" * 80)
+    logger.info("✅ System ready!")
+    logger.info("=" * 80)
 
 
-# === ERROR HANDLERS ===
-
-@app.exception_handler(404)
-async def not_found_handler(request, exc):
-    return JSONResponse(
-        status_code=404,
-        content={
-            "error": "Not Found",
-            "message": "The requested resource was not found",
-            "path": request.url.path
-        }
-    )
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Application shutdown"""
+    logger.info("🛑 Czech Building Audit System shutting down...")
 
 
-@app.exception_handler(500)
-async def server_error_handler(request, exc):
-    logger.error(f"Internal server error: {exc}")
-    return JSONResponse(
-        status_code=500,
-        content={
-            "error": "Internal Server Error",
-            "message": "An unexpected error occurred"
-        }
-    )
+# REMOVED: Duplicate root endpoint
+# The root endpoint is now handled by routes.py
+# This prevents the "Duplicate Operation ID" warning
 
-
-# === STARTUP MESSAGE ===
 
 if __name__ == "__main__":
     import uvicorn
-    
-    print("""
-    ╔══════════════════════════════════════════════════════════╗
-    ║  🏗️  Czech Building Audit System                        ║
-    ║                                                          ║
-    ║  🚀 Starting server...                                   ║
-    ║  📚 Knowledge Base будет загружена автоматически         ║
-    ║                                                          ║
-    ║  📖 API Docs: http://localhost:8000/docs                ║
-    ║  🌐 Frontend: http://localhost:8000/web/index.html      ║
-    ║  ❤️  Health:   http://localhost:8000/health             ║
-    ║  📊 KB Status: http://localhost:8000/kb/status          ║
-    ╚══════════════════════════════════════════════════════════╝
-    """)
-    
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True  # Auto-reload при изменении кода
+        reload=True,
+        log_level="info"
     )
