@@ -219,42 +219,76 @@ Pokud nenajdeš žádnou odpovídající specifikaci, vrať:
         
         return prompt
     
-    def _parse_enrichment_response(self, response: str) -> Dict[str, Any]:
+    def _parse_enrichment_response(self, response: Any) -> Dict[str, Any]:
         """
         Parse Claude's response and extract enrichment data
-        
+
         Args:
             response: Raw response from Claude
             
         Returns:
             Parsed enrichment data
         """
+        fallback = {
+            'matched': False,
+            'matching_confidence': 0.0,
+            'matching_reason': 'Failed to parse AI response',
+            'technical_specs': {},
+            'source_reference': None
+        }
+
         try:
-            # Remove markdown code blocks if present
-            response = response.strip()
-            if response.startswith('```'):
-                response = response.split('```')[1]
-                if response.startswith('json'):
-                    response = response[4:]
-                response = response.strip()
-            
-            # Parse JSON
-            enrichment_data = json.loads(response)
-            
-            return enrichment_data
-            
-        except json.JSONDecodeError as e:
+            if isinstance(response, dict):
+                if 'raw_text' in response:
+                    raw_text = response.get('raw_text', '')
+                    if not isinstance(raw_text, str):
+                        raise ValueError('Expected raw_text to be a string')
+                    cleaned = self._clean_json_string(raw_text)
+                    return json.loads(cleaned)
+                return response
+
+            if isinstance(response, str):
+                cleaned = self._clean_json_string(response)
+                return json.loads(cleaned)
+
+            raise ValueError(f"Unsupported response type: {type(response)}")
+
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
             logger.error(f"Failed to parse Claude response as JSON: {e}")
-            logger.debug(f"Response was: {response[:500]}")
-            
-            # Return unmatched status on parsing error
-            return {
-                'matched': False,
-                'matching_confidence': 0.0,
-                'matching_reason': 'Failed to parse AI response',
-                'technical_specs': {},
-                'source_reference': None
-            }
+            # Limit debug log size to avoid flooding logs
+            preview = ''
+            if isinstance(response, str):
+                preview = response[:500]
+            elif isinstance(response, dict) and 'raw_text' in response:
+                raw_text = response.get('raw_text')
+                preview = raw_text[:500] if isinstance(raw_text, str) else str(raw_text)
+            else:
+                preview = str(response)
+            logger.debug(f"Response was: {preview}")
+
+            return fallback
+
+    @staticmethod
+    def _clean_json_string(raw: str) -> str:
+        """Remove markdown or code block wrappers from Claude responses."""
+        cleaned = raw.strip()
+
+        if cleaned.startswith('```'):
+            parts = cleaned.split('```')
+            # The JSON content is typically in the first inner block
+            if len(parts) > 1:
+                cleaned = parts[1]
+            else:
+                cleaned = cleaned.strip('`')
+            cleaned = cleaned.strip()
+
+        if cleaned.lower().startswith('json'):
+            cleaned = cleaned[4:].strip()
+
+        if cleaned.endswith('```'):
+            cleaned = cleaned[:-3].strip()
+
+        return cleaned
     
     def _merge_enrichment(
         self,
