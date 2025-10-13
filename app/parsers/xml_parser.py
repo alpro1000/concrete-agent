@@ -1,78 +1,27 @@
-"""Generic XML parser for bill of quantities data."""
-from __future__ import annotations
-
-import logging
 from pathlib import Path
-from typing import Any, Dict, List
 from xml.etree import ElementTree
-
-from app.core.registry import registry
-from app.utils.position_normalizer import normalize_positions
-
-logger = logging.getLogger(__name__)
+from typing import List, Dict
 
 
 class XMLParser:
-    """Parse XML documents containing <Polozka> elements."""
-
-    def parse(self, file_path: Path) -> Dict[str, Any]:
-        logger.info("🧾 Parsing XML: %s", file_path.name)
-
-        try:
-            positions = self._extract_positions(file_path)
-            normalized, stats = normalize_positions(positions, return_stats=True)
-
-            logger.info(
-                "✅ XML parsed: %s valid positions (raw=%s, skipped=%s)",
-                stats["normalized_total"],
-                stats["raw_total"],
-                stats["skipped_total"],
-            )
-
-            return {
-                "document_info": {
-                    "filename": file_path.name,
-                    "format": "xml",
-                },
-                "positions": normalized,
-                "diagnostics": stats,
-            }
-        except Exception as exc:  # pragma: no cover - defensive logging
-            logger.error("❌ XML parsing failed: %s", exc, exc_info=True)
-            return {
-                "document_info": {
-                    "filename": file_path.name,
-                    "format": "xml",
-                    "error": str(exc),
-                },
-                "positions": [],
-                "diagnostics": {
-                    "raw_total": 0,
-                    "normalized_total": 0,
-                    "skipped_total": 0,
-                },
-            }
-
-    @staticmethod
-    def _extract_positions(file_path: Path) -> List[Dict[str, Any]]:
-        tree = ElementTree.parse(file_path)
+    def parse(self, xml_path: Path) -> List[Dict]:
+        tree = ElementTree.parse(xml_path)
         root = tree.getroot()
-
-        positions: List[Dict[str, Any]] = []
-
-        for element in root.findall(".//Polozka"):
-            position: Dict[str, Any] = {}
-            for child in element:
-                value = child.text.strip() if child.text else None
-                position[child.tag] = value
-
-            if position:
-                positions.append(position)
-
-        return positions
-
-
-registry.register_parser("xml", XMLParser)
+        items: List[Dict] = []
+        for el in root.findall(".//Polozka"):
+            quantity_text = el.findtext("mnozstvi")
+            unit_price_text = el.findtext("jedn_cena")
+            item = {
+                "position_number": el.findtext("position_number") or el.findtext("pozice"),
+                "code": el.findtext("znacka"),
+                "description": el.findtext("nazev"),
+                "unit": el.findtext("MJ"),
+                "quantity": float(quantity_text.replace(",", ".")) if quantity_text else 0.0,
+                "unit_price": float(unit_price_text.replace(",", ".")) if unit_price_text else None,
+                "technical_spec": el.findtext("technicka_specifikace"),
+            }
+            items.append(item)
+        return items
 
 
 __all__ = ["XMLParser"]
