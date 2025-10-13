@@ -1,11 +1,12 @@
 """
 Project models for Czech Building Audit System
 Combines SQLAlchemy (DB) and Pydantic (API) models
+UPDATED: Compatible with routes.py usage patterns
 """
 from sqlalchemy import Column, Integer, String, Float, DateTime, Text, Enum as SQLEnum
 from sqlalchemy.ext.declarative import declarative_base
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field, ConfigDict
+from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 from enum import Enum
 
@@ -19,16 +20,17 @@ Base = declarative_base()
 
 class ProjectStatus(str, Enum):
     """Project processing status"""
-    UPLOADED = "uploaded"
-    PROCESSING = "processing"
-    PARSED = "parsed"
-    STAGING = "staging"
-    CURATED = "curated"
-    AUDIT_IN_PROGRESS = "audit_in_progress"
-    AUDIT_COMPLETED = "audit_completed"
-    HITL_REVIEW = "hitl_review"
-    COMPLETED = "completed"
-    FAILED = "failed"
+    PENDING = "pending"          # Initial state after upload
+    UPLOADED = "uploaded"        # Files uploaded, ready to process
+    PROCESSING = "processing"    # Currently processing
+    PARSED = "parsed"            # Parsing completed
+    STAGING = "staging"          # In staging phase
+    CURATED = "curated"          # Data curated
+    AUDIT_IN_PROGRESS = "audit_in_progress"  # Audit running
+    AUDIT_COMPLETED = "audit_completed"      # Audit completed
+    HITL_REVIEW = "hitl_review"  # Human review needed
+    COMPLETED = "completed"      # Fully completed
+    FAILED = "failed"            # Processing failed
 
 
 class AuditClassification(str, Enum):
@@ -116,43 +118,71 @@ class UploadedFile(BaseModel):
 class FileMetadata(BaseModel):
     """
     Metadata about uploaded file
-    Compatible with ETL pipeline and file tracking
+    CRITICAL: Field names MUST match usage in routes.py!
     """
-    original_filename: str = Field(..., description="Original filename from upload")
-    stored_filename: str = Field(..., description="Filename stored on disk")
-    file_path: str = Field(..., description="Full path to file")
-    file_type: str = Field(..., description="File type extension (pdf, xml, xlsx, etc)")
-    file_size: int = Field(..., description="File size in bytes")
+    # Core fields (used in routes.py)
+    filename: str = Field(..., description="Original filename")
+    size: int = Field(..., description="File size in bytes")
+    uploaded_at: str = Field(..., description="Upload timestamp (ISO format)")
+    file_type: str = Field(..., description="File extension without dot (pdf, xml, xlsx)")
+    
+    # Optional fields
     mime_type: Optional[str] = Field(None, description="MIME type")
-    upload_timestamp: datetime = Field(default_factory=datetime.utcnow, description="Upload timestamp")
+    checksum: Optional[str] = Field(None, description="File checksum (MD5/SHA256)")
     
     # ETL stage tracking
-    stage: str = Field("raw", description="Current ETL stage (raw/staging/curated)")
-    processed: bool = Field(False, description="Whether file has been processed")
+    stage: str = Field(default="raw", description="Current ETL stage (raw/staging/curated)")
+    processed: bool = Field(default=False, description="Whether file has been processed")
     
-    # Additional metadata
-    checksum: Optional[str] = Field(None, description="File checksum (MD5/SHA256)")
-    encoding: Optional[str] = Field(None, description="File encoding (for text files)")
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "filename": "estimate.xlsx",
+                "size": 1048576,
+                "uploaded_at": "2025-10-13T10:30:00",
+                "file_type": "xlsx"
+            }
+        }
+    )
 
 
 class ProjectResponse(BaseModel):
-    """Response model for project information"""
+    """
+    Response model for project information
+    FLEXIBLE: Supports both upload response and status response formats
+    """
+    # Core fields (always present)
     project_id: str
-    name: str
+    
+    # Name field (support both variants)
+    project_name: Optional[str] = Field(None, description="Project name")
+    name: Optional[str] = Field(None, description="Project name (alternative)")
+    
+    # Status and workflow
+    workflow: Union[WorkflowType, str]
+    status: Optional[ProjectStatus] = None
+    
+    # Timestamps (flexible format)
+    uploaded_at: Union[datetime, str]
+    created_at: Optional[Union[datetime, str]] = None
+    processed_at: Optional[Union[datetime, str]] = None
+    audit_completed_at: Optional[Union[datetime, str]] = None
+    updated_at: Optional[Union[datetime, str]] = None
+    
+    # Upload response fields
+    success: Optional[bool] = Field(None, description="Success flag for upload")
+    files_uploaded: Optional[Dict[str, Any]] = Field(None, description="Files uploaded info")
+    enrichment_enabled: Optional[bool] = Field(None, description="Enrichment status")
+    
+    # Status response fields
+    files: Optional[List[Dict[str, Any]]] = Field(None, description="List of files")
+    
+    # Optional metadata
     description: Optional[str] = None
-    status: ProjectStatus
-    workflow: WorkflowType
-    uploaded_at: datetime
-    
-    # Optional fields
-    processed_at: Optional[datetime] = None
-    audit_completed_at: Optional[datetime] = None
-    
-    # Files
-    files: List[Dict[str, Any]] = []
     
     # Statistics
     total_positions: int = 0
+    positions_total: int = 0
     green_count: int = 0
     amber_count: int = 0
     red_count: int = 0
@@ -161,33 +191,51 @@ class ProjectResponse(BaseModel):
     progress: int = Field(0, ge=0, le=100, description="Processing progress percentage")
     message: str = Field("", description="Status message")
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(
+        from_attributes=True,
+        extra="allow"  # Allow extra fields
+    )
 
 
 class ProjectStatusResponse(BaseModel):
-    """Detailed project status response"""
+    """
+    Detailed project status response
+    FLEXIBLE: Matches routes.py return format
+    """
+    # Core fields
     project_id: str
-    status: ProjectStatus
-    progress: int = Field(..., ge=0, le=100)
-    message: str
+    project_name: Optional[str] = None
+    status: Union[ProjectStatus, str]
+    workflow: Union[WorkflowType, str]
+    
+    # Progress info
+    progress: int = Field(0, ge=0, le=100)
+    message: Optional[str] = Field(None, description="Status message")
     
     # Processing info
     positions_processed: int = 0
     positions_total: int = 0
     
-    # Audit results
+    # Audit results (optional)
     green_count: int = 0
     amber_count: int = 0
     red_count: int = 0
     
-    # Timestamps
-    uploaded_at: datetime
-    processed_at: Optional[datetime] = None
-    audit_completed_at: Optional[datetime] = None
+    # Timestamps (flexible string or datetime)
+    created_at: Optional[Union[datetime, str]] = None
+    updated_at: Optional[Union[datetime, str]] = None
+    uploaded_at: Optional[Union[datetime, str]] = None
+    processed_at: Optional[Union[datetime, str]] = None
+    audit_completed_at: Optional[Union[datetime, str]] = None
+    completed_at: Optional[Union[datetime, str]] = None
     
     # Error info (if failed)
     error_message: Optional[str] = None
+    
+    # Enrichment info
+    enrichment_enabled: Optional[bool] = None
+    
+    model_config = ConfigDict(extra="allow")
 
 
 class Position(BaseModel):
@@ -279,6 +327,7 @@ def db_project_to_response(db_project: Project) -> ProjectResponse:
     """
     # Calculate progress based on status
     progress_map = {
+        ProjectStatus.PENDING: 5,
         ProjectStatus.UPLOADED: 10,
         ProjectStatus.PROCESSING: 30,
         ProjectStatus.PARSED: 50,
