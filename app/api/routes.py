@@ -17,6 +17,7 @@ from app.core.config import settings
 from app.services.workflow_a import WorkflowA
 from app.services.workflow_b import WorkflowB
 from app.models.project import (
+    Project,
     ProjectStatus,
     ProjectResponse,
     ProjectStatusResponse,
