@@ -209,7 +209,7 @@ class ExcelParser:
 
         header_types = [self._map_header_to_field(header) for header in headers]
 
-        required_fields = {"code", "description", "unit", "quantity"}
+        required_fields = {"description", "quantity"}
 
         skipped_entries: List[Dict[str, Any]] = []
         positions_skipped = 0
