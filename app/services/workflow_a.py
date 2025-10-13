@@ -1025,7 +1025,7 @@ Najdi a vrať v JSON formátu:
 Vrať POUZE JSON, bez markdown.
 """
                         
-                        analysis_result = await self.claude.call(context_prompt)
+                        analysis_result = self.claude.call(context_prompt)
                         
                         # Try to parse JSON from result
                         import json
