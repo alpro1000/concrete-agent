@@ -7,7 +7,6 @@ import json
 import base64
 import logging
 from typing import Dict, Any, Optional
-import asyncio
 import xml.etree.ElementTree as ET
 import pandas as pd
 
@@ -100,19 +99,6 @@ class ClaudeClient:
         except Exception as e:
             logger.error(f"Claude API call failed: {e}")
             raise
-
-    async def generate_response(
-        self,
-        prompt: str,
-        system_prompt: Optional[str] = None,
-        temperature: float = 0.3,
-    ) -> Dict[str, Any]:
-        """Asynchronous wrapper around :meth:`call`."""
-
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, lambda: self.call(prompt, system_prompt, temperature)
-        )
     
     def parse_excel(
         self,
