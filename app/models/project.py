@@ -20,17 +20,19 @@ Base = declarative_base()
 
 class ProjectStatus(str, Enum):
     """Project processing status"""
-    PENDING = "pending"          # Initial state after upload
-    UPLOADED = "uploaded"        # Files uploaded, ready to process
-    PROCESSING = "processing"    # Currently processing
-    PARSED = "parsed"            # Parsing completed
-    STAGING = "staging"          # In staging phase
-    CURATED = "curated"          # Data curated
-    AUDIT_IN_PROGRESS = "audit_in_progress"  # Audit running
-    AUDIT_COMPLETED = "audit_completed"      # Audit completed
-    HITL_REVIEW = "hitl_review"  # Human review needed
-    COMPLETED = "completed"      # Fully completed
-    FAILED = "failed"            # Processing failed
+
+    PENDING = "PENDING"  # Initial state after upload
+    UPLOADED = "UPLOADED"  # Files uploaded, ready to process
+    PROCESSING = "PROCESSING"  # Currently processing
+    PARSED = "PARSED"  # Parsing completed
+    AUDITED = "AUDITED"  # Automated audit completed
+    STAGING = "STAGING"  # In staging phase
+    CURATED = "CURATED"  # Data curated
+    AUDIT_IN_PROGRESS = "AUDIT_IN_PROGRESS"  # Audit running
+    AUDIT_COMPLETED = "AUDIT_COMPLETED"  # Legacy flag
+    HITL_REVIEW = "HITL_REVIEW"  # Human review needed
+    COMPLETED = "COMPLETED"  # Fully completed
+    FAILED = "FAILED"  # Processing failed
 
 
 class AuditClassification(str, Enum):
@@ -331,6 +333,7 @@ def db_project_to_response(db_project: Project) -> ProjectResponse:
         ProjectStatus.UPLOADED: 10,
         ProjectStatus.PROCESSING: 30,
         ProjectStatus.PARSED: 50,
+        ProjectStatus.AUDITED: 90,
         ProjectStatus.STAGING: 60,
         ProjectStatus.CURATED: 70,
         ProjectStatus.AUDIT_IN_PROGRESS: 85,

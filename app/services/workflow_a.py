@@ -1,4 +1,4 @@
-"""Workflow A - Steps 1 & 2 implementation (upload + parsing)."""
+"""Workflow A - Steps 1–6 implementation (upload → audit)."""
 from __future__ import annotations
 
 import logging
@@ -9,7 +9,11 @@ from typing import Any, Dict, List
 from app.core.config import settings
 from app.models.project import ProjectStatus
 from app.parsers.smart_parser import SmartParser
+from app.parsers.drawing_specs_parser import DrawingSpecsParser
+from app.services.audit_classifier import AuditClassifier
+from app.services.position_enricher import PositionEnricher
 from app.services.project_cache import load_or_create_project_cache, save_project_cache
+from app.services.specifications_validator import SpecificationsValidator
 from app.state.project_store import project_store
 
 logger = logging.getLogger(__name__)
@@ -20,6 +24,9 @@ class WorkflowA:
 
     def __init__(self) -> None:
         self.smart_parser = SmartParser()
+        self.drawing_parser = DrawingSpecsParser()
+        self.validator = SpecificationsValidator()
+        self.audit_classifier = AuditClassifier()
 
     async def execute(
         self,
@@ -52,6 +59,8 @@ class WorkflowA:
             cache_path,
         )
 
+        cache_data["enable_enrichment"] = enable_enrichment
+
         logger.info(
             "Project %s: Starting Workflow A Step 2 (parsing)",
             project_id,
@@ -64,7 +73,8 @@ class WorkflowA:
         cache_data["workflow"] = "A"
         cache_data["files"] = uploads["files_by_type"]
         cache_data.setdefault("diagnostics", {})
-        cache_data["positions"] = parsing_summary["positions"]
+        positions = parsing_summary["positions"]
+        cache_data["positions"] = positions
         cache_data["documents"] = parsing_summary["documents"]
         cache_data["diagnostics"]["parsing"] = parsing_summary["diagnostics"]
         cache_data["updated_at"] = datetime.now().isoformat()
@@ -75,9 +85,75 @@ class WorkflowA:
             project_id, parsing_summary, cache_path, uploads
         )
 
+        # ------------------------------------------------------------------
+        # Steps 3–6: Drawing enrichment → validation → audit
+        # ------------------------------------------------------------------
+
+        drawing_summary = self._extract_drawing_specs(
+            project_id, uploads.get("drawing_files", [])
+        )
+
+        logger.info(
+            "Project %s: Drawing specs detected=%s",
+            project_id,
+            len(drawing_summary["specifications"]),
+        )
+
+        enricher = PositionEnricher(enabled=enable_enrichment)
+        enriched_positions, enrichment_stats = enricher.enrich(
+            positions, drawing_summary["specifications"]
+        )
+
+        validated_positions, validation_stats = self.validator.validate(
+            enriched_positions
+        )
+
+        audited_positions, audit_stats = self.audit_classifier.classify(
+            validated_positions
+        )
+
+        logger.info(
+            "Project %s: Audit summary GREEN=%s, AMBER=%s, RED=%s",
+            project_id,
+            audit_stats.get("green", 0),
+            audit_stats.get("amber", 0),
+            audit_stats.get("red", 0),
+        )
+
+        positions_preview = audited_positions[:100]
+
+        cache_data["positions"] = audited_positions
+        cache_data["enrichment"] = enrichment_stats
+        cache_data["validation"] = validation_stats
+        cache_data["audit"] = audit_stats
+        cache_data["drawing_specs"] = drawing_summary
+        cache_data["positions_preview"] = positions_preview
+        cache_data["status"] = "AUDITED"
+        cache_data["progress"] = 90
+        cache_data["message"] = (
+            "Parsed + Enriched + Validated + Audited (Steps 1–6). Ready to export."
+        )
+        cache_data["updated_at"] = datetime.now().isoformat()
+
+        save_project_cache(project_id, cache_data)
+
+        self._update_project_store_after_audit(
+            project_id,
+            cache_path,
+            uploads,
+            audited_positions,
+            enrichment_stats,
+            validation_stats,
+            audit_stats,
+            drawing_summary["diagnostics"],
+            enable_enrichment,
+            positions_preview,
+            parsing_summary["diagnostics"],
+        )
+
         diagnostics = parsing_summary["diagnostics"]
         logger.info(
-            "Project %s: Completed Steps 1-2 → %s document(s), %s positions",
+            "Project %s: Completed Steps 1–6 → %s document(s), %s positions",
             project_id,
             diagnostics["documents_processed"],
             diagnostics["normalized_total"],
@@ -86,13 +162,19 @@ class WorkflowA:
         return {
             "project_id": project_id,
             "workflow": "A",
-            "status": ProjectStatus.PARSED.value,
+            "status": "AUDITED",
             "cache_path": str(cache_path),
             "documents_processed": diagnostics["documents_processed"],
-            "positions_total": len(parsing_summary["positions"]),
+            "positions_total": len(audited_positions),
             "parsing": diagnostics,
             "files": uploads["files_by_type"],
             "missing_files": uploads["missing_files"],
+            "enrichment": enrichment_stats,
+            "validation": validation_stats,
+            "audit": audit_stats,
+            "drawing_specs": drawing_summary["diagnostics"],
+            "progress": 90,
+            "message": "Parsed + Enriched + Validated + Audited (Steps 1–6). Ready to export.",
         }
 
     @staticmethod
@@ -369,3 +451,83 @@ class WorkflowA:
             return str(path.relative_to(settings.DATA_DIR))
         except ValueError:
             return path.name
+
+    def _extract_drawing_specs(
+        self, project_id: str, drawing_files: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        if not drawing_files:
+            logger.info("Project %s: No drawing files available for enrichment", project_id)
+            return {"specifications": [], "diagnostics": {"files_processed": 0, "specifications_found": 0, "errors": []}}
+
+        logger.info(
+            "Project %s: Extracting drawing specifications from %s file(s)",
+            project_id,
+            len(drawing_files),
+        )
+
+        result = self.drawing_parser.parse_files(drawing_files)
+
+        return result
+
+    def _update_project_store_after_audit(
+        self,
+        project_id: str,
+        cache_path: Path,
+        uploads: Dict[str, Any],
+        positions: List[Dict[str, Any]],
+        enrichment_stats: Dict[str, Any],
+        validation_stats: Dict[str, Any],
+        audit_stats: Dict[str, Any],
+        drawing_diagnostics: Dict[str, Any],
+        enable_enrichment: bool,
+        positions_preview: List[Dict[str, Any]],
+        parsing_diagnostics: Dict[str, Any],
+    ) -> None:
+        now_iso = datetime.now().isoformat()
+        project_meta = project_store.setdefault(project_id, {})
+
+        project_meta.update(
+            {
+                "project_id": project_id,
+                "workflow": "A",
+                "status": ProjectStatus.AUDITED,
+                "updated_at": now_iso,
+                "progress": 90,
+                "cache_path": str(cache_path),
+                "files_snapshot": uploads.get("files_by_type", {}),
+                "missing_files": uploads.get("missing_files", []),
+                "positions_total": len(positions),
+                "positions_processed": len(positions),
+                "green_count": audit_stats.get("green", 0),
+                "amber_count": audit_stats.get("amber", 0),
+                "red_count": audit_stats.get("red", 0),
+                "enable_enrichment": enable_enrichment,
+                "message": "Parsed + Enriched + Validated + Audited (Steps 1–6). Ready to export.",
+            }
+        )
+
+        project_meta.setdefault("diagnostics", {})
+        project_meta["diagnostics"].update(
+            {
+                "parsing": parsing_diagnostics,
+                "drawing_specs": drawing_diagnostics,
+                "enrichment": enrichment_stats,
+                "validation": validation_stats,
+                "audit": audit_stats,
+            }
+        )
+
+        project_meta["audit_results"] = {
+            "enrichment": enrichment_stats,
+            "validation": validation_stats,
+            "audit": audit_stats,
+            "positions_preview": positions_preview,
+        }
+
+        project_meta["summary"] = {
+            "positions_total": len(positions),
+            "green": audit_stats.get("green", 0),
+            "amber": audit_stats.get("amber", 0),
+            "red": audit_stats.get("red", 0),
+        }
+
