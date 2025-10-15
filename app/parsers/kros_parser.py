@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class KROSParser:
     """Parse KROS XML files (UNIXML, Tabulární and AspeEsticon XC4 formats)"""
 
-    def parse(self, file_path: Path) -> Dict[str, Any]:
+    def parse(self, file_path: Path, project_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Parse KROS XML file
         
@@ -29,7 +29,9 @@ class KROSParser:
                 "positions": [...]
             }
         """
-        logger.info(f"🧱 Parsing KROS XML: {file_path.name}")
+        project_prefix = f"[project={project_id}] " if project_id else ""
+
+        logger.info("%s🧱 Parsing KROS XML: %s", project_prefix, file_path.name)
 
         kros_format = "UNKNOWN"
 
@@ -39,7 +41,7 @@ class KROSParser:
 
             # Detect KROS format
             kros_format = self._detect_format(root)
-            logger.info(f"Detected KROS format: {kros_format}")
+            logger.info("%sDetected KROS format: %s", project_prefix, kros_format)
             
             # Parse based on format
             parser_diagnostics: Dict[str, Any] = {}
@@ -54,7 +56,9 @@ class KROSParser:
                 logger.warning("Unknown KROS format, trying generic XML parsing")
                 positions = self._parse_generic(root)
 
-            logger.info(f"Extracted {len(positions)} raw positions from KROS XML")
+            logger.info(
+                "%sExtracted %s raw positions from KROS XML", project_prefix, len(positions)
+            )
 
             # Normalize positions and capture statistics
             normalized_positions, normalization_stats = normalize_positions(

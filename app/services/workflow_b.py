@@ -353,7 +353,7 @@ class WorkflowB:
                     elif suffix in ['.pdf', '.xlsx', '.xls', '.xml']:
                         # ✅ Структурированные документы - используем SmartParser
                         logger.info(f"    Using SmartParser for {suffix} document")
-                        parsed_data = self.smart_parser.parse(doc)
+                        parsed_data = self.smart_parser.parse(doc, project_id=None)
                         
                         # Извлечь текстовое представление
                         if suffix == '.pdf':

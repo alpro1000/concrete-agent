@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 
 class ExcelParser:
     """Parse construction estimates from Excel files"""
-    
-    def parse(self, file_path: Path) -> Dict[str, Any]:
+
+    def parse(self, file_path: Path, project_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Parse Excel file and extract positions
         
@@ -31,19 +31,26 @@ class ExcelParser:
                 "positions": [...]
             }
         """
-        logger.info(f"📊 Parsing Excel: {file_path.name}")
+        project_prefix = f"[project={project_id}] " if project_id else ""
+
+        logger.info("%s📊 Parsing Excel: %s", project_prefix, file_path.name)
         
         try:
             workbook = openpyxl.load_workbook(file_path, data_only=True)
             
-            logger.info(f"Excel has {len(workbook.sheetnames)} sheets: {workbook.sheetnames}")
+            logger.info(
+                "%sExcel has %s sheet(s): %s",
+                project_prefix,
+                len(workbook.sheetnames),
+                workbook.sheetnames,
+            )
             
             all_positions = []
             sheet_summaries: List[Dict[str, Any]] = []
             
             # Process each sheet
             for sheet_name in workbook.sheetnames:
-                logger.info(f"Processing sheet: {sheet_name}")
+                logger.info("%sProcessing sheet: %s", project_prefix, sheet_name)
                 
                 sheet = workbook[sheet_name]
                 sheet_positions, sheet_diag = self._parse_sheet(sheet, sheet_name)
