@@ -72,9 +72,11 @@ async def startup_event():
         logger.info(f"✅ Knowledge Base loaded: {len(kb_loader.data)} categories")
         
         # Log each category
-        for category, (data, metadata) in kb_loader.data.items():
-            if isinstance(data, list):
-                logger.info(f"   - {category}: {len(data)} items")
+        for category, payload in kb_loader.data.items():
+            if isinstance(payload, list):
+                logger.info(f"   - {category}: {len(payload)} items")
+            elif isinstance(payload, dict):
+                logger.info(f"   - {category}: {len(payload)} entries")
             else:
                 logger.info(f"   - {category}: loaded")
                 

@@ -1,355 +1,205 @@
-"""
-Specifications Validator
-Проверяет соответствие технических спецификаций стандартам ČSN
-"""
+"""Validation of enriched positions against the knowledge base."""
+
+from __future__ import annotations
+
 import logging
-from typing import Dict, Any, List, Optional
 import re
+from dataclasses import dataclass
+from typing import Dict, Iterable, List, Tuple
+
+from app.core.kb_loader import init_kb_loader
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class ValidationResult:
+    """Result for a single position."""
+
+    position: Dict[str, object]
+    errors: List[str]
+    warnings: List[str]
+
+    @property
+    def status(self) -> str:
+        if self.errors:
+            return "failed"
+        if self.warnings:
+            return "warning"
+        return "passed"
+
+
 class SpecificationsValidator:
-    """
-    Validate technical specifications against Czech standards (ČSN)
-    
-    Проверяет:
-    - Соответствие классов exposure для бетона (ČSN EN 206)
-    - Достаточность толщины покрытия
-    - Соответствие классов арматуры
-    - Другие требования стандартов
-    """
-    
-    # ČSN EN 206: Minimum concrete cover for exposure classes
-    EXPOSURE_CLASS_MIN_COVER = {
-        'XC1': 15,  # mm
-        'XC2': 25,
-        'XC3': 25,
-        'XC4': 30,
-        'XD1': 40,
-        'XD2': 45,
-        'XD3': 50,
-        'XS1': 45,
-        'XS2': 50,
-        'XS3': 55,
-        'XF1': 25,
-        'XF2': 25,
-        'XF3': 30,
-        'XF4': 35,
-        'XA1': 25,
-        'XA2': 35,
-        'XA3': 45
+    """Check positions against OTSKP codes and simplified ČSN rules."""
+
+    EXPOSURE_MIN_CLASS = {
+        "XF2": 30,
+        "XF3": 35,
+        "XF4": 35,
+        "XD2": 30,
+        "XD3": 35,
+        "XS2": 30,
+        "XS3": 35,
+        "XA2": 35,
+        "XA3": 40,
     }
-    
-    # ČSN EN 206: Minimum concrete classes for exposure classes
-    EXPOSURE_CLASS_MIN_CONCRETE = {
-        'XC1': 'C20/25',
-        'XC2': 'C25/30',
-        'XC3': 'C30/37',
-        'XC4': 'C30/37',
-        'XD1': 'C30/37',
-        'XD2': 'C35/45',
-        'XD3': 'C35/45',
-        'XS1': 'C30/37',
-        'XS2': 'C35/45',
-        'XS3': 'C35/45',
-        'XF1': 'C30/37',
-        'XF2': 'C25/30',
-        'XF3': 'C30/37',
-        'XF4': 'C30/37',
-        'XA1': 'C30/37',
-        'XA2': 'C35/45',
-        'XA3': 'C40/50'
-    }
-    
-    # Concrete class strength mapping (for comparison)
-    CONCRETE_CLASS_STRENGTH = {
-        'C12/15': 12,
-        'C16/20': 16,
-        'C20/25': 20,
-        'C25/30': 25,
-        'C30/37': 30,
-        'C35/45': 35,
-        'C40/50': 40,
-        'C45/55': 45,
-        'C50/60': 50
-    }
-    
-    def validate_position(
-        self,
-        position: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Validate position with technical specifications
-        
-        Args:
-            position: Position with technical_specs
-            
-        Returns:
-            Position with validation results added
-        """
-        if 'technical_specs' not in position:
-            logger.debug("Position has no technical specs to validate")
-            position['validation_status'] = 'no_specs'
-            return position
-        
-        specs = position['technical_specs']
-        validation_results = {
-            'is_valid': True,
-            'warnings': [],
-            'errors': [],
-            'info': []
-        }
-        
-        # Validate concrete specifications
-        if specs.get('concrete_class'):
-            concrete_validation = self._validate_concrete(specs)
-            self._merge_validation(validation_results, concrete_validation)
-        
-        # Validate reinforcement specifications
-        if specs.get('steel_class'):
-            reinforcement_validation = self._validate_reinforcement(specs)
-            self._merge_validation(validation_results, reinforcement_validation)
-        
-        # Determine overall validation status
-        if validation_results['errors']:
-            validation_results['is_valid'] = False
-            position['validation_status'] = 'failed'
-        elif validation_results['warnings']:
-            position['validation_status'] = 'warning'
-        else:
-            position['validation_status'] = 'passed'
-        
-        position['validation_results'] = validation_results
-        
-        logger.debug(
-            f"Position validated: {position.get('description', 'N/A')[:30]} - "
-            f"Status: {position['validation_status']}"
-        )
-        
-        return position
-    
-    def _validate_concrete(self, specs: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Validate concrete specifications against ČSN EN 206
-        
-        Checks:
-        - Exposure classes are valid
-        - Concrete class is sufficient for exposure classes
-        - Concrete cover is adequate
-        """
-        validation = {
-            'is_valid': True,
-            'warnings': [],
-            'errors': [],
-            'info': []
-        }
-        
-        concrete_class = specs.get('concrete_class', '')
-        exposure_classes = specs.get('exposure_classes', [])
-        concrete_cover = specs.get('concrete_cover_mm')
-        
-        # Validate exposure classes
-        if exposure_classes:
-            for exp_class in exposure_classes:
-                if exp_class not in self.EXPOSURE_CLASS_MIN_COVER:
-                    validation['warnings'].append(
-                        f"Neznámá třída expozice: {exp_class} (není v ČSN EN 206)"
-                    )
-                else:
-                    validation['info'].append(
-                        f"Třída expozice {exp_class} rozpoznána"
-                    )
-        
-        # Validate concrete class for exposure classes
-        if concrete_class and exposure_classes:
-            for exp_class in exposure_classes:
-                if exp_class in self.EXPOSURE_CLASS_MIN_CONCRETE:
-                    required_class = self.EXPOSURE_CLASS_MIN_CONCRETE[exp_class]
-                    
-                    if not self._is_concrete_class_sufficient(concrete_class, required_class):
-                        validation['errors'].append(
-                            f"Beton {concrete_class} nedostatečný pro expozici {exp_class}. "
-                            f"Minimální požadavek: {required_class} (ČSN EN 206)"
-                        )
-                    else:
-                        validation['info'].append(
-                            f"Beton {concrete_class} vyhovuje pro expozici {exp_class}"
-                        )
-        
-        # Validate concrete cover
-        if concrete_cover is not None and exposure_classes:
-            for exp_class in exposure_classes:
-                if exp_class in self.EXPOSURE_CLASS_MIN_COVER:
-                    min_cover = self.EXPOSURE_CLASS_MIN_COVER[exp_class]
-                    
-                    if concrete_cover < min_cover:
-                        validation['errors'].append(
-                            f"Krytí výztuže {concrete_cover}mm nedostatečné pro {exp_class}. "
-                            f"Minimální požadavek: {min_cover}mm (ČSN EN 206)"
-                        )
-                    else:
-                        validation['info'].append(
-                            f"Krytí výztuže {concrete_cover}mm vyhovuje pro {exp_class}"
-                        )
-        
-        # Check if cover is specified when exposure classes present
-        if exposure_classes and concrete_cover is None:
-            validation['warnings'].append(
-                "Krytí výztuže není specifikováno, ale jsou definovány třídy expozice"
-            )
-        
-        return validation
-    
-    def _validate_reinforcement(self, specs: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Validate reinforcement specifications
-        
-        Checks:
-        - Steel class is valid
-        - Diameter is reasonable
-        """
-        validation = {
-            'is_valid': True,
-            'warnings': [],
-            'errors': [],
-            'info': []
-        }
-        
-        steel_class = specs.get('steel_class', '')
-        diameter = specs.get('diameter_mm')
-        
-        # Validate steel class
-        valid_steel_classes = ['B500A', 'B500B', 'B500C']
-        
-        if steel_class:
-            if steel_class in valid_steel_classes:
-                validation['info'].append(
-                    f"Třída oceli {steel_class} rozpoznána (ČSN EN 1992)"
-                )
-            else:
-                validation['warnings'].append(
-                    f"Neznámá třída oceli: {steel_class}. "
-                    f"Běžné třídy: {', '.join(valid_steel_classes)}"
-                )
-        
-        # Validate diameter
-        if diameter:
-            if diameter < 6 or diameter > 40:
-                validation['warnings'].append(
-                    f"Neobvyklý průměr výztuže: {diameter}mm. "
-                    f"Běžný rozsah: 6-40mm"
-                )
-            else:
-                validation['info'].append(
-                    f"Průměr výztuže {diameter}mm je v běžném rozsahu"
-                )
-        
-        return validation
-    
-    def _is_concrete_class_sufficient(
-        self,
-        actual_class: str,
-        required_class: str
-    ) -> bool:
-        """
-        Check if actual concrete class is sufficient compared to required
-        
-        Args:
-            actual_class: Actual concrete class (e.g., "C30/37")
-            required_class: Required minimum class (e.g., "C25/30")
-            
-        Returns:
-            True if actual >= required
-        """
-        actual_strength = self.CONCRETE_CLASS_STRENGTH.get(actual_class.upper())
-        required_strength = self.CONCRETE_CLASS_STRENGTH.get(required_class.upper())
-        
-        if actual_strength is None or required_strength is None:
-            logger.warning(
-                f"Cannot compare concrete classes: {actual_class} vs {required_class}"
-            )
-            return True  # Assume OK if cannot compare
-        
-        return actual_strength >= required_strength
-    
-    def _merge_validation(
-        self,
-        target: Dict[str, Any],
-        source: Dict[str, Any]
-    ):
-        """Merge validation results from source into target"""
-        target['warnings'].extend(source['warnings'])
-        target['errors'].extend(source['errors'])
-        target['info'].extend(source['info'])
-        
-        if source['errors']:
-            target['is_valid'] = False
-    
-    def validate_positions_batch(
-        self,
-        positions: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """
-        Validate multiple positions
-        
-        Args:
-            positions: List of positions to validate
-            
-        Returns:
-            List of positions with validation results
-        """
-        logger.info(f"Validating {len(positions)} positions...")
-        
-        validated = []
-        stats = {
-            'passed': 0,
-            'warning': 0,
-            'failed': 0,
-            'no_specs': 0
-        }
-        
+
+    def __init__(self) -> None:
+        kb = init_kb_loader()
+        self.otskp_index = self._build_otskp_index(kb.data.get("B1_kros_urs_codes", {}))
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def validate(
+        self, positions: Iterable[Dict[str, object]]
+    ) -> Tuple[List[Dict[str, object]], Dict[str, int]]:
+        """Validate all positions and append validation metadata."""
+
+        validated_positions: List[Dict[str, object]] = []
+        stats = {"passed": 0, "warning": 0, "failed": 0}
+
         for position in positions:
-            validated_position = self.validate_position(position)
-            validated.append(validated_position)
-            
-            status = validated_position.get('validation_status', 'no_specs')
-            stats[status] = stats.get(status, 0) + 1
-        
+            result = self._validate_single(dict(position))
+            position_payload = result.position
+            position_payload["validation_status"] = result.status
+            position_payload["validation_results"] = {
+                "errors": result.errors,
+                "warnings": result.warnings,
+            }
+
+            stats[result.status] += 1
+            validated_positions.append(position_payload)
+
         logger.info(
-            f"✅ Validation complete: "
-            f"passed={stats['passed']}, "
-            f"warning={stats['warning']}, "
-            f"failed={stats['failed']}, "
-            f"no_specs={stats['no_specs']}"
+            "Validation summary → passed=%s, warning=%s, failed=%s",
+            stats["passed"],
+            stats["warning"],
+            stats["failed"],
         )
-        
-        return validated
+
+        return validated_positions, stats
+
+    # ------------------------------------------------------------------
+    # Single position validation
+    # ------------------------------------------------------------------
+
+    def _validate_single(self, position: Dict[str, object]) -> ValidationResult:
+        errors: List[str] = []
+        warnings: List[str] = []
+
+        code = str(position.get("code") or "").strip()
+        unit = str(position.get("unit") or "").strip().lower()
+        quantity = position.get("quantity")
+
+        kb_entry = self._lookup_otskp(code)
+        if kb_entry is None:
+            errors.append("code_not_found_in_otskp")
+        else:
+            kb_unit = str(kb_entry.get("unit") or "").lower()
+            if kb_unit and unit and kb_unit != unit:
+                errors.append("unit_mismatch_with_otskp")
+
+        if quantity is None:
+            warnings.append("quantity_missing")
+        else:
+            try:
+                if float(quantity) <= 0:
+                    errors.append("quantity_non_positive")
+            except (ValueError, TypeError):
+                errors.append("quantity_invalid")
+
+        self._check_concrete_rules(position, errors, warnings)
+
+        return ValidationResult(position=position, errors=errors, warnings=warnings)
+
+    # ------------------------------------------------------------------
+    # Knowledge base helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_otskp_index(category_payload: Dict[str, object]) -> Dict[str, Dict[str, object]]:
+        index: Dict[str, Dict[str, object]] = {}
+
+        for data in category_payload.values():
+            if isinstance(data, list):
+                for item in data:
+                    code = SpecificationsValidator._normalise_code(item.get("code") or item.get("znacka"))
+                    if code:
+                        index[code] = {
+                            "name": item.get("name") or item.get("nazev"),
+                            "unit": (item.get("unit") or item.get("MJ") or "").strip().lower(),
+                            "unit_price": item.get("unit_price") or item.get("jedn_cena"),
+                        }
+            elif isinstance(data, dict):
+                code = SpecificationsValidator._normalise_code(data.get("code") or data.get("znacka"))
+                if code:
+                    index[code] = {
+                        "name": data.get("name") or data.get("nazev"),
+                        "unit": (data.get("unit") or data.get("MJ") or "").strip().lower(),
+                        "unit_price": data.get("unit_price") or data.get("jedn_cena"),
+                    }
+
+        return index
+
+    def _lookup_otskp(self, code: str) -> Dict[str, object] | None:
+        normalised = self._normalise_code(code)
+        if not normalised:
+            return None
+        return self.otskp_index.get(normalised)
+
+    @staticmethod
+    def _normalise_code(code: object) -> str:
+        if not code:
+            return ""
+        text = str(code).strip().upper()
+        return re.sub(r"[^A-Z0-9]", "", text)
+
+    # ------------------------------------------------------------------
+    # ČSN EN 206 heuristics
+    # ------------------------------------------------------------------
+
+    def _check_concrete_rules(
+        self,
+        position: Dict[str, object],
+        errors: List[str],
+        warnings: List[str],
+    ) -> None:
+        specs = position.get("technical_specs") or {}
+        concrete_class = str(specs.get("concrete_class") or "")
+        exposures = specs.get("exposure") or []
+
+        if not concrete_class and exposures:
+            warnings.append("concrete_class_missing")
+            return
+
+        if not concrete_class:
+            return
+
+        class_value = self._extract_class_value(concrete_class)
+        if class_value is None:
+            warnings.append("concrete_class_unrecognised")
+            return
+
+        if not exposures:
+            warnings.append("exposure_missing")
+            return
+
+        exposure_tokens = [str(item).upper() for item in exposures]
+        for token in exposure_tokens:
+            required = self.EXPOSURE_MIN_CLASS.get(token)
+            if required and class_value < required:
+                errors.append(f"exposure_{token}_requires_C{required}")
+
+        if all(token.startswith("XC") for token in exposure_tokens):
+            warnings.append("exposure_only_xc")
+
+    @staticmethod
+    def _extract_class_value(concrete_class: str) -> int | None:
+        match = re.search(r"C(\d{2})", concrete_class.upper())
+        return int(match.group(1)) if match else None
 
 
-# ==============================================================================
-# USAGE EXAMPLE
-# ==============================================================================
+__all__ = ["SpecificationsValidator"]
 
-if __name__ == "__main__":
-    import json
-    
-    # Example position with technical specs
-    position = {
-        "position_number": "1.1",
-        "description": "základní deska C30/37",
-        "quantity": 89,
-        "unit": "m³",
-        "technical_specs": {
-            "concrete_class": "C30/37",
-            "exposure_classes": ["XA1", "XC2", "XF2"],
-            "concrete_cover_mm": 50,
-            "surface_finish": "hladká"
-        }
-    }
-    
-    validator = SpecificationsValidator()
-    validated = validator.validate_position(position)
-    
-    print("\n✅ Validation Result:")
-    print(json.dumps(validated, ensure_ascii=False, indent=2))

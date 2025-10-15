@@ -465,25 +465,28 @@ async def get_project_results(project_id: str):
     
     project = project_store[project_id]
     
-    # Check if processing is complete
-    if project["status"] != ProjectStatus.COMPLETED:
+    status = project["status"]
+
+    if status not in {ProjectStatus.AUDITED, ProjectStatus.COMPLETED}:
         return {
             "project_id": project_id,
-            "status": project["status"],
-            "message": "Project is still processing"
+            "status": status,
+            "message": "Project is still processing",
         }
-    
-    # Return full results
+
+    audit_payload = project.get("audit_results", {})
+
     return {
         "project_id": project_id,
         "project_name": project["project_name"],
         "workflow": project["workflow"],
-        "status": project["status"],
+        "status": status,
         "completed_at": project.get("completed_at"),
         "enrichment_enabled": project.get("enable_enrichment", False),
-        "audit_results": project.get("audit_results", {}),
+        "audit_results": audit_payload,
+        "positions_preview": audit_payload.get("positions_preview", []),
         "summary": project.get("summary", ""),
-        "diagnostics": project.get("diagnostics", {})
+        "diagnostics": project.get("diagnostics", {}),
     }
 
 
@@ -604,8 +607,15 @@ async def export_to_excel(project_id: str):
     
     project = project_store[project_id]
     
-    if project["status"] != ProjectStatus.COMPLETED:
-        raise HTTPException(400, "Project not completed yet")
+    audit_results = project.get("audit_results") or {}
+    if not audit_results.get("audit"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "audit_not_ready",
+                "hint": "Run enrichment+validation+audit (Steps 3–6) before export.",
+            },
+        )
     
     # Generate Excel file
     try:

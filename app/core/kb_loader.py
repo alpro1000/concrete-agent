@@ -4,13 +4,15 @@ Knowledge Base Loader
 БЕЗ необходимости менять код при добавлении новых файлов
 """
 
-import json
 import csv
-from pathlib import Path
-from typing import Dict, Any, List
-import pandas as pd
-from datetime import datetime
+import json
 import logging
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List
+import xml.etree.ElementTree as ET
+
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -64,20 +66,20 @@ class KnowledgeBaseLoader:
         
         for category in self.CATEGORIES:
             category_path = self.kb_dir / category
-            
+
             if not category_path.exists():
                 logger.warning(f"⚠️  Category not found: {category}")
                 continue
-            
+
             # Загружаем категорию
             self.data[category] = self._load_category(category_path)
-            
+
             # Загружаем metadata
             metadata_path = category_path / "metadata.json"
             if metadata_path.exists():
-                with open(metadata_path, 'r', encoding='utf-8') as f:
+                with open(metadata_path, "r", encoding="utf-8") as f:
                     self.metadata[category] = json.load(f)
-            
+
             logger.info(f"✅ Loaded: {category}")
         
         self.loaded_at = datetime.now()
@@ -104,9 +106,9 @@ class KnowledgeBaseLoader:
         for file_path in path.rglob("*"):
             if not file_path.is_file():
                 continue
-            
+
             # Пропускаем metadata.json (загружается отдельно)
-            if file_path.name == "metadata.json":
+            if file_path.name == "metadata.json" or file_path.name == ".gitkeep":
                 continue
             
             try:
@@ -136,13 +138,16 @@ class KnowledgeBaseLoader:
         
         elif suffix in [".xlsx", ".xls"]:
             return self._load_excel(file_path)
-        
+
         elif suffix == ".pdf":
             return self._load_pdf(file_path)
-        
+
         elif suffix in [".txt", ".md"]:
             return self._load_text(file_path)
-        
+
+        elif suffix == ".xml":
+            return self._load_xml(file_path)
+
         else:
             logger.warning(f"⚠️  Unsupported format: {file_path}")
             return None
@@ -231,6 +236,32 @@ class KnowledgeBaseLoader:
         """Загрузка текстовых файлов"""
         with open(path, 'r', encoding='utf-8') as f:
             return f.read()
+
+    def _load_xml(self, path: Path) -> Any:
+        """Load XML files. For OTSKP data convert to list of dicts."""
+
+        try:
+            tree = ET.parse(path)
+        except ET.ParseError as exc:  # noqa: BLE001
+            logger.error("❌ Failed to parse XML %s: %s", path, exc)
+            return None
+
+        root = tree.getroot()
+
+        # OTSKP XML structure (Polozky/Polozka)
+        items = []
+        for item in root.findall(".//Polozka"):
+            record = {
+                "code": (item.findtext("znacka") or "").strip(),
+                "name": (item.findtext("nazev") or "").strip(),
+                "unit": (item.findtext("MJ") or "").strip(),
+                "unit_price": (item.findtext("jedn_cena") or "").strip(),
+                "technical_specification": (item.findtext("technicka_specifikace") or "").strip(),
+            }
+            if any(record.values()):
+                items.append(record)
+
+        return items if items else {"xml": path.read_text(encoding="utf-8")}
     
     def _print_summary(self):
         """Выводит статистику загруженной KB"""
