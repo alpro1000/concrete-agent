@@ -4,7 +4,7 @@ KROS Parser - ИСПРАВЛЕНО
 """
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 import xml.etree.ElementTree as ET
 
 from app.parsers.xc4_parser import parse_xml_tree as parse_aspe_xml_tree
@@ -45,16 +45,22 @@ class KROSParser:
             
             # Parse based on format
             parser_diagnostics: Dict[str, Any] = {}
+            positions: List[Dict[str, Any]] = []
 
-            if kros_format == "KROS_UNIXML":
-                positions = self._parse_unixml(root)
-            elif kros_format == "KROS_TABULAR":
-                positions = self._parse_tabular(root)
-            elif kros_format == "ASPE_XC4":
-                positions, parser_diagnostics = self._parse_aspe_xc4(root)
-            else:
-                logger.warning("Unknown KROS format, trying generic XML parsing")
-                positions = self._parse_generic(root)
+            if self._has_xc4_prices(root):
+                positions = self._parse_xc4_price_lists(root)
+                if positions:
+                    kros_format = "KROS_XC4"
+            if not positions:
+                if kros_format == "KROS_UNIXML":
+                    positions = self._parse_unixml(root)
+                elif kros_format == "KROS_TABULAR":
+                    positions = self._parse_tabular(root)
+                elif kros_format == "ASPE_XC4":
+                    positions, parser_diagnostics = self._parse_aspe_xc4(root)
+                else:
+                    logger.warning("Unknown KROS format, trying generic XML parsing")
+                    positions = self._parse_generic(root)
 
             logger.info(
                 "%sExtracted %s raw positions from KROS XML", project_prefix, len(positions)
@@ -66,9 +72,8 @@ class KROSParser:
                 return_stats=True
             )
 
-            logger.info(
-                f"✅ KROS XML parsed: {normalization_stats['normalized_total']} valid positions"
-            )
+            parsed_total = normalization_stats["normalized_total"]
+            logger.info("Parsed KROS XML: %s positions", parsed_total)
 
             parser_diagnostics = parser_diagnostics or {
                 "parsed": len(positions),
@@ -133,6 +138,142 @@ class KROSParser:
             return "ASPE_XC4"
 
         return "UNKNOWN"
+
+    @staticmethod
+    def _has_xc4_prices(root: ET.Element) -> bool:
+        """Return True if the XML tree contains XC4 price-list nodes."""
+
+        def _local(tag: str) -> str:
+            return tag.split("}")[-1] if tag else ""
+
+        if _local(root.tag) == "XC4":
+            return True
+
+        return root.find(".//XC4") is not None
+
+    # ------------------------------------------------------------------
+    # XC4 Cenové soustavy (TSKP / OTSKP)
+    # ------------------------------------------------------------------
+
+    def _parse_xc4_price_lists(self, root: ET.Element) -> List[Dict[str, Any]]:
+        """Parse XC4 Cenové soustavy (TSKP / OTSKP) structures."""
+
+        cenove_nodes = list(self._iter_cenove_soustavy(root))
+        if not cenove_nodes:
+            return []
+
+        positions: List[Dict[str, Any]] = []
+        for cs_node in cenove_nodes:
+            cs_type = self._find_text(cs_node, "typ_CS") or self._find_text(cs_node, "typ_cs")
+            cs_type = (cs_type or "").strip().upper()
+            if cs_type and cs_type not in {"TSKP", "OTSKP"}:
+                continue
+
+            polozky = self._find_child(cs_node, "Polozky")
+            if polozky is None:
+                continue
+
+            for item in self._iter_children(polozky, "Polozka"):
+                code = (self._find_text(item, "znacka") or "").strip()
+                name = (self._find_text(item, "nazev") or "").strip()
+                unit = (self._find_text(item, "MJ") or "").strip()
+                tech_spec = (self._find_text(item, "technicka_specifikace") or "").strip()
+                unit_price = (self._find_text(item, "jedn_cena") or "").strip()
+
+                if not code and not name:
+                    continue
+
+                position: Dict[str, Any] = {
+                    "code": code,
+                    "name": name,
+                    "unit": unit,
+                    "tech_spec": tech_spec,
+                    "unit_price": unit_price,
+                    "system": cs_type or "TSKP",
+                }
+
+                positions.append(position)
+
+        return positions
+
+    # Helper utilities -------------------------------------------------
+
+    @staticmethod
+    def _iter_cenove_soustavy(root: ET.Element) -> Iterable[ET.Element]:
+        """Yield <CenoveSoustavy> nodes using the explicit XC4 structure."""
+
+        visited: set[int] = set()
+
+        def _local(tag: str) -> str:
+            return tag.split("}")[-1] if tag else ""
+
+        def _children(element: Optional[ET.Element], tag: str) -> Iterable[ET.Element]:
+            if element is None:
+                return []
+            return [child for child in element if _local(child.tag).lower() == tag.lower()]
+
+        building_info = None
+        if _local(root.tag).lower() == "buildinginformation":
+            building_info = root
+        else:
+            for candidate in root.iter():
+                if _local(candidate.tag).lower() == "buildinginformation":
+                    building_info = candidate
+                    break
+
+        if building_info is not None:
+            for classification in _children(building_info, "Classification"):
+                for system in _children(classification, "System"):
+                    for items in _children(system, "Items"):
+                        for item in _children(items, "Item"):
+                            for children in _children(item, "Children"):
+                                for nested in _children(children, "Item"):
+                                    xc4 = next(iter(_children(nested, "XC4")), None)
+                                    if xc4 is None:
+                                        continue
+                                    for cs_node in _children(xc4, "CenoveSoustavy"):
+                                        identifier = id(cs_node)
+                                        if identifier not in visited:
+                                            visited.add(identifier)
+                                            yield cs_node
+
+        # Fallback for simplified XC4 exports (rooted at <XC4>)
+        for xc4 in root.iter():
+            if _local(xc4.tag).lower() != "xc4":
+                continue
+            for cs_node in _children(xc4, "CenoveSoustavy"):
+                identifier = id(cs_node)
+                if identifier not in visited:
+                    visited.add(identifier)
+                    yield cs_node
+
+    @staticmethod
+    def _find_child(element: Optional[ET.Element], tag: str) -> Optional[ET.Element]:
+        if element is None:
+            return None
+        tag_lower = tag.lower()
+        for child in element:
+            if child.tag.split("}")[-1].lower() == tag_lower:
+                return child
+        return None
+
+    @staticmethod
+    def _iter_children(element: Optional[ET.Element], tag: str) -> Iterable[ET.Element]:
+        if element is None:
+            return []
+        tag_lower = tag.lower()
+        for child in element:
+            if child.tag.split("}")[-1].lower() == tag_lower:
+                yield child
+
+    @staticmethod
+    def _find_text(element: Optional[ET.Element], tag: str) -> Optional[str]:
+        if element is None:
+            return None
+        child = KROSParser._find_child(element, tag)
+        if child is None:
+            return None
+        return child.text
 
     def _parse_aspe_xc4(self, root: ET.Element) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """Parse AspeEsticon XC4 XML format."""

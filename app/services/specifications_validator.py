@@ -197,72 +197,93 @@ class SpecificationsValidator:
             "concrete_cover",
             "radii",
             "composite_codes",
+            "surface_category",
+            "norm_refs",
+            "geometry_tokens",
+            "bridge_tokens",
         ]
         markers = [key for key in marker_keys if technical.get(key)]
-        if not markers:
-            return None
 
         tech_unit = str(technical.get("unit") or "").strip().lower()
         if tech_unit and unit and tech_unit != unit:
             return None
 
-        enrichment = position.get("enrichment") or {}
-        try:
-            enrichment_score = float(
-                enrichment.get("score") or position.get("enrichment_score") or 0.0
-            )
-        except (TypeError, ValueError):
-            enrichment_score = 0.0
-
-        raw_candidates = enrichment.get("candidates") or []
+        candidate_sources = position.get("candidate_codes")
         candidates: List[Dict[str, object]] = []
-        for raw_candidate in raw_candidates:
-            if not isinstance(raw_candidate, dict):
-                continue
-            code = str(raw_candidate.get("code") or "").strip()
-            if not code:
-                continue
-            description = str(raw_candidate.get("description") or "").strip()
-            try:
-                score_value = float(raw_candidate.get("score") or 0.0)
-            except (TypeError, ValueError):
-                score_value = 0.0
-            candidate_unit = str(raw_candidate.get("unit") or "").strip().lower()
-            candidates.append(
-                {
-                    "code": code,
-                    "description": description,
-                    "score": round(score_value, 4),
-                    "unit": candidate_unit,
-                }
-            )
+        if isinstance(candidate_sources, list):
+            for raw_candidate in candidate_sources:
+                if not isinstance(raw_candidate, dict):
+                    continue
+                code = str(raw_candidate.get("code") or "").strip()
+                if not code:
+                    continue
+                try:
+                    score_value = float(raw_candidate.get("score") or 0.0)
+                except (TypeError, ValueError):
+                    score_value = 0.0
+                system = str(raw_candidate.get("system") or "").strip()
+                candidates.append(
+                    {
+                        "code": code,
+                        "system": system,
+                        "score": round(score_value, 4),
+                    }
+                )
+
+        if not candidates:
+            enrichment = position.get("enrichment") or {}
+            raw_candidates = enrichment.get("candidates") or []
+            for raw_candidate in raw_candidates:
+                if not isinstance(raw_candidate, dict):
+                    continue
+                code = str(raw_candidate.get("code") or "").strip()
+                if not code:
+                    continue
+                try:
+                    score_value = float(raw_candidate.get("score") or 0.0)
+                except (TypeError, ValueError):
+                    score_value = 0.0
+                candidates.append(
+                    {
+                        "code": code,
+                        "system": str(raw_candidate.get("system") or "").strip(),
+                        "score": round(score_value, 4),
+                    }
+                )
 
         if not candidates:
             return None
 
         candidates.sort(key=lambda item: item["score"], reverse=True)
         best_candidate = candidates[0]
-        best_score = max(enrichment_score, best_candidate.get("score", 0.0))
+        best_score = best_candidate.get("score", 0.0)
+
         if best_score < self.soft_match_threshold:
             return None
 
-        candidate_unit = str(best_candidate.get("unit") or "")
-        units_to_match = {value for value in (unit, tech_unit) if value}
-        if candidate_unit and units_to_match and candidate_unit not in units_to_match:
+        match_status = str(position.get("match_status") or position.get("enrichment_status") or "").lower()
+        evidence_tokens = position.get("evidence") or []
+        if isinstance(evidence_tokens, list):
+            evidence_tokens = [str(token) for token in evidence_tokens]
+        else:
+            evidence_tokens = []
+
+        has_marker_evidence = any(token.startswith("markers:") for token in evidence_tokens)
+        has_similarity_evidence = any(token.startswith("desc_sim") for token in evidence_tokens)
+
+        if not markers and not has_marker_evidence and not has_similarity_evidence and match_status != "partial":
             return None
 
         limit = min(5, len(candidates))
         shortlist = [dict(candidates[index]) for index in range(limit)]
 
-        candidate_strings: List[str] = []
-        for entry in shortlist:
-            display = entry["code"]
-            if entry.get("description"):
-                display = f"{display} — {entry['description']}"
-            candidate_strings.append(display)
-
-        message = "Уточните код позиции; предложенные кандидаты: " + ", ".join(
-            candidate_strings
+        candidate_strings = [
+            f"{entry['code']}:{entry.get('score', 0.0):.2f}"
+            for entry in shortlist
+        ]
+        message = (
+            "Код позиции не подтверждён. Уточнить код. Кандидаты: "
+            + ", ".join(candidate_strings)
         )
 
         return {
