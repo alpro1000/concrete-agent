@@ -10,7 +10,7 @@ import logging
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterable, List
 import xml.etree.ElementTree as ET
 
 import pandas as pd
@@ -52,6 +52,8 @@ class KnowledgeBaseLoader:
         self.loaded_at = None
         self._kros_index: Dict[str, Dict[str, Any]] | None = None
         self._csn_index: Dict[str, List[Dict[str, str]]] | None = None
+        self._code_bridge: Dict[str, List[str]] | None = None
+        self.kb_b1: Dict[str, Dict[str, Dict[str, Any]]] = {"tskp": {}}
         
     def load_all(self) -> Dict[str, Any]:
         """
@@ -253,17 +255,32 @@ class KnowledgeBaseLoader:
 
         if "B1_kros_urs_codes" in path.parts:
             items: List[Dict[str, Any]] = []
+
+            try:
+                from app.parsers.kros_parser import KROSParser
+
+                parser = KROSParser()
+                explicit_items = parser._parse_xc4_price_lists(root)
+                if explicit_items:
+                    self._register_b1_items(explicit_items, path)
+                    return explicit_items
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("Explicit XC4 parsing failed for %s: %s", path, exc)
+
             for item in root.findall(".//Polozka"):
                 record = {
-                    "code": (item.findtext("Znak") or item.findtext("znak") or "").strip().upper(),
-                    "description": (item.findtext("Nazev") or item.findtext("nazev") or "").strip(),
-                    "unit": (item.findtext("Mj") or item.findtext("MJ") or "").strip(),
+                    "code": (item.findtext("Znak") or item.findtext("znak") or item.findtext("znacka") or "").strip(),
+                    "name": (item.findtext("Nazev") or item.findtext("nazev") or item.findtext("name") or "").strip(),
+                    "description": (item.findtext("Popis") or item.findtext("description") or "").strip(),
+                    "unit": (item.findtext("Mj") or item.findtext("MJ") or item.findtext("MJ") or "").strip(),
                     "section": (item.findtext("Skupina") or item.findtext("skupina") or "").strip(),
+                    "tech_spec": (item.findtext("technicka_specifikace") or "").strip(),
                 }
                 if any(record.values()):
                     items.append(record)
 
             if items:
+                self._register_b1_items(items, path)
                 return items
 
             try:
@@ -278,13 +295,17 @@ class KnowledgeBaseLoader:
                         continue
                     extracted.append(
                         {
-                            "code": str(pos.get("code") or pos.get("Kod") or "").strip().upper(),
+                            "code": str(pos.get("code") or pos.get("Kod") or "").strip(),
+                            "name": pos.get("name") or pos.get("description") or pos.get("Popis") or "",
                             "description": pos.get("description") or pos.get("Popis") or "",
                             "unit": pos.get("unit") or pos.get("MJ") or "",
                             "section": pos.get("section") or "",
+                            "tech_spec": pos.get("tech_spec") or pos.get("technicka_specifikace") or "",
+                            "system": pos.get("system") or "",
                         }
                     )
                 if extracted:
+                    self._register_b1_items(extracted, path)
                     return extracted
             except Exception as exc:  # pragma: no cover - defensive
                 logger.debug("Fallback KROS parsing failed for %s: %s", path, exc)
@@ -302,8 +323,11 @@ class KnowledgeBaseLoader:
             if any(record.values()):
                 items.append(record)
 
+        if items and "B1_kros_urs_codes" in path.parts:
+            self._register_b1_items(items, path)
+
         return items if items else {"xml": path.read_text(encoding="utf-8")}
-    
+
     def _print_summary(self):
         """Выводит статистику загруженной KB"""
         logger.info("\n" + "="*60)
@@ -325,6 +349,44 @@ class KnowledgeBaseLoader:
                 )
         
         logger.info("="*60 + "\n")
+
+    # ------------------------------------------------------------------
+    # Internal helpers for KB B1 registration
+    # ------------------------------------------------------------------
+
+    def _register_b1_items(self, items: Iterable[Dict[str, Any]], path: Path) -> None:
+        catalog = self.kb_b1.setdefault("tskp", {})
+        source = path.name
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            raw_code = str(item.get("code") or item.get("znacka") or "").strip()
+            if not raw_code:
+                continue
+            name = item.get("name") or item.get("description") or item.get("nazev") or ""
+            unit = item.get("unit") or item.get("MJ") or ""
+            tech_spec = (
+                item.get("tech_spec")
+                or item.get("technicka_specifikace")
+                or item.get("technical_specification")
+                or ""
+            )
+            system = (item.get("system") or item.get("typ_CS") or item.get("typ_cs") or "").strip()
+            normalized = re.sub(r"[^A-Z0-9]", "", raw_code.upper())
+
+            catalog[raw_code] = {
+                "code": raw_code,
+                "normalized": normalized,
+                "name": name,
+                "unit": unit,
+                "tech_spec": tech_spec,
+                "system": system or "TSKP",
+                "source": source,
+            }
+
+            if normalized and normalized not in catalog:
+                catalog[normalized] = catalog[raw_code]
     
     # === МЕТОДЫ ПОИСКА (для использования в промптах) ===
     
@@ -333,6 +395,7 @@ class KnowledgeBaseLoader:
 
         b1_data = self.data.get("B1_kros_urs_codes", {})
         records: List[Dict[str, Any]] = []
+        seen_codes: set[str] = set()
 
         for _, payload in b1_data.items():
             if not isinstance(payload, list):
@@ -346,11 +409,16 @@ class KnowledgeBaseLoader:
                     or item.get("znak")
                     or ""
                 ).strip().upper()
-                if not code:
+                if not code or code in seen_codes:
                     continue
+                seen_codes.add(code)
                 records.append(
                     {
                         "code": code,
+                        "name": item.get("name")
+                        or item.get("Nazev")
+                        or item.get("description")
+                        or "",
                         "description": item.get("description")
                         or item.get("name")
                         or item.get("Nazev")
@@ -362,8 +430,35 @@ class KnowledgeBaseLoader:
                         "section": item.get("section")
                         or item.get("Skupina")
                         or "",
+                        "tech_spec": item.get("tech_spec")
+                        or item.get("technicka_specifikace")
+                        or item.get("technical_specification")
+                        or "",
+                        "system": item.get("system")
+                        or item.get("typ_CS")
+                        or item.get("typ_cs")
+                        or "",
                     }
                 )
+
+        for entry in self.kb_b1.get("tskp", {}).values():
+            if not isinstance(entry, dict):
+                continue
+            code = entry.get("code")
+            if not code or code in seen_codes:
+                continue
+            seen_codes.add(code)
+            records.append(
+                {
+                    "code": code,
+                    "name": entry.get("name") or "",
+                    "description": entry.get("name") or entry.get("description") or "",
+                    "unit": entry.get("unit") or "",
+                    "section": "",
+                    "tech_spec": entry.get("tech_spec") or "",
+                    "system": entry.get("system") or "",
+                }
+            )
 
         return records
 
@@ -380,9 +475,12 @@ class KnowledgeBaseLoader:
                 continue
             index[code] = {
                 "code": code,
+                "name": entry.get("name") or entry.get("description") or "",
                 "description": entry.get("description") or "",
                 "unit": entry.get("unit") or "",
                 "section": entry.get("section") or "",
+                "tech_spec": entry.get("tech_spec") or "",
+                "system": entry.get("system") or "",
             }
 
         self._kros_index = index

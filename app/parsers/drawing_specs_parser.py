@@ -35,7 +35,7 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import pdfplumber
 
@@ -81,8 +81,32 @@ class DrawingSpecsParser:
     )
     RADIUS_PATTERN = re.compile(r"R\s*=\s*\d+(?:[.,]\d+)?", re.IGNORECASE)
     RADIUS_COMPACT_PATTERN = re.compile(r"R\s*\d+(?:[.,]\d+)?", re.IGNORECASE)
-    COVER_PATTERN = re.compile(r"kryt[íi]\s*\d{1,3}\s*mm", re.IGNORECASE)
+    COVER_PATTERN = re.compile(r"kryt[íi]\s*\d{1,3}(?:\/\d{1,3})?\s*mm", re.IGNORECASE)
     COMPOSITE_PATTERN = re.compile(r"\b(\d{3})[-\s\/]{0,2}(\d{2})[-\s\/]{0,2}(\d{3})\b")
+    SURFACE_PATTERN = re.compile(r"\b(?:A[a-d]?|B[a-d]?|C[12][a-d]?|D[a-b]?|E)\b", re.IGNORECASE)
+    NORM_PATTERN = re.compile(
+        r"\b(?:ČSN\s*(?:EN\s*)?\d{2,3}(?:[+A-Z0-9\/-]+)?|ČSN\s*EN\s*206(?:\s*\+\s*A2)?|TKP\s*\d{1,2}|TP\s*\d{2,3}|VL4\s*\d{3}\.\d{2})\b",
+        re.IGNORECASE,
+    )
+    GEOMETRY_PATTERN = re.compile(
+        r"((?:Ø|⌀)\s*\d{2,4})|(\b\d{1,2}[.,]\d\s*m\b)|(\b\d{2,3}/\d{2,3}\s*mm\b)|(\b\d{1,4}\s*mm\b)",
+        re.IGNORECASE,
+    )
+    BRIDGE_KEYWORDS = {
+        "pilot", "pilota", "piloty", "pilotu", "vrubovy", "vrubový",
+        "kloub", "niveleta", "nivelety", "opěra", "opery", "opěr", "římsa", "rims", "rimsa",
+    }
+    MARKER_TYPES = (
+        "concrete_class",
+        "exposure_env",
+        "steel_grade",
+        "rebar_layout",
+        "cover_depth",
+        "surface_category",
+        "norm_refs",
+        "geometry_tokens",
+        "bridge_tokens",
+    )
 
     ADDITIONAL_MARKERS = (
         "vodostavebni",
@@ -117,6 +141,13 @@ class DrawingSpecsParser:
             "cover": 0,
             "radii": 0,
             "composite": 0,
+            "surface": 0,
+            "norm": 0,
+            "geometry": 0,
+            "bridge": 0,
+        }
+        marker_registry: Dict[str, Dict[str, Dict[str, str]]] = {
+            marker_type: {} for marker_type in self.MARKER_TYPES
         }
 
         for file_meta in drawing_files:
@@ -129,7 +160,7 @@ class DrawingSpecsParser:
                 continue
 
             try:
-                specs = self._parse_single_pdf(file_path, pattern_hits)
+                specs = self._parse_single_pdf(file_path, pattern_hits, marker_registry)
             except Exception as exc:  # noqa: BLE001 - logged for diagnostics
                 logger.exception("Failed to parse drawing %s: %s", file_path.name, exc)
                 diagnostics["errors"].append(
@@ -146,10 +177,13 @@ class DrawingSpecsParser:
             diagnostics["files_processed"] += 1
             diagnostics["specifications_found"] += len(specs)
 
+        markers_payload, markers_stats = self._prepare_marker_payload(marker_registry)
+
         logger.info(
-            "Parsed %s drawing(s); collected %s technical specification markers",
+            "Parsed %s drawing(s); collected %s technical specification markers (typed=%s)",
             diagnostics["files_processed"],
             diagnostics["specifications_found"],
+            markers_stats["total"],
         )
 
         logger.debug("patterns_hit=%s", json.dumps(pattern_hits, ensure_ascii=False))
@@ -157,6 +191,8 @@ class DrawingSpecsParser:
         return {
             "specifications": [spec.to_dict() for spec in specifications],
             "diagnostics": diagnostics,
+            "markers": markers_payload,
+            "markers_stats": markers_stats,
         }
 
     # ------------------------------------------------------------------
@@ -164,7 +200,10 @@ class DrawingSpecsParser:
     # ------------------------------------------------------------------
 
     def _parse_single_pdf(
-        self, file_path: Path, pattern_hits: Dict[str, int]
+        self,
+        file_path: Path,
+        pattern_hits: Dict[str, int],
+        marker_registry: Dict[str, Dict[str, Dict[str, str]]],
     ) -> List[DrawingSpecification]:
         """Extract specifications from a single PDF drawing."""
 
@@ -185,8 +224,121 @@ class DrawingSpecsParser:
                     spec = self._line_to_spec(file_path.name, page_index, line, pattern_hits)
                     if spec:
                         collected.append(spec)
+                        self._register_markers(marker_registry, spec)
 
         return collected
+
+    def _register_markers(
+        self,
+        registry: Dict[str, Dict[str, Dict[str, str]]],
+        spec: DrawingSpecification,
+    ) -> None:
+        markers = self._extract_markers_from_spec(spec)
+        source = f"{spec.file}#p{spec.page}"
+
+        for marker_type, values in markers.items():
+            if not values:
+                continue
+            store = registry.get(marker_type)
+            if store is None:
+                continue
+            for value in values:
+                if value not in store:
+                    store[value] = {"value": value, "source": source}
+
+    def _extract_markers_from_spec(
+        self, spec: DrawingSpecification
+    ) -> Dict[str, List[str]]:
+        technical = spec.technical_specs or {}
+        tokens: Dict[str, set[str]] = {marker_type: set() for marker_type in self.MARKER_TYPES}
+
+        def _add(marker_type: str, value: str | None) -> None:
+            normalized = self._normalise_marker_value(marker_type, value)
+            if normalized:
+                tokens[marker_type].add(normalized)
+
+        concrete = technical.get("concrete_class")
+        if isinstance(concrete, str):
+            _add("concrete_class", concrete)
+        if isinstance(technical.get("concrete_classes"), (list, tuple)):
+            for value in technical["concrete_classes"]:
+                _add("concrete_class", value)
+
+        exposures = technical.get("exposure") or []
+        if isinstance(exposures, (list, tuple)):
+            for exposure in exposures:
+                _add("exposure_env", exposure)
+
+        reinforcement = technical.get("reinforcement")
+        if isinstance(reinforcement, str):
+            _add("steel_grade", reinforcement)
+        steel_grade = technical.get("steel_grade")
+        if isinstance(steel_grade, str):
+            _add("steel_grade", steel_grade)
+        steel_options = technical.get("steel_grade_options") or []
+        if isinstance(steel_options, (list, tuple)):
+            for value in steel_options:
+                _add("steel_grade", value)
+
+        mesh = technical.get("reinforcement_mesh") or []
+        if isinstance(mesh, (list, tuple)):
+            for layout in mesh:
+                _add("rebar_layout", layout)
+
+        covers = technical.get("concrete_cover") or []
+        if isinstance(covers, (list, tuple)):
+            for entry in covers:
+                if isinstance(entry, dict):
+                    _add("cover_depth", entry.get("normalized") or entry.get("raw"))
+                else:
+                    _add("cover_depth", entry)
+
+        surfaces = technical.get("surface_category") or []
+        if isinstance(surfaces, (list, tuple)):
+            for surface in surfaces:
+                _add("surface_category", surface)
+
+        norms = technical.get("norm_refs") or []
+        if isinstance(norms, (list, tuple)):
+            for ref in norms:
+                _add("norm_refs", ref)
+
+        geometry = technical.get("geometry_tokens") or []
+        if isinstance(geometry, (list, tuple)):
+            for token in geometry:
+                _add("geometry_tokens", token)
+
+        bridges = technical.get("bridge_tokens") or []
+        if isinstance(bridges, (list, tuple)):
+            for token in bridges:
+                _add("bridge_tokens", token)
+
+        # Extract additional tokens directly from text for resilience
+        _text = spec.text or ""
+        for exposure in self._collect_surface_categories(_text):
+            _add("surface_category", exposure)
+        for ref in self._collect_norm_refs(_text):
+            _add("norm_refs", ref)
+        for token in self._collect_geometry_tokens(_text):
+            _add("geometry_tokens", token)
+        for token in self._collect_bridge_tokens(_text):
+            _add("bridge_tokens", token)
+
+        for value in self.CONCRETE_PATTERN.findall(_text):
+            _add("concrete_class", value)
+        for value in self.EXPOSURE_PATTERN.findall(_text):
+            _add("exposure_env", value)
+        for value in self.REINFORCEMENT_PATTERN.findall(_text):
+            _add("steel_grade", value)
+        for value in self.STEEL_PATTERN.findall(_text):
+            _add("steel_grade", value)
+        for value in self._collect_mesh(_text):
+            _add("rebar_layout", value)
+        for entry in self._collect_cover(_text):
+            if isinstance(entry, dict):
+                _add("cover_depth", entry.get("normalized") or entry.get("raw"))
+
+        return {marker_type: sorted(values) for marker_type, values in tokens.items() if values}
 
     def _line_to_spec(
         self, filename: str, page: int, line: str, pattern_hits: Dict[str, int]
@@ -205,6 +357,10 @@ class DrawingSpecsParser:
         radii_matches = self._collect_radii(line)
         cover_matches = self._collect_cover(line)
         composite_matches = self._collect_composite_codes(line)
+        surface_matches = self._collect_surface_categories(line)
+        norm_matches = self._collect_norm_refs(line)
+        geometry_matches = self._collect_geometry_tokens(line)
+        bridge_matches = self._collect_bridge_tokens(line)
         unit = self._first_match(self.UNIT_PATTERN, line)
 
         if concrete_matches:
@@ -222,6 +378,14 @@ class DrawingSpecsParser:
             pattern_hits["radii"] += len(radii_matches)
         if composite_matches:
             pattern_hits["composite"] += len(composite_matches)
+        if surface_matches:
+            pattern_hits["surface"] += len(surface_matches)
+        if norm_matches:
+            pattern_hits["norm"] += len(norm_matches)
+        if geometry_matches:
+            pattern_hits["geometry"] += len(geometry_matches)
+        if bridge_matches:
+            pattern_hits["bridge"] += len(bridge_matches)
 
         anchor_candidates: List[str] = []
         anchor_candidates.extend(concrete_matches)
@@ -269,6 +433,14 @@ class DrawingSpecsParser:
             technical_specs["concrete_cover"] = cover_matches
         if composite_matches:
             technical_specs["composite_codes"] = composite_matches
+        if surface_matches:
+            technical_specs["surface_category"] = sorted(surface_matches)
+        if norm_matches:
+            technical_specs["norm_refs"] = sorted(norm_matches)
+        if geometry_matches:
+            technical_specs["geometry_tokens"] = sorted(geometry_matches)
+        if bridge_matches:
+            technical_specs["bridge_tokens"] = sorted(bridge_matches)
         if unit:
             normalised_unit = unit.replace(" ", "").lower()
             technical_specs["unit"] = normalised_unit
@@ -342,13 +514,15 @@ class DrawingSpecsParser:
         covers: Dict[str, Dict[str, str]] = {}
         for match in cls.COVER_PATTERN.finditer(text):
             raw_value = match.group(0).strip()
-            digits = re.search(r"\d{1,3}", raw_value)
+            digits = re.findall(r"\d{1,3}", raw_value)
             if not digits:
                 continue
-            number = digits.group(0)
-            normalised = f"kryti {number} mm"
+            if len(digits) == 1:
+                normalised = f"krytí {digits[0]} mm"
+            else:
+                normalised = f"krytí {'/'.join(digits)} mm"
             covers.setdefault(
-                number,
+                normalised,
                 {
                     "raw": raw_value,
                     "normalized": normalised,
@@ -367,6 +541,82 @@ class DrawingSpecsParser:
             canonical = f"{leading}/{middle}-{trailing}"
             codes.setdefault(canonical, canonical)
         return sorted(codes.values())
+
+    @classmethod
+    def _collect_surface_categories(cls, text: str) -> List[str]:
+        values = {match.group(0).upper() for match in cls.SURFACE_PATTERN.finditer(text)}
+        return sorted(values)
+
+    @classmethod
+    def _collect_norm_refs(cls, text: str) -> List[str]:
+        values: Dict[str, str] = {}
+        for match in cls.NORM_PATTERN.finditer(text):
+            raw = match.group(0)
+            if not raw:
+                continue
+            normalised = re.sub(r"\s+", " ", raw.strip())
+            normalised = normalised.replace(" + ", "+")
+            values.setdefault(normalised.upper(), normalised)
+        return sorted(values.values())
+
+    @classmethod
+    def _collect_geometry_tokens(cls, text: str) -> List[str]:
+        values: Dict[str, str] = {}
+        for match in cls.GEOMETRY_PATTERN.finditer(text):
+            token = next((group for group in match.groups() if group), "")
+            if not token:
+                continue
+            normalized = token.replace(" ", "")
+            normalized = normalized.replace("⌀", "Ø")
+            values.setdefault(normalized.upper(), normalized)
+        return sorted(values.values())
+
+    @classmethod
+    def _collect_bridge_tokens(cls, text: str) -> List[str]:
+        tokens = {
+            word for word in re.findall(r"[A-Za-zÁ-Žá-ž]+", text)
+            if word.lower() in cls.BRIDGE_KEYWORDS
+        }
+        return sorted(tokens)
+
+    @staticmethod
+    def _normalise_marker_value(marker_type: str, value: str | None) -> str:
+        if not value:
+            return ""
+        text = str(value).strip()
+        if not text:
+            return ""
+        if marker_type in {"concrete_class", "exposure_env", "steel_grade", "surface_category", "norm_refs"}:
+            return text.upper()
+        if marker_type == "rebar_layout":
+            cleaned = text.replace(" ", "")
+            cleaned = cleaned.replace("⌀", "Ø")
+            return cleaned.upper()
+        if marker_type == "cover_depth":
+            return text
+        if marker_type == "geometry_tokens":
+            return text.replace("⌀", "Ø")
+        if marker_type == "bridge_tokens":
+            return text
+        return text
+
+    @staticmethod
+    def _prepare_marker_payload(
+        registry: Dict[str, Dict[str, Dict[str, str]]]
+    ) -> Tuple[Dict[str, List[Dict[str, str]]], Dict[str, Any]]:
+        markers: Dict[str, List[Dict[str, str]]] = {}
+        stats = {"total": 0, "by_type": {}}
+
+        for marker_type, entries in registry.items():
+            if not entries:
+                continue
+            sorted_entries = sorted(entries.values(), key=lambda item: item["value"])
+            markers[marker_type] = sorted_entries
+            count = len(sorted_entries)
+            stats["by_type"][marker_type] = count
+            stats["total"] += count
+
+        return markers, stats
 
     @staticmethod
     def _derive_anchor_from_text(text: str) -> str:
