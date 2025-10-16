@@ -153,6 +153,9 @@ class WorkflowA:
         cache_data["validation"] = audit_payload.get("validation_stats", {})
         cache_data["audit"] = audit_payload.get("audit", audit_stats)
         cache_data["audit_results"] = audit_payload
+        cache_data["green_count"] = audit_payload.get("audit", audit_stats).get("green", 0)
+        cache_data["amber_count"] = audit_payload.get("audit", audit_stats).get("amber", 0)
+        cache_data["red_count"] = audit_payload.get("audit", audit_stats).get("red", 0)
         cache_data["drawing_specs"] = drawing_summary
         cache_data["status"] = "AUDITED"
         cache_data["progress"] = 90
@@ -488,6 +491,9 @@ class WorkflowA:
                 "cache_path": str(cache_path),
                 "files_snapshot": uploads["files_by_type"],
                 "missing_files": uploads["missing_files"],
+                "green_count": 0,
+                "amber_count": 0,
+                "red_count": 0,
                 "message": "Cost documents parsed",
                 "error": None,
             }
