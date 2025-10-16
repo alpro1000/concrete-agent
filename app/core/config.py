@@ -93,6 +93,9 @@ class Settings(BaseSettings):
     # ==========================================
     AUDIT_GREEN_THRESHOLD: float = Field(default=0.95, description="GREEN threshold")
     AUDIT_AMBER_THRESHOLD: float = Field(default=0.75, description="AMBER threshold")
+    ENRICH_SCORE_EXACT: float = Field(default=0.9, description="Exact enrichment match threshold")
+    ENRICH_SCORE_PARTIAL: float = Field(default=0.6, description="Partial enrichment match threshold")
+    ENRICH_MAX_EVIDENCE: int = Field(default=3, description="Maximum evidence items per position")
     
     # ==========================================
     # PRICE MANAGEMENT
