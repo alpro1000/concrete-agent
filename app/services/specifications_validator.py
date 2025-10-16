@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Tuple
 
+from app.core.config import settings
 from app.core.kb_loader import init_kb_loader
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,7 @@ class ValidationResult:
     position: Dict[str, object]
     errors: List[str]
     warnings: List[str]
+    extras: Dict[str, object] = field(default_factory=dict)
 
     @property
     def status(self) -> str:
@@ -47,6 +49,7 @@ class SpecificationsValidator:
     def __init__(self) -> None:
         kb = init_kb_loader()
         self.otskp_index = self._build_otskp_index(kb.data.get("B1_kros_urs_codes", {}))
+        self.soft_match_threshold = max(0.7, settings.AUDIT_AMBER_THRESHOLD)
 
     # ------------------------------------------------------------------
     # Public API
@@ -58,16 +61,30 @@ class SpecificationsValidator:
         """Validate all positions and append validation metadata."""
 
         validated_positions: List[Dict[str, object]] = []
-        stats = {"passed": 0, "warning": 0, "failed": 0}
+        stats = {"passed": 0, "warning": 0, "failed": 0, "amber_reasons": {}}
 
         for position in positions:
             result = self._validate_single(dict(position))
             position_payload = result.position
             position_payload["validation_status"] = result.status
-            position_payload["validation_results"] = {
+            validation_block = {
                 "errors": result.errors,
                 "warnings": result.warnings,
             }
+            if result.extras:
+                validation_block.update(result.extras)
+                amber_reason = result.extras.get("amber_reason")
+                if amber_reason and result.status == "warning":
+                    reason_key = str(amber_reason)
+                    stats["amber_reasons"][reason_key] = (
+                        stats["amber_reasons"].get(reason_key, 0) + 1
+                    )
+                    position_payload["amber_reason"] = reason_key
+                    if result.extras.get("advice"):
+                        position_payload["validation_advice"] = result.extras["advice"]
+                    if result.extras.get("candidates"):
+                        position_payload["validation_candidates"] = result.extras["candidates"]
+            position_payload["validation_results"] = validation_block
 
             stats[result.status] += 1
             validated_positions.append(position_payload)
@@ -88,6 +105,7 @@ class SpecificationsValidator:
     def _validate_single(self, position: Dict[str, object]) -> ValidationResult:
         errors: List[str] = []
         warnings: List[str] = []
+        extras: Dict[str, object] = {}
 
         code = str(position.get("code") or "").strip()
         unit = str(position.get("unit") or "").strip().lower()
@@ -95,7 +113,20 @@ class SpecificationsValidator:
 
         kb_entry = self._lookup_otskp(code)
         if kb_entry is None:
-            errors.append("code_not_found_in_otskp")
+            soft_match = self._assess_soft_match(position, unit)
+            if soft_match:
+                warnings.append("code_missing_soft_match")
+                extras.update(
+                    {
+                        "amber_reason": soft_match["reason"],
+                        "advice": soft_match["message"],
+                        "candidates": soft_match["candidates"],
+                        "soft_match_confidence": soft_match["confidence"],
+                        "supporting_markers": soft_match["markers"],
+                    }
+                )
+            else:
+                errors.append("code_not_found_in_otskp")
         else:
             kb_unit = str(kb_entry.get("unit") or "").lower()
             if kb_unit and unit and kb_unit != unit:
@@ -112,7 +143,7 @@ class SpecificationsValidator:
 
         self._check_concrete_rules(position, errors, warnings)
 
-        return ValidationResult(position=position, errors=errors, warnings=warnings)
+        return ValidationResult(position=position, errors=errors, warnings=warnings, extras=extras)
 
     # ------------------------------------------------------------------
     # Knowledge base helpers
@@ -148,6 +179,100 @@ class SpecificationsValidator:
         if not normalised:
             return None
         return self.otskp_index.get(normalised)
+
+    def _assess_soft_match(
+        self, position: Dict[str, object], unit: str
+    ) -> Dict[str, object] | None:
+        technical = position.get("technical_specs") or {}
+        if not isinstance(technical, dict):
+            return None
+
+        marker_keys = [
+            "concrete_class",
+            "concrete_classes",
+            "exposure",
+            "reinforcement",
+            "steel_grade",
+            "reinforcement_mesh",
+            "concrete_cover",
+            "radii",
+            "composite_codes",
+        ]
+        markers = [key for key in marker_keys if technical.get(key)]
+        if not markers:
+            return None
+
+        tech_unit = str(technical.get("unit") or "").strip().lower()
+        if tech_unit and unit and tech_unit != unit:
+            return None
+
+        enrichment = position.get("enrichment") or {}
+        try:
+            enrichment_score = float(
+                enrichment.get("score") or position.get("enrichment_score") or 0.0
+            )
+        except (TypeError, ValueError):
+            enrichment_score = 0.0
+
+        raw_candidates = enrichment.get("candidates") or []
+        candidates: List[Dict[str, object]] = []
+        for raw_candidate in raw_candidates:
+            if not isinstance(raw_candidate, dict):
+                continue
+            code = str(raw_candidate.get("code") or "").strip()
+            if not code:
+                continue
+            description = str(raw_candidate.get("description") or "").strip()
+            try:
+                score_value = float(raw_candidate.get("score") or 0.0)
+            except (TypeError, ValueError):
+                score_value = 0.0
+            candidate_unit = str(raw_candidate.get("unit") or "").strip().lower()
+            candidates.append(
+                {
+                    "code": code,
+                    "description": description,
+                    "score": round(score_value, 4),
+                    "unit": candidate_unit,
+                }
+            )
+
+        if not candidates:
+            return None
+
+        candidates.sort(key=lambda item: item["score"], reverse=True)
+        best_candidate = candidates[0]
+        best_score = max(enrichment_score, best_candidate.get("score", 0.0))
+        if best_score < self.soft_match_threshold:
+            return None
+
+        candidate_unit = str(best_candidate.get("unit") or "")
+        units_to_match = {value for value in (unit, tech_unit) if value}
+        if candidate_unit and units_to_match and candidate_unit not in units_to_match:
+            return None
+
+        limit = min(5, len(candidates))
+        shortlist = [dict(candidates[index]) for index in range(limit)]
+
+        candidate_strings: List[str] = []
+        for entry in shortlist:
+            display = entry["code"]
+            if entry.get("description"):
+                display = f"{display} — {entry['description']}"
+            candidate_strings.append(display)
+
+        message = "Уточните код позиции; предложенные кандидаты: " + ", ".join(
+            candidate_strings
+        )
+
+        return {
+            "confidence": round(best_score, 3),
+            "candidates": shortlist,
+            "message": message,
+            "reason": "text_match_no_code",
+            "markers": markers,
+            "units_ok": True,
+        }
 
     @staticmethod
     def _normalise_code(code: object) -> str:
