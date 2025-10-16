@@ -232,7 +232,7 @@ class PositionEnricher:
         tokens = set(re.findall(r"[a-z0-9]{3,}", ascii_lower))
         codes = {
             re.sub(r"[^0-9A-Z]", "", match.upper())
-            for match in re.findall(r"\b\d{3}[\s-/]?\d{2}[\s-/]?\d{3}\b", raw, flags=re.I)
+            for match in re.findall(r"\b\d{3}[\s/-]?\d{2}[\s/-]?\d{3}\b", raw, flags=re.I)
         }
         concretes = {match.upper() for match in re.findall(r"C\d{1,2}/\d{1,2}", raw, flags=re.I)}
         exposures = {match.upper() for match in re.findall(r"X[CDFA]\d(?:/\d)?", raw, flags=re.I)}
