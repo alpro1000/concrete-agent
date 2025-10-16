@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import heapq
 import logging
 import re
 import unicodedata
@@ -55,6 +56,8 @@ class PositionEnricher:
                 description = entry.get("description") or ""
                 unit = entry.get("unit")
                 self._kros_entries.append((entry, self._extract_bundle(description, unit)))
+
+            logger.debug("position_enricher: regex_sanity=ok (classes normalized)")
 
     # ------------------------------------------------------------------
     # Public API
@@ -115,6 +118,8 @@ class PositionEnricher:
 
         # 1. Exact code match using KROS/ÚRS dictionary
         code = str(position.get("code") or "").strip().upper()
+        candidate_matches = self._match_kros_candidates(bundle)
+
         if code and code in self.kros_index:
             entry = self.kros_index[code]
             evidence.append(
@@ -130,7 +135,11 @@ class PositionEnricher:
                 position["unit"] = entry.get("unit")
             score += 0.55
         else:
-            entry, similarity = self._match_kros_description(bundle)
+            if candidate_matches:
+                entry, similarity = candidate_matches[0]
+            else:
+                entry, similarity = (None, 0.0)
+
             if entry and similarity >= 0.45:
                 evidence.append(
                     {
@@ -196,6 +205,18 @@ class PositionEnricher:
             "evidence": evidence[: self.max_evidence],
         }
 
+        if candidate_matches:
+            enrichment_block["candidates"] = [
+                {
+                    "code": candidate_entry.get("code"),
+                    "description": candidate_entry.get("description"),
+                    "score": round(candidate_score, 4),
+                    "unit": candidate_entry.get("unit"),
+                }
+                for candidate_entry, candidate_score in candidate_matches
+                if candidate_entry.get("code")
+            ]
+
         position["enrichment_status"] = status
         position["enrichment_score"] = enrichment_block["score"]
         position["enrichment"] = enrichment_block
@@ -232,10 +253,13 @@ class PositionEnricher:
         tokens = set(re.findall(r"[a-z0-9]{3,}", ascii_lower))
         codes = {
             re.sub(r"[^0-9A-Z]", "", match.upper())
-            for match in re.findall(r"\b\d{3}[\s/-]?\d{2}[\s/-]?\d{3}\b", raw, flags=re.I)
+            for match in re.findall(r"\b\d{3}[\s\/-]?\d{2}[\s\/-]?\d{3}\b", raw, flags=re.I)
         }
         concretes = {match.upper() for match in re.findall(r"C\d{1,2}/\d{1,2}", raw, flags=re.I)}
-        exposures = {match.upper() for match in re.findall(r"X[CDFA]\d(?:/\d)?", raw, flags=re.I)}
+        exposures = {
+            match.upper()
+            for match in re.findall(r"X[ACDFS]\d(?:[AB])?(?:/\d)?", raw, flags=re.I)
+        }
         diameters = {re.sub(r"\s+", "", match.upper()) for match in re.findall(r"Ø\s*\d+", raw)}
         csn_tokens = {
             self._normalise_csn_token(match)
@@ -303,8 +327,16 @@ class PositionEnricher:
     def _match_kros_description(
         self, bundle: TokenBundle
     ) -> Tuple[Dict[str, Any] | None, float]:
-        best_entry: Dict[str, Any] | None = None
-        best_score = 0.0
+        matches = self._match_kros_candidates(bundle, limit=1)
+        if matches:
+            entry, score = matches[0]
+            return entry, score
+        return None, 0.0
+
+    def _match_kros_candidates(
+        self, bundle: TokenBundle, limit: int = 5
+    ) -> List[Tuple[Dict[str, Any], float]]:
+        scored: List[Tuple[float, Dict[str, Any]]] = []
 
         for entry, entry_bundle in self._kros_entries:
             if not entry_bundle.tokens:
@@ -315,11 +347,12 @@ class PositionEnricher:
             ratio = overlap / max(1, len(bundle.tokens))
             unit_bonus = 0.1 if entry_bundle.unit and entry_bundle.unit == bundle.unit else 0.0
             score = min(ratio + unit_bonus, 1.0)
-            if score > best_score:
-                best_score = score
-                best_entry = entry
+            if score <= 0:
+                continue
+            scored.append((score, entry))
 
-        return best_entry, best_score
+        top_matches = heapq.nlargest(limit, scored, key=lambda item: item[0])
+        return [(entry, score) for score, entry in top_matches]
 
     @staticmethod
     def _normalise_unit(unit: Any) -> str:

@@ -30,6 +30,7 @@ it suitable for background processing and caching.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass
@@ -71,8 +72,17 @@ class DrawingSpecsParser:
     # Regex snippets used as anchors.
     CONCRETE_PATTERN = re.compile(r"C\d{2}/\d{2}", re.IGNORECASE)
     REINFORCEMENT_PATTERN = re.compile(r"B\d{3}[A-Z]?", re.IGNORECASE)
-    EXPOSURE_PATTERN = re.compile(r"X[ACDFMS][0-9](?:[AB])?", re.IGNORECASE)
+    STEEL_PATTERN = re.compile(r"S\d{3}", re.IGNORECASE)
+    EXPOSURE_PATTERN = re.compile(r"X[ACDFS][0-9](?:[AB])?", re.IGNORECASE)
     UNIT_PATTERN = re.compile(r"\b(m3|m2|m|kg|ks|t|m\s*3|m\s*2)\b", re.IGNORECASE)
+    MESH_PATTERN = re.compile(
+        r"(?:Ø|⌀)\s*\d{1,2}\s*@?\s*\d{2,3}|\b\d{1,2}\s*@\s*\d{2,3}\b",
+        re.IGNORECASE,
+    )
+    RADIUS_PATTERN = re.compile(r"R\s*=\s*\d+(?:[.,]\d+)?", re.IGNORECASE)
+    RADIUS_COMPACT_PATTERN = re.compile(r"R\s*\d+(?:[.,]\d+)?", re.IGNORECASE)
+    COVER_PATTERN = re.compile(r"kryt[íi]\s*\d{1,3}\s*mm", re.IGNORECASE)
+    COMPOSITE_PATTERN = re.compile(r"\b(\d{3})[-\s\/]{0,2}(\d{2})[-\s\/]{0,2}(\d{3})\b")
 
     ADDITIONAL_MARKERS = (
         "vodostavebni",
@@ -99,6 +109,15 @@ class DrawingSpecsParser:
 
         specifications: List[DrawingSpecification] = []
         diagnostics = {"files_processed": 0, "specifications_found": 0, "errors": []}
+        pattern_hits = {
+            "concrete": 0,
+            "exposure": 0,
+            "steel": 0,
+            "mesh": 0,
+            "cover": 0,
+            "radii": 0,
+            "composite": 0,
+        }
 
         for file_meta in drawing_files:
             if not file_meta.get("exists"):
@@ -110,7 +129,7 @@ class DrawingSpecsParser:
                 continue
 
             try:
-                specs = self._parse_single_pdf(file_path)
+                specs = self._parse_single_pdf(file_path, pattern_hits)
             except Exception as exc:  # noqa: BLE001 - logged for diagnostics
                 logger.exception("Failed to parse drawing %s: %s", file_path.name, exc)
                 diagnostics["errors"].append(
@@ -133,6 +152,8 @@ class DrawingSpecsParser:
             diagnostics["specifications_found"],
         )
 
+        logger.debug("patterns_hit=%s", json.dumps(pattern_hits, ensure_ascii=False))
+
         return {
             "specifications": [spec.to_dict() for spec in specifications],
             "diagnostics": diagnostics,
@@ -142,7 +163,9 @@ class DrawingSpecsParser:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _parse_single_pdf(self, file_path: Path) -> List[DrawingSpecification]:
+    def _parse_single_pdf(
+        self, file_path: Path, pattern_hits: Dict[str, int]
+    ) -> List[DrawingSpecification]:
         """Extract specifications from a single PDF drawing."""
 
         logger.info("📐 Analysing drawing %s", file_path.name)
@@ -159,22 +182,54 @@ class DrawingSpecsParser:
                     if len(line) < 6:
                         continue
 
-                    spec = self._line_to_spec(file_path.name, page_index, line)
+                    spec = self._line_to_spec(file_path.name, page_index, line, pattern_hits)
                     if spec:
                         collected.append(spec)
 
         return collected
 
     def _line_to_spec(
-        self, filename: str, page: int, line: str
+        self, filename: str, page: int, line: str, pattern_hits: Dict[str, int]
     ) -> Optional[DrawingSpecification]:
         """Convert a single line of text into a specification if possible."""
 
-        concrete_class = self._first_match(self.CONCRETE_PATTERN, line)
-        reinforcement_grade = self._first_match(self.REINFORCEMENT_PATTERN, line)
-        exposures = self._unique_matches(self.EXPOSURE_PATTERN, line)
+        concrete_matches = [match.upper() for match in self._unique_matches(self.CONCRETE_PATTERN, line)]
+        reinforcement_matches = [
+            match.upper() for match in self._unique_matches(self.REINFORCEMENT_PATTERN, line)
+        ]
+        steel_matches = [match.upper() for match in self._unique_matches(self.STEEL_PATTERN, line)]
+        exposure_matches = [
+            match.upper() for match in self._unique_matches(self.EXPOSURE_PATTERN, line)
+        ]
+        mesh_matches = self._collect_mesh(line)
+        radii_matches = self._collect_radii(line)
+        cover_matches = self._collect_cover(line)
+        composite_matches = self._collect_composite_codes(line)
         unit = self._first_match(self.UNIT_PATTERN, line)
-        anchor_candidates = [marker for marker in [concrete_class, reinforcement_grade] if marker]
+
+        if concrete_matches:
+            pattern_hits["concrete"] += len(concrete_matches)
+        if exposure_matches:
+            pattern_hits["exposure"] += len(exposure_matches)
+        steel_total = len(reinforcement_matches) + len(steel_matches)
+        if steel_total:
+            pattern_hits["steel"] += steel_total
+        if mesh_matches:
+            pattern_hits["mesh"] += len(mesh_matches)
+        if cover_matches:
+            pattern_hits["cover"] += len(cover_matches)
+        if radii_matches:
+            pattern_hits["radii"] += len(radii_matches)
+        if composite_matches:
+            pattern_hits["composite"] += len(composite_matches)
+
+        anchor_candidates: List[str] = []
+        anchor_candidates.extend(concrete_matches)
+        anchor_candidates.extend(reinforcement_matches)
+        anchor_candidates.extend(steel_matches)
+        anchor_candidates.extend(mesh_matches)
+        anchor_candidates.extend(exposure_matches)
+        anchor_candidates.extend(composite_matches)
 
         if not anchor_candidates:
             # Check for general markers to avoid missing textual specs.
@@ -189,24 +244,45 @@ class DrawingSpecsParser:
             return None
 
         technical_specs: Dict[str, object] = {}
-        if concrete_class:
-            technical_specs["concrete_class"] = concrete_class.upper()
-        if exposures:
-            technical_specs["exposure"] = sorted({exposure.upper() for exposure in exposures})
-        if reinforcement_grade:
-            technical_specs["reinforcement"] = reinforcement_grade.upper()
+        if concrete_matches:
+            concrete_unique = sorted(dict.fromkeys(concrete_matches))
+            technical_specs["concrete_class"] = concrete_unique[0]
+            if len(concrete_unique) > 1:
+                technical_specs["concrete_classes"] = concrete_unique
+        if exposure_matches:
+            technical_specs["exposure"] = sorted(dict.fromkeys(exposure_matches))
+        if reinforcement_matches:
+            reinforcement_unique = sorted(dict.fromkeys(reinforcement_matches))
+            technical_specs["reinforcement"] = reinforcement_unique[0]
+            if len(reinforcement_unique) > 1:
+                technical_specs["reinforcement_options"] = reinforcement_unique
+        if steel_matches:
+            steel_unique = sorted(dict.fromkeys(steel_matches))
+            technical_specs["steel_grade"] = steel_unique[0]
+            if len(steel_unique) > 1:
+                technical_specs["steel_grade_options"] = steel_unique
+        if mesh_matches:
+            technical_specs["reinforcement_mesh"] = mesh_matches
+        if radii_matches:
+            technical_specs["radii"] = radii_matches
+        if cover_matches:
+            technical_specs["concrete_cover"] = cover_matches
+        if composite_matches:
+            technical_specs["composite_codes"] = composite_matches
         if unit:
             normalised_unit = unit.replace(" ", "").lower()
             technical_specs["unit"] = normalised_unit
 
         # Calculate heuristic confidence score.
         confidence = 0.55
-        if concrete_class:
+        if concrete_matches:
             confidence += 0.2
-        if exposures:
+        if exposure_matches:
             confidence += 0.15
-        if reinforcement_grade:
+        if reinforcement_matches or steel_matches:
             confidence += 0.1
+        if mesh_matches or radii_matches:
+            confidence += 0.05
         if unit:
             confidence += 0.05
 
@@ -229,6 +305,68 @@ class DrawingSpecsParser:
     @staticmethod
     def _unique_matches(pattern: re.Pattern[str], text: str) -> List[str]:
         return list({match.group(0) for match in pattern.finditer(text)})
+
+    @classmethod
+    def _collect_mesh(cls, text: str) -> List[str]:
+        values: Dict[str, str] = {}
+        for match in cls.MESH_PATTERN.finditer(text):
+            normalised = cls._normalise_mesh(match.group(0))
+            if normalised:
+                values.setdefault(normalised, normalised)
+        return sorted(values.values())
+
+    @staticmethod
+    def _normalise_mesh(value: str) -> str:
+        cleaned = value.upper().replace(" ", "")
+        cleaned = cleaned.replace("⌀", "Ø")
+        digits = re.findall(r"\d{1,3}", cleaned)
+        if len(digits) < 2:
+            return ""
+        diameter, spacing = digits[0], digits[1]
+        return f"Ø{diameter}@{spacing}"
+
+    @classmethod
+    def _collect_radii(cls, text: str) -> List[str]:
+        values: Dict[str, str] = {}
+        for pattern in (cls.RADIUS_PATTERN, cls.RADIUS_COMPACT_PATTERN):
+            for match in pattern.finditer(text):
+                digits = re.search(r"\d+(?:[.,]\d+)?", match.group(0))
+                if not digits:
+                    continue
+                normalised = digits.group(0).replace(",", ".")
+                values.setdefault(normalised, f"R={normalised}")
+        return sorted(values.values())
+
+    @classmethod
+    def _collect_cover(cls, text: str) -> List[Dict[str, str]]:
+        covers: Dict[str, Dict[str, str]] = {}
+        for match in cls.COVER_PATTERN.finditer(text):
+            raw_value = match.group(0).strip()
+            digits = re.search(r"\d{1,3}", raw_value)
+            if not digits:
+                continue
+            number = digits.group(0)
+            normalised = f"kryti {number} mm"
+            covers.setdefault(
+                number,
+                {
+                    "raw": raw_value,
+                    "normalized": normalised,
+                },
+            )
+        return list(covers.values())
+
+    @classmethod
+    def _collect_composite_codes(cls, text: str) -> List[str]:
+        codes: Dict[str, str] = {}
+        for match in cls.COMPOSITE_PATTERN.finditer(text):
+            parts = match.groups()
+            if not parts:
+                continue
+            leading, middle, trailing = parts
+            canonical = f"{leading}/{middle}-{trailing}"
+            codes.setdefault(canonical, canonical)
+        return sorted(codes.values())
 
     @staticmethod
     def _derive_anchor_from_text(text: str) -> str:
