@@ -2,6 +2,7 @@
 Excel Exporter for Enriched Audit Results
 Экспорт обогащенных результатов аудита в Excel с форматированием
 """
+import json
 import logging
 from pathlib import Path
 from typing import Dict, Any, List
@@ -82,7 +83,7 @@ class EnrichedExcelExporter:
         self.workbook = openpyxl.Workbook()
         self.workbook.remove(self.workbook.active)  # Remove default sheet
         
-        audit_results = project.get('audit_results', {})
+        audit_results = _normalise_audit_results(project)
         
         # Create sheets
         self._create_summary_sheet(project, audit_results)
@@ -104,7 +105,7 @@ class EnrichedExcelExporter:
         logger.info(f"✅ Excel exported to: {output_path}")
         
         return output_path
-    
+
     def _create_summary_sheet(
         self,
         project: Dict[str, Any],
@@ -162,7 +163,7 @@ class EnrichedExcelExporter:
             ("AMBER (Needs Attention):", amber, self.styles['amber_fill']),
             ("RED (Critical Issues):", red, self.styles['red_fill'])
         ]
-        
+
         for label, value, fill in classification_data:
             sheet[f'A{row}'] = label
             sheet[f'B{row}'] = value
@@ -173,9 +174,32 @@ class EnrichedExcelExporter:
                 sheet[f'B{row}'].fill = fill
                 sheet[f'C{row}'].fill = fill
             row += 1
-        
+
         row += 1
-        
+
+        schema_stats = audit_results.get('schema_validation') or {}
+        if schema_stats:
+            sheet[f'A{row}'] = "Schema Validation"
+            sheet[f'A{row}'].font = self.styles['subheader']
+            sheet[f'A{row}'].fill = self.styles['subheader_fill']
+            sheet.merge_cells(f'A{row}:D{row}')
+            row += 1
+
+            schema_rows = [
+                ("Input positions:", schema_stats.get('input_total', 0)),
+                ("Valid after schema:", schema_stats.get('validated_total', 0)),
+                ("Duplicates removed:", schema_stats.get('duplicates_removed', 0)),
+                ("Invalid entries:", schema_stats.get('invalid_total', 0)),
+            ]
+
+            for label, value in schema_rows:
+                sheet[f'A{row}'] = label
+                sheet[f'B{row}'] = value
+                sheet[f'A{row}'].font = Font(bold=True)
+                row += 1
+
+            row += 1
+
         # Enrichment statistics (if enabled)
         if project.get('enable_enrichment'):
             enrichment_stats = audit_results.get('enrichment_stats', {})
@@ -423,6 +447,119 @@ class EnrichedExcelExporter:
 # ==============================================================================
 # CONVENIENCE FUNCTION
 # ==============================================================================
+
+
+def _resolve_cache_path(project: Dict[str, Any]) -> Path | None:
+    """Return project cache path if it exists on disk."""
+
+    raw_path = project.get("cache_path") or project.get("cache")
+    if not raw_path:
+        return None
+
+    candidate = Path(raw_path)
+    if not candidate.is_absolute():
+        candidate = settings.DATA_DIR / candidate
+
+    if candidate.exists():
+        return candidate
+
+    fallback = settings.DATA_DIR / "projects" / candidate.name
+    if fallback.exists():
+        return fallback
+
+    return None
+
+
+def _load_positions_from_cache(project: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Load classified positions from the project cache if present."""
+
+    cache_path = _resolve_cache_path(project)
+    if not cache_path:
+        return []
+
+    try:
+        with cache_path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        logger.warning("Unable to read project cache at %s", cache_path)
+        return []
+
+    positions = (
+        payload.get("audit_results", {}).get("positions")
+        or payload.get("positions")
+        or []
+    )
+
+    return [dict(item) for item in positions if isinstance(item, dict)]
+
+
+def _normalise_audit_results(project: Dict[str, Any]) -> Dict[str, Any]:
+    """Ensure audit results follow the exporter contract."""
+
+    raw_results = project.get("audit_results") or {}
+    payload = dict(raw_results)
+
+    if "enrichment_stats" not in payload and isinstance(payload.get("enrichment"), dict):
+        payload["enrichment_stats"] = payload.get("enrichment", {})
+    if "validation_stats" not in payload and isinstance(payload.get("validation"), dict):
+        payload["validation_stats"] = payload.get("validation", {})
+    if "schema_validation" not in payload:
+        schema_stats = (project.get("diagnostics") or {}).get("schema_validation")
+        if isinstance(schema_stats, dict):
+            payload["schema_validation"] = schema_stats
+
+    positions = payload.get("positions")
+    if not isinstance(positions, list) or not positions:
+        positions = _load_positions_from_cache(project)
+        if positions:
+            payload["positions"] = positions
+
+    normalised_positions: List[Dict[str, Any]] = []
+    for position in positions or []:
+        if not isinstance(position, dict):
+            continue
+        entry = dict(position)
+        classification = str(
+            entry.get("classification") or entry.get("audit") or ""
+        ).upper()
+        if not classification:
+            classification = "GREEN"
+        entry["classification"] = classification
+        normalised_positions.append(entry)
+
+    payload["positions"] = normalised_positions
+
+    total = payload.get("total_positions")
+    if total is None:
+        total = len(normalised_positions)
+
+    green = payload.get("green")
+    amber = payload.get("amber")
+    red = payload.get("red")
+    if any(value is None for value in (green, amber, red)):
+        green = sum(1 for item in normalised_positions if item.get("classification") == "GREEN")
+        amber = sum(1 for item in normalised_positions if item.get("classification") == "AMBER")
+        red = sum(1 for item in normalised_positions if item.get("classification") == "RED")
+
+    payload["total_positions"] = total
+    payload["green"] = green or 0
+    payload["amber"] = amber or 0
+    payload["red"] = red or 0
+    payload.setdefault("positions_preview", normalised_positions[:100])
+
+    if not isinstance(payload.get("audit"), dict):
+        payload["audit"] = {
+            "green": payload["green"],
+            "amber": payload["amber"],
+            "red": payload["red"],
+        }
+
+    payload.setdefault("enrichment_stats", {})
+    payload.setdefault("validation_stats", {})
+    payload.setdefault("schema_validation", {})
+
+    return payload
+
 
 async def export_enriched_results(project: Dict[str, Any]) -> Path:
     """
