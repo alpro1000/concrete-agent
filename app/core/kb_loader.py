@@ -260,7 +260,7 @@ class KnowledgeBaseLoader:
                 from app.parsers.kros_parser import KROSParser
 
                 parser = KROSParser()
-                explicit_items = parser._parse_xc4_price_lists(root)
+                explicit_items = parser._parse_xc4_price_lists(root, register_runtime=False)
                 if explicit_items:
                     self._register_b1_items(explicit_items, path)
                     return explicit_items

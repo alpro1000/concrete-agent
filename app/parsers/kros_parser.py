@@ -1,8 +1,9 @@
-"""
-KROS Parser - ИСПРАВЛЕНО
-Парсит KROS XML (UNIXML и Tabulární) с нормализацией
-"""
+"""KROS Parser - explicit XC4/OTSKP ingestion and fallbacks."""
+
+from __future__ import annotations
+
 import logging
+import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 import xml.etree.ElementTree as ET
@@ -39,19 +40,26 @@ class KROSParser:
             tree = ET.parse(file_path)
             root = tree.getroot()
 
-            # Detect KROS format
-            kros_format = self._detect_format(root)
+            if self._has_xc4_prices(root):
+                kros_format = "OTSKP_XC4"
+            else:
+                # Detect KROS format only if explicit XC4 subtree is missing
+                kros_format = self._detect_format(root)
             logger.info("%sDetected KROS format: %s", project_prefix, kros_format)
-            
+
             # Parse based on format
             parser_diagnostics: Dict[str, Any] = {}
             positions: List[Dict[str, Any]] = []
 
-            if self._has_xc4_prices(root):
-                positions = self._parse_xc4_price_lists(root)
-                if positions:
-                    kros_format = "KROS_XC4"
+            if kros_format == "OTSKP_XC4":
+                positions = self._parse_xc4_price_lists(root, register_runtime=True)
+
             if not positions:
+                if self._has_xc4_prices(root):
+                    logger.info(
+                        "%sXC4 subtree detected but explicit parse returned 0 items",
+                        project_prefix,
+                    )
                 if kros_format == "KROS_UNIXML":
                     positions = self._parse_unixml(root)
                 elif kros_format == "KROS_TABULAR":
@@ -155,7 +163,12 @@ class KROSParser:
     # XC4 Cenové soustavy (TSKP / OTSKP)
     # ------------------------------------------------------------------
 
-    def _parse_xc4_price_lists(self, root: ET.Element) -> List[Dict[str, Any]]:
+    def _parse_xc4_price_lists(
+        self,
+        root: ET.Element,
+        *,
+        register_runtime: bool = True,
+    ) -> List[Dict[str, Any]]:
         """Parse XC4 Cenové soustavy (TSKP / OTSKP) structures."""
 
         cenove_nodes = list(self._iter_cenove_soustavy(root))
@@ -163,6 +176,18 @@ class KROSParser:
             return []
 
         positions: List[Dict[str, Any]] = []
+        runtime_registered = 0
+        runtime_catalog: Dict[str, Dict[str, Any]] | None = None
+        runtime_loader = None
+
+        if register_runtime:
+            try:  # Lazy import to avoid circular dependency during KB bootstrap
+                from app.core.kb_loader import init_kb_loader
+
+                runtime_loader = init_kb_loader()
+                runtime_catalog = runtime_loader.kb_b1.setdefault("tskp", {})
+            except Exception:  # pragma: no cover - runtime KB may not be available yet
+                runtime_catalog = None
         for cs_node in cenove_nodes:
             cs_type = self._find_text(cs_node, "typ_CS") or self._find_text(cs_node, "typ_cs")
             cs_type = (cs_type or "").strip().upper()
@@ -194,7 +219,48 @@ class KROSParser:
 
                 positions.append(position)
 
+                if runtime_catalog is not None and code:
+                    runtime_registered += self._register_runtime_position(
+                        runtime_catalog,
+                        code,
+                        name,
+                        unit,
+                        tech_spec,
+                        cs_type or "TSKP",
+                    )
+
+        if runtime_registered and runtime_loader is not None:
+            runtime_loader._kros_index = None  # invalidate cached index so new codes are visible
+
         return positions
+
+    @staticmethod
+    def _register_runtime_position(
+        catalog: Dict[str, Dict[str, Any]],
+        code: str,
+        name: str,
+        unit: str,
+        tech_spec: str,
+        system: str,
+    ) -> int:
+        normalized = re.sub(r"[^A-Z0-9]", "", code.upper()) if code else ""
+        payload = {
+            "code": code,
+            "normalized": normalized,
+            "name": name,
+            "unit": unit,
+            "tech_spec": tech_spec,
+            "system": system or "TSKP",
+        }
+
+        catalog[code] = payload
+        registered = 1
+
+        if normalized and normalized not in catalog:
+            catalog[normalized] = payload
+            registered += 1
+
+        return registered
 
     # Helper utilities -------------------------------------------------
 
