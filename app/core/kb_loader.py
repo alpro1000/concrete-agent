@@ -7,6 +7,7 @@ Knowledge Base Loader
 import csv
 import json
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
@@ -49,6 +50,8 @@ class KnowledgeBaseLoader:
         self.data = {}
         self.metadata = {}
         self.loaded_at = None
+        self._kros_index: Dict[str, Dict[str, Any]] | None = None
+        self._csn_index: Dict[str, List[Dict[str, str]]] | None = None
         
     def load_all(self) -> Dict[str, Any]:
         """
@@ -248,6 +251,44 @@ class KnowledgeBaseLoader:
 
         root = tree.getroot()
 
+        if "B1_kros_urs_codes" in path.parts:
+            items: List[Dict[str, Any]] = []
+            for item in root.findall(".//Polozka"):
+                record = {
+                    "code": (item.findtext("Znak") or item.findtext("znak") or "").strip().upper(),
+                    "description": (item.findtext("Nazev") or item.findtext("nazev") or "").strip(),
+                    "unit": (item.findtext("Mj") or item.findtext("MJ") or "").strip(),
+                    "section": (item.findtext("Skupina") or item.findtext("skupina") or "").strip(),
+                }
+                if any(record.values()):
+                    items.append(record)
+
+            if items:
+                return items
+
+            try:
+                from app.parsers.kros_parser import KROSParser
+
+                parser = KROSParser()
+                payload = parser.parse(path)
+                parsed_positions = payload.get("positions", [])
+                extracted: List[Dict[str, Any]] = []
+                for pos in parsed_positions:
+                    if not isinstance(pos, dict):
+                        continue
+                    extracted.append(
+                        {
+                            "code": str(pos.get("code") or pos.get("Kod") or "").strip().upper(),
+                            "description": pos.get("description") or pos.get("Popis") or "",
+                            "unit": pos.get("unit") or pos.get("MJ") or "",
+                            "section": pos.get("section") or "",
+                        }
+                    )
+                if extracted:
+                    return extracted
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("Fallback KROS parsing failed for %s: %s", path, exc)
+
         # OTSKP XML structure (Polozky/Polozka)
         items = []
         for item in root.findall(".//Polozka"):
@@ -288,28 +329,69 @@ class KnowledgeBaseLoader:
     # === МЕТОДЫ ПОИСКА (для использования в промптах) ===
     
     def get_kros_codes(self) -> List[Dict]:
-        """
-        Быстрый доступ к кодам KROS
-        
-        Returns:
-            [
-                {"code": "121-01-001", "name": "Beton C20/25", ...},
-                ...
-            ]
-        """
+        """Return all KROS/ÚRS code records from the knowledge base."""
+
         b1_data = self.data.get("B1_kros_urs_codes", {})
-        
-        # Ищем файл с KROS кодами (может быть CSV или JSON)
-        for filename, data in b1_data.items():
-            if "kros" in filename.lower() and isinstance(data, list):
-                return data
-        
-        return []
+        records: List[Dict[str, Any]] = []
+
+        for _, payload in b1_data.items():
+            if not isinstance(payload, list):
+                continue
+            for item in payload:
+                if not isinstance(item, dict):
+                    continue
+                code = str(
+                    item.get("code")
+                    or item.get("Znak")
+                    or item.get("znak")
+                    or ""
+                ).strip().upper()
+                if not code:
+                    continue
+                records.append(
+                    {
+                        "code": code,
+                        "description": item.get("description")
+                        or item.get("name")
+                        or item.get("Nazev")
+                        or "",
+                        "unit": item.get("unit")
+                        or item.get("Mj")
+                        or item.get("MJ")
+                        or "",
+                        "section": item.get("section")
+                        or item.get("Skupina")
+                        or "",
+                    }
+                )
+
+        return records
+
+    def get_kros_index(self) -> Dict[str, Dict[str, Any]]:
+        """Return dictionary mapping code → metadata."""
+
+        if self._kros_index is not None:
+            return self._kros_index
+
+        index: Dict[str, Dict[str, Any]] = {}
+        for entry in self.get_kros_codes():
+            code = entry.get("code")
+            if not code:
+                continue
+            index[code] = {
+                "code": code,
+                "description": entry.get("description") or "",
+                "unit": entry.get("unit") or "",
+                "section": entry.get("section") or "",
+            }
+
+        self._kros_index = index
+        return index
     
     def get_current_prices(self, material_type: str = None) -> Dict:
         """
         Быстрый доступ к актуальным ценам
-        
+
         Args:
             material_type: Опционально фильтр (beton, armatura, ...)
         
@@ -329,6 +411,44 @@ class KnowledgeBaseLoader:
                 return materials
         
         return {}
+
+    def get_csn_index(self) -> Dict[str, List[Dict[str, str]]]:
+        """Return mapping of normalised ČSN references to evidence metadata."""
+
+        if self._csn_index is not None:
+            return self._csn_index
+
+        index: Dict[str, List[Dict[str, str]]] = {}
+        b2_data = self.data.get("B2_csn_standards", {})
+        pattern = re.compile(r"ČSN\s*[0-9]{2}[\s\-]?[0-9]{2,3}(?:[\s\-]?[0-9]{1,3})?")
+
+        for filename, payload in b2_data.items():
+            if not isinstance(payload, dict):
+                continue
+            text = ""
+            if isinstance(payload.get("text"), str):
+                text = payload["text"]
+            elif isinstance(payload.get("content"), str):
+                text = payload["content"]
+            if not text:
+                continue
+
+            seen: set[str] = set()
+            for match in pattern.findall(text):
+                token = self._normalise_csn(match)
+                if not token or token in seen:
+                    continue
+                seen.add(token)
+                excerpt = self._extract_excerpt(text, match, context=120)
+                index.setdefault(token, []).append(
+                    {
+                        "source": f"kb:B2:{filename}",
+                        "snippet": excerpt.strip(),
+                    }
+                )
+
+        self._csn_index = index
+        return index
     
     def get_productivity_rates(self, work_type: str = None) -> Dict:
         """
@@ -388,12 +508,27 @@ class KnowledgeBaseLoader:
         index = text.lower().find(query.lower())
         if index == -1:
             return ""
-        
+
         start = max(0, index - context)
         end = min(len(text), index + len(query) + context)
-        
+
         excerpt = text[start:end]
         return f"...{excerpt}..."
+
+    @staticmethod
+    def _normalise_csn(value: str) -> str:
+        if not value:
+            return ""
+        ascii_value = (
+            value.upper()
+            .replace("Č", "C")
+            .replace("Š", "S")
+            .replace("Ř", "R")
+        )
+        digits = re.sub(r"[^0-9]", "", ascii_value)
+        if not digits:
+            return ""
+        return f"CSN{digits}"
 
 
 # === ГЛОБАЛЬНЫЙ ЭКЗЕМПЛЯР ===

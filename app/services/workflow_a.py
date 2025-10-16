@@ -15,6 +15,7 @@ from app.services.position_enricher import PositionEnricher
 from app.services.project_cache import load_or_create_project_cache, save_project_cache
 from app.services.specifications_validator import SpecificationsValidator
 from app.validators import PositionValidator
+from app.utils.audit_contracts import build_flat_positions, summarise_totals
 from app.state.project_store import project_store
 
 logger = logging.getLogger(__name__)
@@ -209,51 +210,34 @@ class WorkflowA:
     ) -> Dict[str, Any]:
         """Normalise audit output for cache, API and export."""
 
-        normalised_positions: List[Dict[str, Any]] = []
-        for position in positions:
-            payload = dict(position)
-            classification = str(
-                payload.get("classification") or payload.get("audit") or ""
-            ).upper()
-            if not classification:
-                classification = "GREEN"
-            payload["classification"] = classification
-            normalised_positions.append(payload)
+        flattened_positions = build_flat_positions(positions)
+        totals = summarise_totals(flattened_positions)
 
-        totals = {
-            "green": audit_stats.get("green"),
-            "amber": audit_stats.get("amber"),
-            "red": audit_stats.get("red"),
-        }
+        # Prefer classifier stats but fall back to recomputed totals
+        green_total = audit_stats.get("green")
+        amber_total = audit_stats.get("amber")
+        red_total = audit_stats.get("red")
+        if any(value is None for value in (green_total, amber_total, red_total)):
+            green_total = totals["green"]
+            amber_total = totals["amber"]
+            red_total = totals["red"]
 
-        # Fallback counts if classifier did not provide aggregated stats
-        if any(value is None for value in totals.values()):
-            totals = {
-                "green": sum(
-                    1 for item in normalised_positions if item.get("classification") == "GREEN"
-                ),
-                "amber": sum(
-                    1 for item in normalised_positions if item.get("classification") == "AMBER"
-                ),
-                "red": sum(
-                    1 for item in normalised_positions if item.get("classification") == "RED"
-                ),
-            }
-
-        total_positions = len(normalised_positions)
-        positions_preview = normalised_positions[:100]
+        audit_summary = dict(audit_stats or {})
+        audit_summary.setdefault("green", green_total)
+        audit_summary.setdefault("amber", amber_total)
+        audit_summary.setdefault("red", red_total)
 
         payload = {
-            "total_positions": total_positions,
-            "green": totals["green"],
-            "amber": totals["amber"],
-            "red": totals["red"],
-            "positions": normalised_positions,
-            "positions_preview": positions_preview,
+            "total_positions": totals["total_positions"],
+            "green": green_total,
+            "amber": amber_total,
+            "red": red_total,
+            "positions": flattened_positions,
+            "positions_preview": flattened_positions[:100],
             "enrichment_stats": dict(enrichment_stats or {}),
             "validation_stats": dict(validation_stats or {}),
             "schema_validation": dict(schema_stats or {}),
-            "audit": dict(audit_stats or {}),
+            "audit": audit_summary,
         }
 
         return payload
