@@ -1,7 +1,7 @@
 {
-  "kb_category": "B1_kros_urs_codes",
+  "kb_category": "B1_otkskp_codes",
   "source_system": "CS ÚRS 2025/II",
-  "description": "KROS/ÚRS kódy položek podle TSKP třídníku",
+  "description": "OTSKP kódy položek podle TSKP třídníku",
   "version": "2025-02",
   "tskp_structure": {
     "hsv_categories": {

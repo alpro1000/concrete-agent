@@ -117,6 +117,10 @@ class Settings(BaseSettings):
         default=50,
         description="Maximum file size for upload in MB"
     )
+    PARSER_H_ENABLE: bool = Field(
+        default=True,
+        description="Enable Task H normalisation pipeline",
+    )
 
     # PDF text recovery configuration (Task F2)
     PDF_VALID_CHAR_RATIO: float = Field(

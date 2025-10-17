@@ -10,7 +10,7 @@ import logging
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Optional
 import xml.etree.ElementTree as ET
 
 import pandas as pd
@@ -31,7 +31,9 @@ class KnowledgeBaseLoader:
     
     # Категории базы знаний (фиксированные)
     CATEGORIES = [
-        "B1_kros_urs_codes",
+        "B1_otkskp_codes",
+        "B1_rts_codes",
+        "B1_urs_codes",
         "B2_csn_standards",
         "B3_current_prices",
         "B4_production_benchmarks",
@@ -53,7 +55,11 @@ class KnowledgeBaseLoader:
         self._kros_index: Dict[str, Dict[str, Any]] | None = None
         self._csn_index: Dict[str, List[Dict[str, str]]] | None = None
         self._code_bridge: Dict[str, List[str]] | None = None
-        self.kb_b1: Dict[str, Dict[str, Dict[str, Any]]] = {"tskp": {}}
+        self.kb_b1: Dict[str, Dict[str, Dict[str, Any]]] = {
+            "otskp": {},
+            "rts": {},
+            "urs": {},
+        }
         
     def load_all(self) -> Dict[str, Any]:
         """
@@ -61,7 +67,9 @@ class KnowledgeBaseLoader:
         
         Returns:
             {
-                "B1_kros_urs_codes": {...},
+                "B1_otkskp_codes": {...},
+                "B1_rts_codes": {...},
+                "B1_urs_codes": {...},
                 "B2_csn_standards": {...},
                 ...
             }
@@ -252,9 +260,10 @@ class KnowledgeBaseLoader:
             return None
 
         root = tree.getroot()
+        catalog_key = self._detect_b1_catalog(path)
+        items: List[Dict[str, Any]] = []
 
-        if "B1_kros_urs_codes" in path.parts:
-            items: List[Dict[str, Any]] = []
+        if catalog_key == "otskp":
 
             try:
                 from app.parsers.kros_parser import KROSParser
@@ -262,7 +271,7 @@ class KnowledgeBaseLoader:
                 parser = KROSParser()
                 explicit_items = parser._parse_xc4_price_lists(root, register_runtime=False)
                 if explicit_items:
-                    self._register_b1_items(explicit_items, path)
+                    self._register_b1_items(explicit_items, path, catalog_key)
                     return explicit_items
             except Exception as exc:  # pragma: no cover - defensive
                 logger.debug("Explicit XC4 parsing failed for %s: %s", path, exc)
@@ -280,7 +289,7 @@ class KnowledgeBaseLoader:
                     items.append(record)
 
             if items:
-                self._register_b1_items(items, path)
+                self._register_b1_items(items, path, catalog_key)
                 return items
 
             try:
@@ -305,7 +314,7 @@ class KnowledgeBaseLoader:
                         }
                     )
                 if extracted:
-                    self._register_b1_items(extracted, path)
+                    self._register_b1_items(extracted, path, catalog_key)
                     return extracted
             except Exception as exc:  # pragma: no cover - defensive
                 logger.debug("Fallback KROS parsing failed for %s: %s", path, exc)
@@ -323,8 +332,23 @@ class KnowledgeBaseLoader:
             if any(record.values()):
                 items.append(record)
 
-        if items and "B1_kros_urs_codes" in path.parts:
-            self._register_b1_items(items, path)
+        if items and catalog_key == "otskp":
+            self._register_b1_items(items, path, catalog_key)
+
+        if catalog_key in {"rts", "urs"}:
+            extracted: List[Dict[str, Any]] = []
+            for item in root.findall(".//Polozka"):
+                record = {
+                    "code": (item.findtext("Znak") or item.findtext("znacka") or item.findtext("code") or "").strip(),
+                    "name": (item.findtext("Nazev") or item.findtext("name") or "").strip(),
+                    "description": (item.findtext("Popis") or item.findtext("description") or "").strip(),
+                    "unit": (item.findtext("Mj") or item.findtext("MJ") or "").strip(),
+                }
+                if any(record.values()):
+                    extracted.append(record)
+            if extracted:
+                self._register_b1_items(extracted, path, catalog_key)
+            return extracted if extracted else {"xml": path.read_text(encoding="utf-8")}
 
         return items if items else {"xml": path.read_text(encoding="utf-8")}
 
@@ -354,8 +378,23 @@ class KnowledgeBaseLoader:
     # Internal helpers for KB B1 registration
     # ------------------------------------------------------------------
 
-    def _register_b1_items(self, items: Iterable[Dict[str, Any]], path: Path) -> None:
-        catalog = self.kb_b1.setdefault("tskp", {})
+    @staticmethod
+    def _detect_b1_catalog(path: Path) -> Optional[str]:
+        if "B1_otkskp_codes" in path.parts:
+            return "otskp"
+        if "B1_rts_codes" in path.parts:
+            return "rts"
+        if "B1_urs_codes" in path.parts:
+            return "urs"
+        return None
+
+    def _register_b1_items(
+        self,
+        items: Iterable[Dict[str, Any]],
+        path: Path,
+        catalog_key: str = "otskp",
+    ) -> None:
+        catalog = self.kb_b1.setdefault(catalog_key, {})
         source = path.name
 
         for item in items:
@@ -381,23 +420,26 @@ class KnowledgeBaseLoader:
                 "name": name,
                 "unit": unit,
                 "tech_spec": tech_spec,
-                "system": system or "TSKP",
+                "system": system or catalog_key.upper(),
                 "source": source,
             }
 
             if normalized and normalized not in catalog:
                 catalog[normalized] = catalog[raw_code]
+
+            stripped = normalized.lstrip("0")
+            if stripped and stripped not in catalog:
+                catalog[stripped] = catalog[raw_code]
     
     # === МЕТОДЫ ПОИСКА (для использования в промптах) ===
     
     def get_kros_codes(self) -> List[Dict]:
-        """Return all KROS/ÚRS code records from the knowledge base."""
+        """Return OTSKP code records from the knowledge base."""
 
-        b1_data = self.data.get("B1_kros_urs_codes", {})
         records: List[Dict[str, Any]] = []
         seen_codes: set[str] = set()
 
-        for _, payload in b1_data.items():
+        for payload in self.data.get("B1_otkskp_codes", {}).values():
             if not isinstance(payload, list):
                 continue
             for item in payload:
@@ -407,6 +449,7 @@ class KnowledgeBaseLoader:
                     item.get("code")
                     or item.get("Znak")
                     or item.get("znak")
+                    or item.get("znacka")
                     or ""
                 ).strip().upper()
                 if not code or code in seen_codes:
@@ -441,7 +484,7 @@ class KnowledgeBaseLoader:
                     }
                 )
 
-        for entry in self.kb_b1.get("tskp", {}).values():
+        for entry in self.kb_b1.get("otskp", {}).values():
             if not isinstance(entry, dict):
                 continue
             code = entry.get("code")

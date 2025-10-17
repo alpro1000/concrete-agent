@@ -116,11 +116,13 @@ class PositionEnricher:
         self._code_index: Dict[str, KBEntry] = {}
         self._bridge_index: Dict[str, List[str]] = {}
         self.csn_index: Dict[str, List[Dict[str, str]]] = {}
+        self.catalog_present = False
 
         if self.enabled:
             kb = get_knowledge_base()
             self.kros_index = kb.get_kros_index()
             self.csn_index = kb.get_csn_index()
+            self.catalog_present = bool(self.kros_index)
             for code, entry in self.kros_index.items():
                 if not code:
                     continue
@@ -164,11 +166,19 @@ class PositionEnricher:
                 payload["enrichment_score"] = 0.0
                 payload["enrichment"] = {"match": "none", "score": 0.0, "evidence": []}
                 enriched_positions.append(payload)
+            unmatched = len(enriched_positions)
+            logger.info(
+                'enrichment: catalog="OTSKP", present=%s, matched=%s, unmatched=%s',
+                "true" if self.catalog_present else "false",
+                0,
+                unmatched,
+            )
             stats = {
                 "enabled": False,
                 "matched": 0,
                 "partial": 0,
-                "unmatched": len(enriched_positions),
+                "unmatched": unmatched,
+                "catalog": {"name": "OTSKP", "present": self.catalog_present},
             }
             return enriched_positions, stats
 
@@ -195,7 +205,8 @@ class PositionEnricher:
             enriched_positions.append(enriched)
 
         logger.info(
-            "enrichment: matched=%s partial=%s unmatched=%s",
+            'enrichment: catalog="OTSKP", present=%s, matched=%s, partial=%s, unmatched=%s',
+            "true" if self.catalog_present else "false",
             stats.get("matched", 0),
             stats.get("partial", 0),
             stats.get("unmatched", 0),
@@ -209,6 +220,7 @@ class PositionEnricher:
         )
 
         stats["rules"] = rule_stats
+        stats["catalog"] = {"name": "OTSKP", "present": self.catalog_present}
         return enriched_positions, stats
 
     @staticmethod
