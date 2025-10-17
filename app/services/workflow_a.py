@@ -12,13 +12,36 @@ from app.parsers.smart_parser import SmartParser
 from app.parsers.drawing_specs_parser import DrawingSpecsParser
 from app.services.audit_classifier import AuditClassifier
 from app.services.position_enricher import PositionEnricher
-from app.services.project_cache import load_or_create_project_cache, save_project_cache
+from app.services.project_cache import (
+    load_or_create_project_cache,
+    save_field,
+    save_project_cache,
+)
 from app.services.specifications_validator import SpecificationsValidator
 from app.validators import PositionValidator
-from app.utils.audit_contracts import build_flat_positions, summarise_totals
 from app.state.project_store import project_store
 
 logger = logging.getLogger(__name__)
+
+
+def _classify_position(position: Dict[str, Any]) -> str:
+    """Classify a position according to validation and enrichment results."""
+
+    if (
+        position.get("validation_status") == "failed"
+        or position.get("validation_error")
+    ):
+        return "RED"
+
+    enrichment_block = position.get("enrichment") or {}
+    match = (enrichment_block.get("match") or "none").lower()
+    if match == "exact":
+        return "GREEN"
+    if match == "partial":
+        return "AMBER"
+    if match == "none":
+        return "RED"
+    return "AMBER"
 
 
 class WorkflowA:
@@ -153,9 +176,9 @@ class WorkflowA:
         cache_data["validation"] = audit_payload.get("validation_stats", {})
         cache_data["audit"] = audit_payload.get("audit", audit_stats)
         cache_data["audit_results"] = audit_payload
-        cache_data["green_count"] = audit_payload.get("audit", audit_stats).get("green", 0)
-        cache_data["amber_count"] = audit_payload.get("audit", audit_stats).get("amber", 0)
-        cache_data["red_count"] = audit_payload.get("audit", audit_stats).get("red", 0)
+        cache_data["green_count"] = audit_payload["audit"]["green"]
+        cache_data["amber_count"] = audit_payload["audit"]["amber"]
+        cache_data["red_count"] = audit_payload["audit"]["red"]
         cache_data["drawing_specs"] = drawing_summary
         cache_data["status"] = "AUDITED"
         cache_data["progress"] = 90
@@ -163,6 +186,16 @@ class WorkflowA:
             "Parsed + Enriched + Validated + Audited (Steps 1–6). Ready to export."
         )
         cache_data["updated_at"] = datetime.now().isoformat()
+
+        save_field(project_id, "audit_results", audit_payload)
+
+        logger.info(
+            "audit_results normalized: total=%d g=%d a=%d r=%d",
+            audit_payload["total_positions"],
+            audit_payload["green"],
+            audit_payload["amber"],
+            audit_payload["red"],
+        )
 
         save_project_cache(project_id, cache_data)
 
@@ -214,30 +247,63 @@ class WorkflowA:
     ) -> Dict[str, Any]:
         """Normalise audit output for cache, API and export."""
 
-        flattened_positions = build_flat_positions(positions)
-        totals = summarise_totals(flattened_positions)
+        non_preview_positions: List[Dict[str, Any]] = []
+        for pos in positions or []:
+            if not isinstance(pos, dict):
+                continue
+            if pos.get("is_preview") or pos.get("preview"):
+                continue
+            non_preview_positions.append(pos)
 
-        # Prefer classifier stats but fall back to recomputed totals
-        green_total = audit_stats.get("green")
-        amber_total = audit_stats.get("amber")
-        red_total = audit_stats.get("red")
-        if any(value is None for value in (green_total, amber_total, red_total)):
-            green_total = totals["green"]
-            amber_total = totals["amber"]
-            red_total = totals["red"]
+        normalized_positions: List[Dict[str, Any]] = []
+        for raw in non_preview_positions:
+            entry = dict(raw)
+            entry["position_id"] = (
+                raw.get("position_id")
+                or raw.get("id")
+                or raw.get("position_number")
+                or raw.get("code")
+                or "unknown"
+            )
+            entry["code"] = raw.get("code", "")
+            entry["description"] = raw.get("description", "")
+            entry["unit"] = raw.get("unit", "")
+            entry["quantity"] = raw.get("quantity", 0)
+            entry["section"] = raw.get("section", "")
+            classification = _classify_position(raw)
+            entry["classification"] = classification
+            entry["notes"] = (
+                raw.get("notes")
+                or raw.get("validation_message")
+                or raw.get("validation_notes")
+                or ""
+            )
+            normalized_positions.append(entry)
 
-        audit_summary = dict(audit_stats or {})
-        audit_summary.setdefault("green", green_total)
-        audit_summary.setdefault("amber", amber_total)
-        audit_summary.setdefault("red", red_total)
+        total_positions = len(normalized_positions)
+        green_total = sum(
+            1 for item in normalized_positions if item.get("classification") == "GREEN"
+        )
+        amber_total = sum(
+            1 for item in normalized_positions if item.get("classification") == "AMBER"
+        )
+        red_total = sum(
+            1 for item in normalized_positions if item.get("classification") == "RED"
+        )
+
+        audit_summary = {
+            "green": audit_stats.get("green", green_total),
+            "amber": audit_stats.get("amber", amber_total),
+            "red": audit_stats.get("red", red_total),
+        }
 
         payload = {
-            "total_positions": totals["total_positions"],
+            "total_positions": total_positions,
             "green": green_total,
             "amber": amber_total,
             "red": red_total,
-            "positions": flattened_positions,
-            "positions_preview": flattened_positions[:100],
+            "positions": normalized_positions,
+            "positions_preview": normalized_positions[:100],
             "enrichment_stats": dict(enrichment_stats or {}),
             "validation_stats": dict(validation_stats or {}),
             "schema_validation": dict(schema_stats or {}),

@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from app.core.config import settings
-from app.utils.audit_contracts import ensure_audit_contract
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +32,10 @@ def load_project_cache(project_id: str) -> Tuple[Optional[Dict[str, Any]], Path]
             with cache_path.open("r", encoding="utf-8") as fp:
                 data = json.load(fp)
             logger.info("Project %s: Loaded cache from %s", project_id, cache_path)
-            if _migrate_legacy_audit_results(project_id, data):
+            audit_payload = data.get("audit_results")
+            migrated = _migrate_legacy_audit_results(audit_payload)
+            if migrated != audit_payload:
+                data["audit_results"] = migrated
                 save_project_cache(project_id, data)
             return data, cache_path
         except json.JSONDecodeError as exc:
@@ -81,36 +83,88 @@ def load_or_create_project_cache(
     return cache_payload, cache_path, True
 
 
-def _migrate_legacy_audit_results(project_id: str, cache: Dict[str, Any]) -> bool:
-    """Normalise audit results stored in legacy cache structures."""
+def save_field(project_id: str, field: str, value: Any) -> None:
+    """Persist a single field update to the project cache."""
 
-    if not isinstance(cache, dict):
-        return False
+    cache_payload, cache_path = load_project_cache(project_id)
+    if cache_payload is None:
+        cache_payload = {"project_id": project_id}
 
-    audit_payload = cache.get("audit_results")
-    fallback_positions = cache.get("positions") or cache.get("positions_preview")
-    normalised, changed = ensure_audit_contract(audit_payload, fallback_positions)
-    if not changed:
-        return False
-
-    cache["audit_results"] = normalised
-    cache["positions"] = normalised.get("positions", [])
-    cache["positions_preview"] = normalised.get("positions_preview", [])
-
-    summary = cache.setdefault("summary", {})
-    summary.update(
-        {
-            "positions_total": normalised.get("total_positions", 0),
-            "green": normalised.get("green", 0),
-            "amber": normalised.get("amber", 0),
-            "red": normalised.get("red", 0),
-        }
-    )
-
+    cache_payload[field] = value
+    save_project_cache(project_id, cache_payload)
     logger.info(
-        "Project %s: Migrated legacy audit_results to flat contract (positions=%s)",
+        "Project %s: Cache field '%s' updated via save_field (path=%s)",
         project_id,
-        normalised.get("total_positions", 0),
+        field,
+        cache_path,
     )
 
-    return True
+
+def _is_new_audit_format(audit_results: Dict[str, Any] | None) -> bool:
+    try:
+        if not isinstance(audit_results, dict):
+            return False
+        positions = audit_results.get("positions")
+        if not isinstance(positions, list) or not positions:
+            return False
+        first = positions[0] or {}
+        return "classification" in first
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _migrate_legacy_audit_results(old: Dict[str, Any] | None) -> Dict[str, Any]:
+    if not old:
+        return {
+            "total_positions": 0,
+            "green": 0,
+            "amber": 0,
+            "red": 0,
+            "positions": [],
+            "audit": {"green": 0, "amber": 0, "red": 0},
+            "positions_preview": [],
+        }
+
+    if _is_new_audit_format(old):
+        payload = dict(old)
+        payload.setdefault("audit", {
+            "green": payload.get("green", 0),
+            "amber": payload.get("amber", 0),
+            "red": payload.get("red", 0),
+        })
+        payload.setdefault("positions_preview", payload.get("positions", [])[:100])
+        return payload
+
+    summary = old.get("summary") or {}
+    green = summary.get("green", 0)
+    amber = summary.get("amber", 0)
+    red = summary.get("red", 0)
+    preview = old.get("preview") or []
+
+    positions = [
+        {
+            "position_id": p.get("id", "unknown"),
+            "code": p.get("code", ""),
+            "description": p.get("description", ""),
+            "unit": p.get("unit", ""),
+            "quantity": p.get("quantity", 0),
+            "section": p.get("section", ""),
+            "classification": p.get("status", "AMBER"),
+            "notes": "",
+        }
+        for p in preview
+        if isinstance(p, dict)
+    ]
+
+    total = green + amber + red if (green or amber or red) else len(positions)
+    migrated = {
+        "total_positions": total,
+        "green": green,
+        "amber": amber,
+        "red": red,
+        "positions": positions,
+        "audit": {"green": green, "amber": amber, "red": red},
+        "positions_preview": positions[:100],
+    }
+
+    return migrated
