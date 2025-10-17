@@ -352,7 +352,16 @@ async def upload_project(
             "positions_processed": 0,
             "positions_raw": 0,
             "positions_skipped": 0,
-            "diagnostics": {},
+            "diagnostics": {
+                "drawing_specs": {
+                    "page_states": {
+                        "status": "pending",
+                        "good_text": 0,
+                        "encoded_text": 0,
+                        "image_only": 0,
+                    }
+                }
+            },
             "message": f"Project uploaded successfully. ID: {project_id}",
             "error": None,
             "files": {
@@ -365,6 +374,18 @@ async def upload_project(
             "project_dir": str(project_dir),
             "files_metadata": safe_files,
             "file_locations": file_locations,
+            "drawing_specs_detected": 0,
+            "drawing_page_states": {
+                "status": "pending",
+                "good_text": 0,
+                "encoded_text": 0,
+                "image_only": 0,
+            },
+            "drawing_text_recovery": {
+                "used_pdfium": 0,
+                "used_poppler": 0,
+                "ocr_pages": [],
+            },
         }
         
         logger.info(f"✅ Nahrání dokončeno: {project_id}")
@@ -413,7 +434,19 @@ async def upload_project(
             "diagnostics": project_store[project_id].get("diagnostics", {}),
             "positions_total": 0,
             "positions_raw": 0,
-            "positions_skipped": 0
+            "positions_skipped": 0,
+            "drawing_specs_detected": 0,
+            "drawing_page_states": {
+                "status": "pending",
+                "good_text": 0,
+                "encoded_text": 0,
+                "image_only": 0,
+            },
+            "drawing_text_recovery": {
+                "used_pdfium": 0,
+                "used_poppler": 0,
+                "ocr_pages": [],
+            },
         }
     
     except HTTPException:

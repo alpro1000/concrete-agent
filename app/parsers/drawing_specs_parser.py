@@ -37,7 +37,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-import pdfplumber
+from app.services.pdf_text_recovery import PdfRecoverySummary, PdfTextRecovery
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +117,9 @@ class DrawingSpecsParser:
         "vyztuz",
     )
 
+    def __init__(self, text_recovery: Optional[PdfTextRecovery] = None) -> None:
+        self.text_recovery = text_recovery or PdfTextRecovery()
+
     def parse_files(self, drawing_files: Iterable[Dict[str, object]]) -> Dict[str, object]:
         """Parse all provided drawing files.
 
@@ -150,6 +153,12 @@ class DrawingSpecsParser:
             marker_type: {} for marker_type in self.MARKER_TYPES
         }
 
+        pages_state: List[Dict[str, object]] = []
+        summary_counters = {"good_text": 0, "encoded_text": 0, "image_only": 0}
+        pdfium_total = 0
+        poppler_total = 0
+        ocr_plan: List[Dict[str, object]] = []
+
         for file_meta in drawing_files:
             if not file_meta.get("exists"):
                 continue
@@ -160,7 +169,7 @@ class DrawingSpecsParser:
                 continue
 
             try:
-                specs = self._parse_single_pdf(file_path, pattern_hits, marker_registry)
+                specs, recovery = self._parse_single_pdf(file_path, pattern_hits, marker_registry)
             except Exception as exc:  # noqa: BLE001 - logged for diagnostics
                 logger.exception("Failed to parse drawing %s: %s", file_path.name, exc)
                 diagnostics["errors"].append(
@@ -177,6 +186,30 @@ class DrawingSpecsParser:
             diagnostics["files_processed"] += 1
             diagnostics["specifications_found"] += len(specs)
 
+            counters = recovery.page_state_counters()
+            for key, value in counters.items():
+                summary_counters[key] = summary_counters.get(key, 0) + value
+
+            pdfium_total += recovery.used_pdfium
+            poppler_total += recovery.used_poppler
+
+            if recovery.queued_ocr_pages:
+                ocr_plan.append(
+                    {
+                        "file": file_path.name,
+                        "pages": recovery.queued_ocr_pages,
+                    }
+                )
+
+            recovery_dict = recovery.to_dict()
+            pages_state.append(
+                {
+                    "file": file_path.name,
+                    "pages": recovery_dict.get("pages", []),
+                    "summary": counters,
+                }
+            )
+
         markers_payload, markers_stats = self._prepare_marker_payload(marker_registry)
 
         logger.info(
@@ -188,11 +221,20 @@ class DrawingSpecsParser:
 
         logger.debug("patterns_hit=%s", json.dumps(pattern_hits, ensure_ascii=False))
 
+        diagnostics["page_states"] = summary_counters
+        diagnostics["used_pdfium"] = pdfium_total
+        diagnostics["used_poppler"] = poppler_total
+        diagnostics["ocr_pages_total"] = sum(len(item["pages"]) for item in ocr_plan)
+
         return {
             "specifications": [spec.to_dict() for spec in specifications],
             "diagnostics": diagnostics,
             "markers": markers_payload,
             "markers_stats": markers_stats,
+            "pages_state": pages_state,
+            "used_pdfium": pdfium_total,
+            "used_poppler": poppler_total,
+            "ocr_pages": ocr_plan,
         }
 
     # ------------------------------------------------------------------
@@ -204,29 +246,63 @@ class DrawingSpecsParser:
         file_path: Path,
         pattern_hits: Dict[str, int],
         marker_registry: Dict[str, Dict[str, Dict[str, str]]],
-    ) -> List[DrawingSpecification]:
+    ) -> tuple[List[DrawingSpecification], PdfRecoverySummary]:
         """Extract specifications from a single PDF drawing."""
 
         logger.info("📐 Analysing drawing %s", file_path.name)
         collected: List[DrawingSpecification] = []
 
-        with pdfplumber.open(file_path) as pdf:
-            for page_index, page in enumerate(pdf.pages, start=1):
-                text = page.extract_text() or ""
-                if not text:
+        recovery = self.text_recovery.recover(file_path)
+
+        counters = recovery.page_state_counters()
+        logger.info(
+            "drawing_detector: pages=%s pdfium_used=%s poppler_used=%s ocr_pages=%s",
+            counters,
+            recovery.used_pdfium,
+            recovery.used_poppler,
+            len(recovery.queued_ocr_pages),
+        )
+
+        for page in recovery.pages:
+            pdfium_info = page.fallbacks.get("pdfium")
+            poppler_info = page.fallbacks.get("poppler")
+
+            pdfium_state = "n/a"
+            if pdfium_info:
+                accepted = "accepted" if page.extractor == "pdfium" else "candidate"
+                pdfium_state = f"{accepted}(valid={pdfium_info.valid_ratio:.2f})"
+
+            poppler_state = "n/a"
+            if poppler_info:
+                accepted = "accepted" if page.extractor == "poppler" else "candidate"
+                poppler_state = f"{accepted}(valid={poppler_info.valid_ratio:.2f})"
+
+            logger.debug(
+                "p%s: state=%s miner=valid=%.2f pua=%.2f pdfium=%s poppler=%s ocr=%s",
+                page.page_number,
+                page.state,
+                page.miner.valid_ratio,
+                page.miner.pua_ratio,
+                pdfium_state,
+                poppler_state,
+                "queued" if page.queued_for_ocr else "no",
+            )
+
+            text = page.accepted.text or ""
+            if not text:
+                continue
+
+            for line in text.splitlines():
+                line = line.strip()
+                if len(line) < 6:
                     continue
 
-                for line in text.splitlines():
-                    line = line.strip()
-                    if len(line) < 6:
-                        continue
+                spec = self._line_to_spec(file_path.name, page.page_number, line, pattern_hits)
+                if spec:
+                    collected.append(spec)
+                    self._register_markers(marker_registry, spec)
 
-                    spec = self._line_to_spec(file_path.name, page_index, line, pattern_hits)
-                    if spec:
-                        collected.append(spec)
-                        self._register_markers(marker_registry, spec)
-
-        return collected
+        return collected, recovery
 
     def _register_markers(
         self,
