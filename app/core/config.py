@@ -117,6 +117,40 @@ class Settings(BaseSettings):
         default=50,
         description="Maximum file size for upload in MB"
     )
+
+    # PDF text recovery configuration (Task F2)
+    PDF_VALID_CHAR_RATIO: float = Field(
+        default=0.60,
+        description="Minimum ratio of valid characters for primary text to be accepted",
+    )
+    PDF_FALLBACK_VALID_RATIO: float = Field(
+        default=0.70,
+        description="Minimum ratio of valid characters for fallback extractor acceptance",
+    )
+    PDF_PUA_RATIO: float = Field(
+        default=0.50,
+        description="Ratio of Private Use Area glyphs that marks a page as encoded",
+    )
+    PDF_MAX_PAGES_FOR_FALLBACK: int = Field(
+        default=15,
+        description="Maximum number of pages to process with fallback extractors",
+    )
+    PDF_MAX_PAGES_FOR_OCR: int = Field(
+        default=5,
+        description="Maximum number of pages to queue for OCR fallback",
+    )
+    PDF_PAGE_TIMEOUT_SEC: int = Field(
+        default=2,
+        description="Per-page timeout for fallback extraction subprocesses",
+    )
+    PDF_ENABLE_POPPLER: bool = Field(
+        default=True,
+        description="Enable Poppler/pdftotext fallback extraction",
+    )
+    PDF_ENABLE_OCR: bool = Field(
+        default=True,
+        description="Enable OCR queuing for pages without usable text",
+    )
     
     # MinerU Settings
     MINERU_OUTPUT_DIR: Optional[Path] = None

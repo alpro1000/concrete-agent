@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from app.core.config import settings
 from app.models.project import ProjectStatus
@@ -174,6 +174,7 @@ class WorkflowA:
             enable_enrichment=enable_enrichment,
             parsing_diagnostics=parsing_summary["diagnostics"],
             drawing_diagnostics=drawing_summary["diagnostics"],
+            drawing_summary=drawing_summary,
         )
 
         diagnostics = parsing_summary["diagnostics"]
@@ -549,6 +550,7 @@ class WorkflowA:
         enable_enrichment: bool,
         parsing_diagnostics: Dict[str, Any],
         drawing_diagnostics: Dict[str, Any],
+        drawing_summary: Optional[Dict[str, Any]] = None,
     ) -> None:
         now_iso = datetime.now().isoformat()
         project_meta = project_store.setdefault(project_id, {})
@@ -599,6 +601,25 @@ class WorkflowA:
 
         project_meta["audit_results"] = audit_payload
         project_meta["positions_preview"] = positions_preview
+
+        drawing_summary = drawing_summary or {}
+        drawing_spec_count = len(drawing_summary.get("specifications", []))
+        page_states = dict(drawing_summary.get("diagnostics", {}).get("page_states", {}))
+        page_states.setdefault("status", "completed")
+        recovery_meta = {
+            "used_pdfium": drawing_summary.get("used_pdfium", 0),
+            "used_poppler": drawing_summary.get("used_poppler", 0),
+            "ocr_pages": drawing_summary.get("ocr_pages", []),
+        }
+
+        project_meta["drawing_specs_detected"] = drawing_spec_count
+        project_meta["drawing_page_states"] = {
+            "good_text": page_states.get("good_text", 0),
+            "encoded_text": page_states.get("encoded_text", 0),
+            "image_only": page_states.get("image_only", 0),
+            "status": page_states.get("status", "completed"),
+        }
+        project_meta["drawing_text_recovery"] = recovery_meta
 
         project_meta["summary"] = {
             "positions_total": total_positions,
