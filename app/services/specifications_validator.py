@@ -48,7 +48,7 @@ class SpecificationsValidator:
 
     def __init__(self) -> None:
         kb = init_kb_loader()
-        self.otskp_index = self._build_otskp_index(kb.data.get("B1_kros_urs_codes", {}))
+        self.otskp_index = self._build_otskp_index(kb.data.get("B1_otkskp_codes", {}))
         self.soft_match_threshold = max(0.7, settings.AUDIT_AMBER_THRESHOLD)
 
     # ------------------------------------------------------------------

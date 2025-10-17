@@ -1,27 +1,115 @@
-"""
-Universal Position Normalizer
-Конвертирует позиции из любого формата в стандартный
-"""
+"""Normalisation utilities for bill-of-quantities tables (Task H)."""
+
+from __future__ import annotations
+
 import logging
-from typing import Dict, Any, List, Optional, Tuple
 import re
+import unicodedata
+from dataclasses import dataclass
+from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 
-class PositionNormalizer:
-    """Normalize positions from different sources into standard format"""
+# ---------------------------------------------------------------------------
+# Header aliases (case-insensitive, diacritics ignored)
+# ---------------------------------------------------------------------------
 
-    # Track statistics from the last normalization run
-    last_stats: Dict[str, int] = {
-        "raw_total": 0,
-        "normalized_total": 0,
-        "skipped_total": 0,
-    }
-    
-    # Mapping различных вариантов названий полей к стандартным
+
+HEADER_ALIASES: Dict[str, set[str]] = {
+    "code": {
+        "kód",
+        "kód položky",
+        "číslo položky",
+        "kod",
+        "kod položky",
+        "kod_polozky",
+        "kód polož.",
+        "č.položky",
+    },
+    "description": {
+        "popis",
+        "úplný popis",
+        "popis položky",
+        "název",
+        "opis",
+    },
+    "unit": {
+        "mj",
+        "měrná jednotka",
+        "jedn.",
+        "jednotka",
+    },
+    "quantity": {
+        "množství",
+        "množství celkem",
+        "množ.",
+        "qty",
+    },
+    "unit_price": {
+        "cena jednotková",
+        "jedn. cena",
+        "cena/jedn.",
+        "jednotková cena",
+    },
+    "total_price": {
+        "cena celkem",
+        "celkem",
+        "součet",
+        "cena bez dph",
+        "cena s dph",
+    },
+}
+
+
+CODE_PATTERN = re.compile(r"^\d{4,6}(?:[.\-][A-Z0-9])?$")
+SECTION_PREFIX = re.compile(r"^(?:\d+[.)]?|[IVXLCDM]+\.)\s+")
+RESOURCE_KEYWORDS = (
+    "kalkulace s rozbory",
+    "rozbory",
+    "tov",
+)
+EMPTY_NUMERIC_TOKENS = {"", "-", "–", "—"}
+NBSP = "\xa0"
+
+
+def _strip_diacritics(value: str) -> str:
+    """Remove diacritics from text using NFKD normalisation."""
+
+    normalized = unicodedata.normalize("NFKD", value)
+    return "".join(ch for ch in normalized if not unicodedata.combining(ch))
+
+
+def _normalise_header_key(value: str) -> str:
+    """Normalise header text for alias lookup."""
+
+    text = value.strip().lower()
+    text = text.replace("_", " ").replace("/", " ")
+    text = _strip_diacritics(text)
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _coerce_to_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple)):
+        parts = [str(item).strip() for item in value if item is not None]
+        return " ".join(part for part in parts if part)
+    return str(value).strip()
+
+
+# ---------------------------------------------------------------------------
+# Legacy normaliser (fallback)
+# ---------------------------------------------------------------------------
+
+
+class _LegacyPositionNormalizer:
+    """Original implementation kept for fallback compatibility."""
+
     FIELD_MAPPING = {
-        # Description field
         "description": "description",
         "desc": "description",
         "popis": "description",
@@ -30,8 +118,6 @@ class PositionNormalizer:
         "name": "description",
         "text": "description",
         "работа": "description",
-        
-        # Position number
         "position_number": "position_number",
         "pos_number": "position_number",
         "number": "position_number",
@@ -39,15 +125,11 @@ class PositionNormalizer:
         "c": "position_number",
         "№": "position_number",
         "no": "position_number",
-        
-        # Code field (KROS/ÚRS)
         "code": "code",
         "kod": "code",
         "kód": "code",
         "urs_code": "code",
         "kros_code": "code",
-        
-        # Quantity field
         "quantity": "quantity",
         "qty": "quantity",
         "mnozstvi": "quantity",
@@ -56,15 +138,11 @@ class PositionNormalizer:
         "pocet": "quantity",
         "mn": "quantity",
         "количество": "quantity",
-        
-        # Unit field
         "unit": "unit",
         "mj": "unit",
         "jednotka": "unit",
         "measure": "unit",
         "ед": "unit",
-        
-        # Unit price field
         "unit_price": "unit_price",
         "price": "unit_price",
         "cena": "unit_price",
@@ -72,8 +150,6 @@ class PositionNormalizer:
         "jednotkova_cena": "unit_price",
         "price_per_unit": "unit_price",
         "цена": "unit_price",
-        
-        # Total price field
         "total_price": "total_price",
         "total": "total_price",
         "celkem": "total_price",
@@ -81,213 +157,119 @@ class PositionNormalizer:
         "price_total": "total_price",
         "итого": "total_price",
     }
-    
+
     @classmethod
     def normalize(cls, position: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """
-        Normalize a single position to standard format
-        
-        Args:
-            position: Raw position data with any field names
-            
-        Returns:
-            Normalized position or None if invalid
-        """
         if not isinstance(position, dict):
-            logger.warning(f"Position is not a dict: {type(position)}")
             return None
-        
-        normalized = {}
-        
-        # Normalize field names
+
+        normalized: Dict[str, Any] = {}
+
         for key, value in position.items():
             if not key:
                 continue
-                
-            # Clean key: lowercase, strip whitespace
             clean_key = str(key).lower().strip()
-            
-            # Map to standard field name
             standard_key = cls.FIELD_MAPPING.get(clean_key, clean_key)
-            
-            # Clean value
             clean_value = cls._clean_value(value)
-            
             if clean_value is not None:
                 normalized[standard_key] = clean_value
-        
-        # Try to extract required fields if missing
+
         normalized = cls._extract_missing_fields(normalized, position)
-        
-        # Convert types
         normalized = cls._convert_types(normalized)
-        
-        # Validate required fields
+
         if not cls._has_required_fields(normalized):
-            logger.debug(
-                f"Position missing required fields. "
-                f"Available: {list(normalized.keys())}. "
-                f"Data: {str(normalized)[:200]}"
-            )
             return None
-        
+
         return normalized
-    
+
     @staticmethod
     def _clean_value(value: Any) -> Any:
-        """Clean a single value"""
         if value is None:
             return None
-        
-        # Convert to string and clean
         if isinstance(value, str):
             value = value.strip()
-            # Remove multiple spaces
-            value = re.sub(r'\s+', ' ', value)
-            # Return None for empty strings
-            if not value or value in ['', '-', 'N/A', 'null', 'None']:
+            value = re.sub(r"\s+", " ", value)
+            if not value or value in {"", "-", "N/A", "null", "None"}:
                 return None
-        
         return value
-    
+
     @classmethod
     def _extract_missing_fields(
-        cls, 
-        normalized: Dict[str, Any], 
-        original: Dict[str, Any]
+        cls, normalized: Dict[str, Any], original: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """
-        Try to extract missing required fields from original data
-        
-        For example, if 'description' is missing but position has
-        a field with 'Beton' in the name, use that.
-        """
-        
-        # If description missing, try to find text-like field
-        if 'description' not in normalized or not normalized['description']:
+        if "description" not in normalized or not normalized.get("description"):
             for key, value in original.items():
                 if isinstance(value, str) and len(value) > 5:
-                    # Skip numeric-looking fields
-                    if not re.match(r'^[\d\s\.,\-]+$', value):
-                        normalized['description'] = value
-                        logger.debug(
-                            f"Extracted description from field '{key}' "
-                            f"[{normalized.get('code', 'N/A')}]: {value[:50]}"
-                        )
+                    if not re.match(r"^[\d\s\.,\-]+$", value):
+                        normalized["description"] = value
                         break
-        
-        # If code missing, try to find code-like field
-        if 'code' not in normalized or not normalized['code']:
+
+        if "code" not in normalized or not normalized.get("code"):
             for key, value in original.items():
                 if isinstance(value, str):
-                    # Look for patterns like "121-01-001" or "XXX.XX.XXX"
-                    if re.match(r'^\d{2,3}[\-\.]\d{2}[\-\.]\d{3}$', value):
-                        normalized['code'] = value
-                        logger.debug(f"Extracted code from field '{key}': {value}")
+                    if re.match(r"^\d{2,3}[\-\.]\d{2}[\-\.]\d{3}$", value):
+                        normalized["code"] = value
                         break
-        
+
         return normalized
-    
+
     @staticmethod
     def _convert_types(position: Dict[str, Any]) -> Dict[str, Any]:
-        """Convert fields to appropriate types"""
-        
-        # Convert quantity to float
-        if 'quantity' in position:
+        if "quantity" in position:
             try:
-                # Handle Czech/European number format (comma as decimal)
-                qty_str = str(position['quantity']).replace(',', '.').replace(' ', '')
-                position['quantity'] = float(qty_str)
+                qty_str = str(position["quantity"]).replace(",", ".").replace(" ", "")
+                position["quantity"] = float(qty_str)
             except (ValueError, TypeError):
-                logger.warning(f"Cannot convert quantity to float: {position['quantity']}")
-                position['quantity'] = 0.0
-        
-        # Convert unit_price to float
-        if 'unit_price' in position:
+                position["quantity"] = 0.0
+
+        if "unit_price" in position:
             try:
-                price_str = str(position['unit_price']).replace(',', '.').replace(' ', '')
-                position['unit_price'] = float(price_str)
+                price_str = str(position["unit_price"]).replace(",", ".").replace(" ", "")
+                position["unit_price"] = float(price_str)
             except (ValueError, TypeError):
-                logger.warning(f"Cannot convert unit_price to float: {position['unit_price']}")
-                position['unit_price'] = None
-        
-        # Convert total_price to float
-        if 'total_price' in position:
+                position["unit_price"] = None
+
+        if "total_price" in position:
             try:
-                total_str = str(position['total_price']).replace(',', '.').replace(' ', '')
-                position['total_price'] = float(total_str)
+                total_str = str(position["total_price"]).replace(",", ".").replace(" ", "")
+                position["total_price"] = float(total_str)
             except (ValueError, TypeError):
-                logger.warning(f"Cannot convert total_price to float: {position['total_price']}")
-                position['total_price'] = None
-        
+                position["total_price"] = None
+
         return position
-    
+
     @staticmethod
     def _has_required_fields(position: Dict[str, Any]) -> bool:
-        """Check if position has all required fields"""
-        
-        # Minimum required: description and quantity
-        has_description = (
-            'description' in position and 
-            position['description'] and
-            len(str(position['description'])) > 0
-        )
-        
+        has_description = bool(position.get("description"))
         has_quantity = (
-            'quantity' in position and
-            position['quantity'] is not None and
-            float(position['quantity']) > 0
+            "quantity" in position
+            and position["quantity"] is not None
+            and float(position["quantity"]) > 0
         )
-        
         return has_description and has_quantity
-    
+
     @classmethod
     def normalize_list(
-        cls,
-        positions: List[Dict[str, Any]],
-        return_stats: bool = False
-    ) -> List[Dict[str, Any]] | Tuple[List[Dict[str, Any]], Dict[str, int]]:
-        """
-        Normalize a list of positions
-        
-        Args:
-            positions: List of raw position dicts
-            
-        Returns:
-            List of normalized positions (invalid ones filtered out)
-        """
-        normalized = []
+        cls, positions: Iterable[Dict[str, Any]], return_stats: bool = False
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, int]] | List[Dict[str, Any]]:
+        source = list(positions)
+        normalized: List[Dict[str, Any]] = []
         skipped = 0
-        
-        for idx, pos in enumerate(positions):
+
+        for idx, pos in enumerate(source):
             result = cls.normalize(pos)
             if result:
-                # Add index if position_number missing
-                if 'position_number' not in result:
-                    result['position_number'] = str(idx + 1)
+                if "position_number" not in result:
+                    result["position_number"] = str(idx + 1)
                 normalized.append(result)
             else:
                 skipped += 1
-                logger.debug(f"Skipped position {idx + 1}: {str(pos)[:100]}")
-
-        logger.info(
-            f"Normalized {len(normalized)} positions "
-            f"({skipped} invalid/skipped)"
-        )
-
-        if skipped > 0:
-            logger.warning(
-                f"⚠️ {skipped} positions were skipped during normalization. "
-                f"Check logs for details."
-            )
 
         stats = {
-            "raw_total": len(positions),
+            "raw_total": len(source),
             "normalized_total": len(normalized),
             "skipped_total": skipped,
         }
-
-        cls.last_stats = stats
 
         if return_stats:
             return normalized, stats
@@ -295,85 +277,331 @@ class PositionNormalizer:
         return normalized
 
 
-# ==============================================================================
-# HELPER FUNCTIONS
-# ==============================================================================
+# ---------------------------------------------------------------------------
+# Task H normaliser
+# ---------------------------------------------------------------------------
 
-def normalize_position(position: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """
-    Convenience function to normalize a single position
-    
-    Usage:
-        normalized = normalize_position(raw_position)
-    """
-    return PositionNormalizer.normalize(position)
+
+@dataclass
+class NormalisationResult:
+    positions: List[Dict[str, Any]]
+    stats: Dict[str, Any]
+
+
+class OTSKPEstimateNormalizer:
+    """Normalizer implementing Task H requirements."""
+
+    alias_lookup: Dict[str, str] = {}
+
+    def __init__(self, rows: Iterable[Dict[str, Any]]):
+        self.rows = list(rows or [])
+        if not self.alias_lookup:
+            self.alias_lookup = self._build_alias_lookup()
+
+        self.header_map: Dict[str, str] = {}
+        self.unknown_headers: set[str] = set()
+        self.code_headers: set[str] = set()
+        self.code_samples: List[str] = []
+        self.section_rows = 0
+        self.resource_rows = 0
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def normalize(self) -> NormalisationResult:
+        normalized_positions: List[Dict[str, Any]] = []
+
+        for raw_row in self.rows:
+            if not isinstance(raw_row, dict):
+                continue
+
+            normalized = self._normalize_row(raw_row)
+            if normalized is None:
+                continue
+
+            if normalized.pop("section_row", False):
+                self.section_rows += 1
+                continue
+
+            if normalized.get("resource_row"):
+                self.resource_rows += 1
+
+            normalized_positions.append(normalized)
+
+        stats = self._build_stats(normalized_positions)
+
+        return NormalisationResult(positions=normalized_positions, stats=stats)
+
+    # ------------------------------------------------------------------
+    # Row handling
+    # ------------------------------------------------------------------
+
+    def _normalize_row(self, row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        header_lookup = row.get("_header_map") if isinstance(row.get("_header_map"), dict) else {}
+        sheet_name = row.get("_sheet_name") if isinstance(row.get("_sheet_name"), str) else None
+        row_values = row.get("_row_values") if isinstance(row.get("_row_values"), list) else []
+        first_value = row.get("_row_first_value")
+        source_ref = row.get("_source")
+
+        canonical_payload: Dict[str, Any] = {}
+
+        for key, value in row.items():
+            if key.startswith("_"):
+                continue
+
+            raw_header = header_lookup.get(key) or key
+            canonical_field = self._resolve_field(raw_header)
+
+            if canonical_field:
+                if canonical_field == "code":
+                    self.code_headers.add(str(raw_header))
+                if raw_header and raw_header not in self.header_map:
+                    self.header_map[str(raw_header)] = canonical_field
+            else:
+                if raw_header:
+                    self.unknown_headers.add(str(raw_header))
+                continue
+
+            cell_value = _coerce_to_text(value)
+            if not cell_value:
+                continue
+            canonical_payload.setdefault(canonical_field, cell_value)
+
+        if not canonical_payload:
+            return None
+
+        description = canonical_payload.get("description")
+        if description:
+            canonical_payload["description"] = self._normalise_description(description)
+
+        code = canonical_payload.get("code")
+        parsed_code = self._parse_code(code) if code else None
+        if parsed_code:
+            canonical_payload["code"] = parsed_code
+            if parsed_code not in self.code_samples and len(self.code_samples) < 12:
+                self.code_samples.append(parsed_code)
+        elif "code" in canonical_payload:
+            canonical_payload.pop("code", None)
+
+        for numeric_field in ("quantity", "unit_price", "total_price"):
+            if numeric_field in canonical_payload:
+                parsed_number = self._parse_number(canonical_payload[numeric_field])
+                if parsed_number is None:
+                    canonical_payload.pop(numeric_field, None)
+                else:
+                    canonical_payload[numeric_field] = parsed_number
+
+        if "unit" in canonical_payload:
+            canonical_payload["unit"] = canonical_payload["unit"].upper()
+
+        if source_ref:
+            canonical_payload["source_ref"] = source_ref
+        if sheet_name:
+            canonical_payload["sheet_name"] = sheet_name
+
+        description_text = canonical_payload.get("description", "")
+        if self._is_section_row(description_text, first_value, canonical_payload):
+            return {"section_row": True, "description": description_text}
+
+        if self._is_resource_row(description_text, row_values):
+            canonical_payload["resource_row"] = True
+
+        if not description_text:
+            return None
+
+        return canonical_payload
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _build_stats(self, positions: List[Dict[str, Any]]) -> Dict[str, Any]:
+        raw_total = len(self.rows)
+        normalized_total = len(positions)
+        skipped_total = raw_total - normalized_total
+
+        evidence = {
+            "headers": sorted({header for header in self.code_headers if header}),
+            "code_samples": self.code_samples[:10],
+        }
+
+        format_detected = (
+            "OTSKP"
+            if len(evidence["code_samples"]) >= 10 and evidence["headers"]
+            else "UNKNOWN"
+        )
+
+        stats = {
+            "raw_total": raw_total,
+            "normalized_total": normalized_total,
+            "skipped_total": skipped_total,
+            "format": format_detected,
+            "evidence": evidence,
+            "header_map": self.header_map,
+            "numbers_locale": "EU",
+            "positions": {
+                "total": normalized_total,
+                "sections": self.section_rows,
+                "resources": self.resource_rows,
+            },
+            "unknown_headers": sorted(self.unknown_headers),
+        }
+
+        logger.info("format=%s, evidence=%s", stats["format"], stats["evidence"])
+        logger.info("header_map=%s", stats["header_map"])
+        if self.unknown_headers:
+            for header in sorted(self.unknown_headers):
+                logger.warning('unknown_header="%s"', header)
+        logger.info("numbers_locale=%s", stats["numbers_locale"])
+        logger.info(
+            "positions: total=%s, sections=%s, resources=%s",
+            stats["positions"]["total"],
+            stats["positions"]["sections"],
+            stats["positions"]["resources"],
+        )
+
+        return stats
+
+    @classmethod
+    def _build_alias_lookup(cls) -> Dict[str, str]:
+        lookup: Dict[str, str] = {}
+        for canonical, aliases in HEADER_ALIASES.items():
+            lookup[_normalise_header_key(canonical)] = canonical
+            for alias in aliases:
+                lookup[_normalise_header_key(alias)] = canonical
+        return lookup
+
+    def _resolve_field(self, header: str) -> Optional[str]:
+        if not header:
+            return None
+        normalized = _normalise_header_key(str(header))
+        if not normalized:
+            return None
+        return self.alias_lookup.get(normalized)
+
+    @staticmethod
+    def _normalise_description(value: str) -> str:
+        text = re.sub(r"\s+", " ", value).strip()
+        return text
+
+    def _parse_code(self, value: Any) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            if float(value).is_integer():
+                digits = str(int(value))
+            else:
+                digits = str(value)
+        else:
+            digits = str(value)
+
+        digits = digits.replace(NBSP, " ")
+        digits = re.sub(r"\s+", "", digits.upper())
+        if CODE_PATTERN.match(digits):
+            return digits
+        return None
+
+    def _parse_number(self, value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+
+        text = str(value).strip()
+        if not text:
+            return None
+        text = text.replace(NBSP, " ")
+        if text in EMPTY_NUMERIC_TOKENS:
+            return None
+
+        cleaned = text.replace(" ", "")
+        cleaned = cleaned.replace(".", "")
+        cleaned = cleaned.replace(",", ".")
+
+        try:
+            return float(cleaned)
+        except ValueError:
+            return None
+
+    def _is_section_row(
+        self,
+        description: str,
+        first_value: Any,
+        payload: Dict[str, Any],
+    ) -> bool:
+        if payload.get("quantity") is not None:
+            return False
+        if payload.get("unit_price") is not None:
+            return False
+        if payload.get("total_price") is not None:
+            return False
+
+        candidate = _coerce_to_text(first_value) or description
+        candidate = candidate.strip()
+        if not candidate:
+            return False
+        ascii_candidate = _strip_diacritics(candidate)
+        upper_candidate = ascii_candidate.upper()
+        if SECTION_PREFIX.match(upper_candidate):
+            return True
+        lower_candidate = upper_candidate.lower()
+        for keyword in ("rekap", "souhrn", "součet", "soucet", "celkem"):
+            if keyword in lower_candidate:
+                return True
+        return False
+
+    def _is_resource_row(self, description: str, row_values: List[Any]) -> bool:
+        combined = " ".join(str(value).lower() for value in row_values if value)
+        text = f"{description} {combined}".lower()
+        return any(keyword in text for keyword in RESOURCE_KEYWORDS)
+
+
+# ---------------------------------------------------------------------------
+# Public convenience functions
+# ---------------------------------------------------------------------------
 
 
 def normalize_positions(
-    positions: List[Dict[str, Any]],
-    return_stats: bool = False
-) -> List[Dict[str, Any]] | Tuple[List[Dict[str, Any]], Dict[str, int]]:
-    """
-    Convenience function to normalize a list of positions
-    
-    Usage:
-        normalized = normalize_positions(raw_positions)
-    """
-    return PositionNormalizer.normalize_list(positions, return_stats=return_stats)
+    positions: Iterable[Dict[str, Any]],
+    return_stats: bool = False,
+) -> List[Dict[str, Any]] | Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Normalize raw position rows into canonical schema."""
+
+    if settings.PARSER_H_ENABLE:
+        normalizer = OTSKPEstimateNormalizer(positions)
+        result = normalizer.normalize()
+        if return_stats:
+            return result.positions, result.stats
+        return result.positions
+
+    legacy_positions, legacy_stats = _LegacyPositionNormalizer.normalize_list(
+        positions, return_stats=True
+    )
+    if return_stats:
+        return legacy_positions, legacy_stats
+    return legacy_positions
 
 
-# ==============================================================================
-# USAGE EXAMPLES
-# ==============================================================================
+def normalize_position(position: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Normalise a single position (legacy compatibility)."""
+
+    if settings.PARSER_H_ENABLE:
+        normalizer = OTSKPEstimateNormalizer([position])
+        result = normalizer.normalize()
+        return result.positions[0] if result.positions else None
+
+    return _LegacyPositionNormalizer.normalize(position)
+
 
 if __name__ == "__main__":
-    # Example 1: Excel format
-    excel_position = {
-        "c": "1.1",
+    sample = {
+        "kód položky": "22694.R",
         "popis": "Beton C25/30",
-        "mnozstvi": "12,5",
-        "mj": "m³",
-        "cena": "2450"
+        "mj": "m3",
+        "množství": "834,506",
+        "cena celkem": "1 234 567,89",
     }
-    
-    normalized = normalize_position(excel_position)
-    print("Excel format normalized:", normalized)
-    # Output: {
-    #   'position_number': '1.1',
-    #   'description': 'Beton C25/30',
-    #   'quantity': 12.5,
-    #   'unit': 'm³',
-    #   'unit_price': 2450.0
-    # }
-    
-    # Example 2: KROS XML format
-    kros_position = {
-        "Cislo": "2",
-        "Kod": "121-01-001",
-        "Popis": "Základové pasy",
-        "Mnozstvi": "8.75",
-        "MJ": "m³"
-    }
-    
-    normalized = normalize_position(kros_position)
-    print("KROS format normalized:", normalized)
-    
-    # Example 3: PDF table format
-    pdf_position = {
-        "№": "3",
-        "Opis": "Zdivo z tvárnic",
-        "MJ": "m²",
-        "Množství": "145"
-    }
-    
-    normalized = normalize_position(pdf_position)
-    print("PDF format normalized:", normalized)
-    
-    # Example 4: Invalid position (missing required fields)
-    invalid_position = {
-        "number": "4",
-        "price": "1000"
-    }
-    
-    normalized = normalize_position(invalid_position)
-    print("Invalid position:", normalized)  # None
+    rows, stats = normalize_positions([sample], return_stats=True)
+    print(rows)
+    print(stats)

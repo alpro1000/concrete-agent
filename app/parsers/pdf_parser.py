@@ -77,6 +77,18 @@ class PDFParser:
                 f"from {total_pages} pages"
             )
 
+            diagnostics = {
+                "raw_total": normalization_stats.get("raw_total", len(positions)),
+                "normalized_total": normalization_stats.get("normalized_total", len(normalized_positions)),
+                "skipped_total": normalization_stats.get("skipped_total", 0),
+                "pages_processed": total_pages,
+                "normalization": normalization_stats,
+            }
+
+            for key in ("format", "evidence", "header_map", "numbers_locale", "positions", "unknown_headers"):
+                if key in normalization_stats:
+                    diagnostics[key] = normalization_stats[key]
+
             return {
                 "document_info": {
                     "filename": file_path.name,
@@ -85,12 +97,7 @@ class PDFParser:
                     "tables_found": len(positions)
                 },
                 "positions": normalized_positions,
-                "diagnostics": {
-                    "raw_total": normalization_stats["raw_total"],
-                    "normalized_total": normalization_stats["normalized_total"],
-                    "skipped_total": normalization_stats["skipped_total"],
-                    "pages_processed": total_pages
-                }
+                "diagnostics": diagnostics
             }
 
         except Exception as e:
@@ -140,6 +147,7 @@ class PDFParser:
         
         # Clean and normalize headers
         clean_headers = []
+        header_map: Dict[str, str] = {}
         for h in headers:
             if h:
                 # Clean header: lowercase, remove special chars
@@ -147,8 +155,10 @@ class PDFParser:
                 clean = re.sub(r'[^\w\s]', '', clean)
                 clean = re.sub(r'\s+', '_', clean)
                 clean_headers.append(clean)
+                header_map[clean] = str(h).strip()
             else:
                 clean_headers.append(f"col_{len(clean_headers)}")
+                header_map[clean_headers[-1]] = clean_headers[-1]
         
         logger.debug(f"Table headers: {clean_headers}")
         
@@ -159,22 +169,33 @@ class PDFParser:
             if not row or all(not cell for cell in row):
                 # Skip empty rows
                 continue
-            
+
             # Create position dict from row
             position = {}
+            row_values: List[str] = []
             for col_idx, cell in enumerate(row):
                 if col_idx < len(clean_headers):
                     header = clean_headers[col_idx]
                     if cell and str(cell).strip():
                         position[header] = str(cell).strip()
-            
+                        row_values.append(str(cell).strip())
+                    else:
+                        row_values.append("")
+                else:
+                    row_values.append(str(cell).strip() if cell else "")
+
             # Skip rows that look like sub-headers or separators
             if self._is_separator_row(position):
                 continue
-            
+
             # Add metadata
             position['_source'] = f"page_{page_num}_table_{table_idx}_row_{row_idx}"
-            
+            position['_row_values'] = row_values
+            if row_values:
+                position['_row_first_value'] = row_values[0]
+            if header_map:
+                position['_header_map'] = dict(header_map)
+
             if position:
                 positions.append(position)
         

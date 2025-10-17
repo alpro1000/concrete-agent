@@ -197,7 +197,7 @@ class PositionValidator:
     def _load_section_index(self) -> Dict[str, Dict[str, str]]:
         """Load section metadata from the knowledge base."""
 
-        structure_path = settings.KB_DIR / "B1_kros_urs_codes" / "structure.json"
+        structure_path = settings.KB_DIR / "B1_otkskp_codes" / "structure.json"
         if not structure_path.exists():
             logger.warning("Section structure file missing at %s", structure_path)
             return {}

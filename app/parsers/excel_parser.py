@@ -95,6 +95,19 @@ class ExcelParser:
                 for summary in sheet_summaries
             ]
 
+            diagnostics = {
+                "raw_total": normalization_stats.get("raw_total", len(all_positions)),
+                "normalized_total": normalization_stats.get("normalized_total", len(normalized_positions)),
+                "skipped_total": normalization_stats.get("skipped_total", 0),
+                "sheet_summaries": sheet_summaries,
+                "header_detection": header_detection,
+                "normalization": normalization_stats,
+            }
+
+            for key in ("format", "evidence", "header_map", "numbers_locale", "positions", "unknown_headers"):
+                if key in normalization_stats:
+                    diagnostics[key] = normalization_stats[key]
+
             return {
                 "document_info": {
                     "filename": file_path.name,
@@ -103,13 +116,7 @@ class ExcelParser:
                     "total_sheets": len(workbook.sheetnames)
                 },
                 "positions": normalized_positions,
-                "diagnostics": {
-                    "raw_total": normalization_stats["raw_total"],
-                    "normalized_total": normalization_stats["normalized_total"],
-                    "skipped_total": normalization_stats["skipped_total"],
-                    "sheet_summaries": sheet_summaries,
-                    "header_detection": header_detection,
-                }
+                "diagnostics": diagnostics,
             }
 
         except Exception as e:
@@ -165,6 +172,7 @@ class ExcelParser:
         active_header_info: List[Dict[str, Any]] = []
         active_header_keys: List[str] = []
         field_to_column: Dict[str, int] = {}
+        active_header_raw_map: Dict[str, str] = {}
 
         first_header: Optional[Dict[str, Any]] = None
         best_candidate: Optional[Dict[str, Any]] = None
@@ -229,6 +237,7 @@ class ExcelParser:
                 active_header_info = []
                 active_header_keys = []
                 field_to_column = {}
+                active_header_raw_map = {}
 
                 for col_idx, raw_header in enumerate(raw_values):
                     normalized_header = normalized_values[col_idx]
@@ -249,6 +258,8 @@ class ExcelParser:
 
                     if canonical_field and canonical_field not in field_to_column:
                         field_to_column[canonical_field] = col_idx
+                    if raw_header:
+                        active_header_raw_map[header_key] = raw_header
 
                 header_block = {
                     "row": row_idx,
@@ -357,6 +368,12 @@ class ExcelParser:
                 )
 
             position['_source'] = f"sheet_{sheet_name}_row_{row_idx}"
+            position['_sheet_name'] = sheet_name
+            position['_row_values'] = list(raw_values)
+            if raw_values:
+                position['_row_first_value'] = raw_values[0]
+            if active_header_raw_map:
+                position['_header_map'] = dict(active_header_raw_map)
 
             positions.append(position)
             last_data_row = row_idx
