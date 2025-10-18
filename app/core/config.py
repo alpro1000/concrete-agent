@@ -91,6 +91,10 @@ class Settings(BaseSettings):
     # ==========================================
     # AUDIT CONFIGURATION
     # ==========================================
+    ENRICHMENT_ENABLED: bool = Field(
+        default=True,
+        description="Enable lightweight enrichment layer",
+    )
     AUDIT_GREEN_THRESHOLD: float = Field(default=0.95, description="GREEN threshold")
     AUDIT_AMBER_THRESHOLD: float = Field(default=0.75, description="AMBER threshold")
     ENRICH_SCORE_EXACT: float = Field(default=0.9, description="Exact enrichment match threshold")

@@ -58,7 +58,7 @@ class WorkflowA:
         self,
         project_id: str,
         generate_summary: bool = False,
-        enable_enrichment: bool = False,
+        enable_enrichment: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """Run upload handling and parsing for Workflow A."""
         logger.info(
@@ -84,6 +84,9 @@ class WorkflowA:
             "created" if cache_created else "loaded",
             cache_path,
         )
+
+        if enable_enrichment is None:
+            enable_enrichment = settings.ENRICHMENT_ENABLED
 
         cache_data["enable_enrichment"] = enable_enrichment
 
