@@ -15,13 +15,15 @@ def test_project_store_counters_follow_audit(tmp_path):
 
     project_id = "counter-sync-test"
     audit_payload = {
-        "positions": [],
-        "total_positions": 10,
-        "enrichment_stats": {"matched": 0, "partial": 3},
-        "validation_stats": {"warning": 2, "failed": 1},
-        "schema_validation": {"validated_total": 10},
-        "positions_preview": [],
-        "audit": {"green": 0, "amber": 47, "red": 6},
+        "totals": {"g": 0, "a": 47, "r": 6, "total": 10},
+        "items": [],
+        "preview": [],
+        "meta": {
+            "enrichment": {"matched": 0, "partial": 3},
+            "validation": {"warning": 2, "failed": 1},
+            "schema_validation": {"validated_total": 10},
+            "audit": {"green": 0, "amber": 47, "red": 6},
+        },
     }
 
     uploads = {"files_by_type": {}, "missing_files": []}
@@ -47,6 +49,10 @@ def test_project_store_counters_follow_audit(tmp_path):
         "red": 6,
     }
     assert project["diagnostics"]["audit"] == {"green": 0, "amber": 47, "red": 6}
-    assert project["audit_results"]["audit"] == {"green": 0, "amber": 47, "red": 6}
+    assert project["audit_results"]["meta"]["audit"] == {
+        "green": 0,
+        "amber": 47,
+        "red": 6,
+    }
 
     project_store.clear()

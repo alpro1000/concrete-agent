@@ -1,3 +1,8 @@
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import pytest
 
 from app.utils.position_normalizer import normalize_positions
@@ -77,3 +82,22 @@ def test_otskp_normalizer_aliases_numbers_and_flags():
     resource_row = normalized[-1]
     assert resource_row["resource_row"] is True
     assert pytest.approx(resource_row["quantity"], rel=1e-6) == 7.5
+
+
+def test_number_normalization_handles_nbsp_and_thin_space():
+    raw_positions = [
+        {
+            "popis": "Beton",
+            "mj": "m3",
+            "mnozstvi": "1\u00a0234,5",
+            "cena_celkem": "7\u202f684,00",
+            "kod": "123456",
+        }
+    ]
+
+    normalized, stats = normalize_positions(raw_positions, return_stats=True)
+
+    assert len(normalized) == 1
+    assert pytest.approx(normalized[0]["quantity"], rel=1e-6) == 1234.5
+    assert pytest.approx(normalized[0]["total_price"], rel=1e-6) == 7684.0
+    assert stats["numbers_locale"] == "EU"

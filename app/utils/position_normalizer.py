@@ -73,6 +73,10 @@ RESOURCE_KEYWORDS = (
 )
 EMPTY_NUMERIC_TOKENS = {"", "-", "–", "—"}
 NBSP = "\xa0"
+NARROW_NBSP = "\u202f"
+THIN_SPACE = "\u2009"
+THOUSAND_SEPARATORS = {" ", NBSP, NARROW_NBSP, THIN_SPACE}
+NON_NUMERIC_PATTERN = re.compile(r"[^0-9,\.\-+]")
 
 
 def _strip_diacritics(value: str) -> str:
@@ -386,11 +390,19 @@ class OTSKPEstimateNormalizer:
 
         for numeric_field in ("quantity", "unit_price", "total_price"):
             if numeric_field in canonical_payload:
-                parsed_number = self._parse_number(canonical_payload[numeric_field])
+                parsed_number, was_normalised = self._parse_number(
+                    canonical_payload[numeric_field], field=numeric_field
+                )
                 if parsed_number is None:
                     canonical_payload.pop(numeric_field, None)
                 else:
                     canonical_payload[numeric_field] = parsed_number
+                    if was_normalised:
+                        normalised_fields = canonical_payload.setdefault(
+                            "_normalised_fields", []
+                        )
+                        if numeric_field not in normalised_fields:
+                            normalised_fields.append(numeric_field)
 
         if "unit" in canonical_payload:
             canonical_payload["unit"] = canonical_payload["unit"].upper()
@@ -502,27 +514,87 @@ class OTSKPEstimateNormalizer:
             return digits
         return None
 
-    def _parse_number(self, value: Any) -> Optional[float]:
-        if value is None:
+    @staticmethod
+    def _detect_decimal_separator(text: str) -> Optional[str]:
+        last_comma = text.rfind(",")
+        last_dot = text.rfind(".")
+        if last_comma == -1 and last_dot == -1:
             return None
+        if last_comma > last_dot:
+            return ","
+        if last_dot > last_comma:
+            return "."
+        # Both separators occur in the same position (unlikely) → prefer comma for EU inputs
+        return "," if last_comma != -1 else "."
+
+    def _parse_number(self, value: Any, field: Optional[str] = None) -> Tuple[Optional[float], bool]:
+        """Parse numeric fields handling EU thousands separators."""
+
+        if value is None:
+            return None, False
         if isinstance(value, (int, float)):
-            return float(value)
+            return float(value), False
 
         text = str(value).strip()
         if not text:
-            return None
-        text = text.replace(NBSP, " ")
-        if text in EMPTY_NUMERIC_TOKENS:
-            return None
+            return None, False
 
-        cleaned = text.replace(" ", "")
-        cleaned = cleaned.replace(".", "")
-        cleaned = cleaned.replace(",", ".")
+        normalized = unicodedata.normalize("NFKC", text)
+        for separator in (NBSP, NARROW_NBSP, THIN_SPACE):
+            normalized = normalized.replace(separator, " ")
+
+        if normalized in EMPTY_NUMERIC_TOKENS:
+            return None, False
+
+        decimal_sep = self._detect_decimal_separator(normalized)
+
+        # Remove thousands separators and unexpected characters while tracking sanitisation
+        sanitised = normalized.replace(" ", "")
+        sanitised = NON_NUMERIC_PATTERN.sub("", sanitised)
+        had_non_numeric = sanitised != normalized.replace(" ", "")
+
+        if decimal_sep == ",":
+            sanitised = sanitised.replace(".", "")
+            sanitised = sanitised.replace(",", ".")
+        elif decimal_sep == ".":
+            sanitised = sanitised.replace(",", "")
+        else:
+            sanitised = sanitised.replace(",", "")
+
+        for separator in THOUSAND_SEPARATORS:
+            sanitised = sanitised.replace(separator, "")
+
+        sanitised = sanitised.strip()
+        if sanitised in {"", ".", "-", "+", "-.", "+."}:
+            return None, had_non_numeric
 
         try:
-            return float(cleaned)
+            parsed = float(sanitised)
         except ValueError:
-            return None
+            logger.warning(
+                "numeric_autofix_failed field=%s raw=%r sanitised=%r",
+                field or "unknown",
+                text,
+                sanitised,
+            )
+            return None, True
+
+        if had_non_numeric:
+            logger.warning(
+                "numeric_autofix field=%s raw=%r normalised=%s",
+                field or "unknown",
+                text,
+                sanitised,
+            )
+        elif sanitised != text:
+            logger.debug(
+                "numeric_normalised field=%s raw=%r normalised=%s",
+                field or "unknown",
+                text,
+                sanitised,
+            )
+
+        return parsed, sanitised != text
 
     def _is_section_row(
         self,

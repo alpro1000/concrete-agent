@@ -50,12 +50,13 @@ class AuditExcelExporter:
 
         self.workbook.save(output_path)
 
+        totals = audit_results.get("totals", {})
         logger.info(
             "excel_export: positions=%d totals={g:%d,a:%d,r:%d} source_contract=%s",
-            audit_results.get("total_positions", 0),
-            audit_results.get("green", 0),
-            audit_results.get("amber", 0),
-            audit_results.get("red", 0),
+            totals.get("total", 0),
+            totals.get("g", 0),
+            totals.get("a", 0),
+            totals.get("r", 0),
             "normalized" if is_new_contract else "legacy-migrated",
         )
 
@@ -66,7 +67,7 @@ class AuditExcelExporter:
     # ------------------------------------------------------------------
 
     def _create_summary_sheet(self, project: Dict[str, Any], audit_results: Dict[str, Any]) -> None:
-        sheet = self.workbook.create_sheet("Summary", 0)
+        sheet = self.workbook.create_sheet("Audit_Triage", 0)
         sheet["A1"] = "AUDIT SUMMARY"
         sheet["A1"].font = Font(bold=True, color="FFFFFF", size=15)
         sheet["A1"].fill = self.SUMMARY_FILL
@@ -94,14 +95,15 @@ class AuditExcelExporter:
         sheet.merge_cells(f"A{row}:D{row}")
         row += 1
 
+        totals_block = audit_results.get("totals", {})
         totals = [
-            ("Total positions", audit_results.get("total_positions", 0), None),
-            ("GREEN", audit_results.get("green", 0), self.CLASS_COLORS["GREEN"]),
-            ("AMBER", audit_results.get("amber", 0), self.CLASS_COLORS["AMBER"]),
-            ("RED", audit_results.get("red", 0), self.CLASS_COLORS["RED"]),
+            ("Total positions", totals_block.get("total", 0), None),
+            ("GREEN", totals_block.get("g", 0), self.CLASS_COLORS["GREEN"]),
+            ("AMBER", totals_block.get("a", 0), self.CLASS_COLORS["AMBER"]),
+            ("RED", totals_block.get("r", 0), self.CLASS_COLORS["RED"]),
         ]
 
-        total_positions = audit_results.get("total_positions", 0) or 1
+        total_positions = totals_block.get("total", 0) or 1
         for label, value, fill in totals:
             sheet[f"A{row}"] = label
             sheet[f"A{row}"].font = Font(bold=True)
@@ -118,14 +120,16 @@ class AuditExcelExporter:
     def _create_positions_sheet(self, audit_results: Dict[str, Any]) -> None:
         sheet = self.workbook.create_sheet("Positions")
         headers = [
-            "Position ID",
             "Code",
             "Description",
             "Unit",
             "Quantity",
+            "Status",
+            "Issues",
+            "Position ID",
             "Section",
-            "Classification",
-            "Notes",
+            "Sheet",
+            "Source",
         ]
 
         for column, title in enumerate(headers, start=1):
@@ -135,24 +139,32 @@ class AuditExcelExporter:
             cell.fill = self.HEADER_FILL
             cell.alignment = Alignment(horizontal="center")
 
-        for row_index, position in enumerate(audit_results.get("positions", []), start=2):
-            sheet.cell(row=row_index, column=1).value = position.get("position_id", "")
-            sheet.cell(row=row_index, column=2).value = position.get("code", "")
-            sheet.cell(row=row_index, column=3).value = position.get("description", "")
-            sheet.cell(row=row_index, column=4).value = position.get("unit", "")
-            sheet.cell(row=row_index, column=5).value = position.get("quantity", 0)
-            sheet.cell(row=row_index, column=6).value = position.get("section", "")
+        for row_index, position in enumerate(audit_results.get("items", []), start=2):
+            provenance = position.get("provenance") or {}
+            source = provenance.get("source")
+            sheet.cell(row=row_index, column=1).value = position.get("code") or ""
+            sheet.cell(row=row_index, column=2).value = position.get("description", "")
+            sheet.cell(row=row_index, column=3).value = position.get("unit", "")
+            sheet.cell(row=row_index, column=4).value = position.get("quantity")
 
-            classification = (position.get("classification") or "").upper()
-            class_cell = sheet.cell(row=row_index, column=7)
-            class_cell.value = classification
-            class_cell.fill = self.CLASS_COLORS.get(classification, PatternFill())
+            status = (position.get("status") or "").upper()
+            status_cell = sheet.cell(row=row_index, column=5)
+            status_cell.value = status
+            status_cell.fill = self.CLASS_COLORS.get(status, PatternFill())
 
-            notes_cell = sheet.cell(row=row_index, column=8)
-            notes_cell.value = position.get("notes", "")
-            notes_cell.alignment = Alignment(wrap_text=True, vertical="top")
+            issues = position.get("issues") or []
+            issues_cell = sheet.cell(row=row_index, column=6)
+            issues_cell.value = "\n".join(issues)
+            issues_cell.alignment = Alignment(wrap_text=True, vertical="top")
 
-        column_widths = [18, 14, 50, 10, 12, 18, 14, 40]
+            sheet.cell(row=row_index, column=7).value = provenance.get("position_id", "")
+            sheet.cell(row=row_index, column=8).value = provenance.get("section", "")
+            sheet.cell(row=row_index, column=9).value = provenance.get("sheet", "")
+            sheet.cell(row=row_index, column=10).value = (
+                ", ".join(f"{k}={v}" for k, v in source.items()) if isinstance(source, dict) else source or ""
+            )
+
+        column_widths = [14, 50, 10, 12, 12, 40, 18, 18, 20, 28]
         for index, width in enumerate(column_widths, start=1):
             sheet.column_dimensions[get_column_letter(index)].width = width
 

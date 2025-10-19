@@ -523,7 +523,7 @@ async def get_project_results(project_id: str):
         "amber_count": project.get("amber_count", 0),
         "red_count": project.get("red_count", 0),
         "audit_results": audit_payload,
-        "positions_preview": audit_payload.get("positions_preview", []),
+        "positions_preview": audit_payload.get("preview", []),
         "summary": project.get("summary", ""),
         "diagnostics": project.get("diagnostics", {}),
     }
@@ -647,7 +647,9 @@ async def export_to_excel(project_id: str):
     project = project_store[project_id]
     
     audit_results = project.get("audit_results") or {}
-    if not audit_results.get("audit"):
+    meta = audit_results.get("meta", {}) if isinstance(audit_results, dict) else {}
+    audit_block = meta.get("audit") if isinstance(meta, dict) else None
+    if not audit_block:
         raise HTTPException(
             status_code=409,
             detail={
