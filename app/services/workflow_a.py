@@ -20,6 +20,7 @@ from app.services.project_cache import (
 from app.services.specifications_validator import SpecificationsValidator
 from app.validators import PositionValidator
 from app.state.project_store import project_store
+from app.utils.audit_contracts import build_audit_contract
 
 logger = logging.getLogger(__name__)
 
@@ -171,17 +172,20 @@ class WorkflowA:
             schema_result.stats,
         )
 
-        positions_preview = audit_payload.get("positions_preview", [])
+        totals = audit_payload.get("totals", {})
+        meta = audit_payload.get("meta", {})
+        audit_meta = meta.get("audit", {})
+        preview = audit_payload.get("preview", [])
 
-        cache_data["positions"] = audit_payload.get("positions", [])
-        cache_data["positions_preview"] = positions_preview
-        cache_data["enrichment"] = audit_payload.get("enrichment_stats", {})
-        cache_data["validation"] = audit_payload.get("validation_stats", {})
-        cache_data["audit"] = audit_payload.get("audit", audit_stats)
+        cache_data["positions"] = audit_payload.get("items", [])
+        cache_data["positions_preview"] = preview
+        cache_data["enrichment"] = meta.get("enrichment", {})
+        cache_data["validation"] = meta.get("validation", {})
+        cache_data["audit"] = audit_meta
         cache_data["audit_results"] = audit_payload
-        cache_data["green_count"] = audit_payload["audit"]["green"]
-        cache_data["amber_count"] = audit_payload["audit"]["amber"]
-        cache_data["red_count"] = audit_payload["audit"]["red"]
+        cache_data["green_count"] = audit_meta.get("green", totals.get("g", 0))
+        cache_data["amber_count"] = audit_meta.get("amber", totals.get("a", 0))
+        cache_data["red_count"] = audit_meta.get("red", totals.get("r", 0))
         cache_data["drawing_specs"] = drawing_summary
         cache_data["status"] = "AUDITED"
         cache_data["progress"] = 90
@@ -194,10 +198,10 @@ class WorkflowA:
 
         logger.info(
             "audit_results normalized: total=%d g=%d a=%d r=%d",
-            audit_payload["total_positions"],
-            audit_payload["green"],
-            audit_payload["amber"],
-            audit_payload["red"],
+            totals.get("total", 0),
+            totals.get("g", 0),
+            totals.get("a", 0),
+            totals.get("r", 0),
         )
 
         save_project_cache(project_id, cache_data)
@@ -227,13 +231,13 @@ class WorkflowA:
             "status": "AUDITED",
             "cache_path": str(cache_path),
             "documents_processed": diagnostics["documents_processed"],
-            "positions_total": audit_payload.get("total_positions", len(audited_positions)),
+            "positions_total": totals.get("total", len(audited_positions)),
             "parsing": diagnostics,
             "files": uploads["files_by_type"],
             "missing_files": uploads["missing_files"],
-            "enrichment": audit_payload.get("enrichment_stats", enrichment_stats),
-            "validation": audit_payload.get("validation_stats", validation_stats),
-            "audit": audit_payload.get("audit", audit_stats),
+            "enrichment": meta.get("enrichment", enrichment_stats),
+            "validation": meta.get("validation", validation_stats),
+            "audit": audit_meta or audit_stats,
             "audit_results": audit_payload,
             "drawing_specs": drawing_summary["diagnostics"],
             "progress": 90,
@@ -258,62 +262,16 @@ class WorkflowA:
                 continue
             non_preview_positions.append(pos)
 
-        normalized_positions: List[Dict[str, Any]] = []
-        for raw in non_preview_positions:
-            entry = dict(raw)
-            entry["position_id"] = (
-                raw.get("position_id")
-                or raw.get("id")
-                or raw.get("position_number")
-                or raw.get("code")
-                or "unknown"
-            )
-            entry["code"] = raw.get("code", "")
-            entry["description"] = raw.get("description", "")
-            entry["unit"] = raw.get("unit", "")
-            entry["quantity"] = raw.get("quantity", 0)
-            entry["section"] = raw.get("section", "")
-            classification = _classify_position(raw)
-            entry["classification"] = classification
-            entry["notes"] = (
-                raw.get("notes")
-                or raw.get("validation_message")
-                or raw.get("validation_notes")
-                or ""
-            )
-            normalized_positions.append(entry)
-
-        total_positions = len(normalized_positions)
-        green_total = sum(
-            1 for item in normalized_positions if item.get("classification") == "GREEN"
-        )
-        amber_total = sum(
-            1 for item in normalized_positions if item.get("classification") == "AMBER"
-        )
-        red_total = sum(
-            1 for item in normalized_positions if item.get("classification") == "RED"
+        enriched_payload = build_audit_contract(
+            non_preview_positions,
+            enrichment_stats=enrichment_stats,
+            validation_stats=validation_stats,
+            audit_stats=audit_stats,
+            schema_stats=schema_stats,
+            classify=_classify_position,
         )
 
-        audit_summary = {
-            "green": audit_stats.get("green", green_total),
-            "amber": audit_stats.get("amber", amber_total),
-            "red": audit_stats.get("red", red_total),
-        }
-
-        payload = {
-            "total_positions": total_positions,
-            "green": green_total,
-            "amber": amber_total,
-            "red": red_total,
-            "positions": normalized_positions,
-            "positions_preview": normalized_positions[:100],
-            "enrichment_stats": dict(enrichment_stats or {}),
-            "validation_stats": dict(validation_stats or {}),
-            "schema_validation": dict(schema_stats or {}),
-            "audit": audit_summary,
-        }
-
-        return payload
+        return enriched_payload
 
     @staticmethod
     def _load_project_metadata(project_id: str) -> Dict[str, Any]:
@@ -624,17 +582,19 @@ class WorkflowA:
         now_iso = datetime.now().isoformat()
         project_meta = project_store.setdefault(project_id, {})
 
-        positions = audit_payload.get("positions", [])
-        enrichment_stats = audit_payload.get("enrichment_stats", {})
-        validation_stats = audit_payload.get("validation_stats", {})
-        schema_stats = audit_payload.get("schema_validation", {})
-        audit_stats = audit_payload.get("audit") or {
-            "green": audit_payload.get("green", 0),
-            "amber": audit_payload.get("amber", 0),
-            "red": audit_payload.get("red", 0),
+        items = audit_payload.get("items", [])
+        totals = audit_payload.get("totals", {})
+        meta = audit_payload.get("meta", {})
+        enrichment_stats = meta.get("enrichment", {})
+        validation_stats = meta.get("validation", {})
+        schema_stats = meta.get("schema_validation", {})
+        audit_stats = meta.get("audit") or {
+            "green": totals.get("g", 0),
+            "amber": totals.get("a", 0),
+            "red": totals.get("r", 0),
         }
-        positions_preview = audit_payload.get("positions_preview") or positions[:100]
-        total_positions = audit_payload.get("total_positions", len(positions))
+        positions_preview = audit_payload.get("preview") or items[:100]
+        total_positions = totals.get("total", len(items))
 
         project_meta.update(
             {
@@ -648,9 +608,9 @@ class WorkflowA:
                 "missing_files": uploads.get("missing_files", []),
                 "positions_total": total_positions,
                 "positions_processed": total_positions,
-                "green_count": audit_stats.get("green", 0),
-                "amber_count": audit_stats.get("amber", 0),
-                "red_count": audit_stats.get("red", 0),
+                "green_count": audit_stats.get("green", totals.get("g", 0)),
+                "amber_count": audit_stats.get("amber", totals.get("a", 0)),
+                "red_count": audit_stats.get("red", totals.get("r", 0)),
                 "enable_enrichment": enable_enrichment,
                 "message": "Parsed + Enriched + Validated + Audited (Steps 1–6). Ready to export.",
             }
@@ -692,8 +652,8 @@ class WorkflowA:
 
         project_meta["summary"] = {
             "positions_total": total_positions,
-            "green": audit_stats.get("green", 0),
-            "amber": audit_stats.get("amber", 0),
-            "red": audit_stats.get("red", 0),
+            "green": audit_stats.get("green", totals.get("g", 0)),
+            "amber": audit_stats.get("amber", totals.get("a", 0)),
+            "red": audit_stats.get("red", totals.get("r", 0)),
         }
 

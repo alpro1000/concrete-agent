@@ -6,17 +6,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.services.position_enricher import PositionEnricher
 from app.services.workflow_a import _classify_position
+from app.utils.audit_contracts import build_audit_contract
 
 
 def _build_audit_payload(positions):
-    classifications = [_classify_position(position) for position in positions]
-    return {
-        "positions": positions,
-        "total_positions": len(positions),
-        "green": classifications.count("GREEN"),
-        "amber": classifications.count("AMBER"),
-        "red": classifications.count("RED"),
-    }
+    return build_audit_contract(
+        positions,
+        classify=_classify_position,
+    )
 
 
 def test_export_contract_not_empty():
@@ -27,11 +24,11 @@ def test_export_contract_not_empty():
     ]
 
     audit = _build_audit_payload(sample_positions)
-    assert audit["total_positions"] > 0
-    assert {"green", "amber", "red", "positions"} <= set(audit.keys())
-    assert audit["green"] == 1
-    assert audit["amber"] == 1
-    assert audit["red"] == 1
+    assert audit["totals"]["total"] > 0
+    assert {"totals", "items", "meta"} <= set(audit.keys())
+    assert audit["totals"]["g"] == 1
+    assert audit["totals"]["a"] == 1
+    assert audit["totals"]["r"] == 1
 
 
 def test_classification_logic_examples():
