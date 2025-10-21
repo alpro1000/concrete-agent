@@ -1,76 +1,66 @@
-import { useMutation } from '@tanstack/react-query';
-import { sendChatMessage, triggerAction } from '../utils/api';
+import { useCallback } from 'react';
 import { useAppStore } from '../store/appStore';
+import { sendChatMessage, triggerAction } from '../utils/api';
 
-export function useChat() {
+export const useChat = () => {
   const {
-    currentProject,
+    messages,
     addMessage,
-    setSelectedArtifact,
+    isLoading,
     setIsLoading,
+    selectedArtifact,
+    setSelectedArtifact,
   } = useAppStore();
 
-  const { mutateAsync: sendMessage } = useMutation({
-    mutationFn: async (text) => {
-      if (!currentProject) {
-        throw new Error('Nebyl vybrán projekt');
+  const sendMessage = useCallback(
+    async (projectId, message) => {
+      if (!projectId || !message || !message.trim() || isLoading) return;
+
+      addMessage({ type: 'user', text: message });
+      setIsLoading(true);
+
+      try {
+        const res = await sendChatMessage(projectId, message);
+        addMessage({
+          type: 'ai',
+          text: res.data?.response || 'Žádná odpověď',
+        });
+        if (res.data?.artifact) setSelectedArtifact(res.data.artifact);
+      } catch (error) {
+        addMessage({
+          type: 'ai',
+          text: 'Chyba: ' + (error.response?.data?.error || error.message),
+        });
+      } finally {
+        setIsLoading(false);
       }
-      const response = await sendChatMessage(currentProject.project_id ?? currentProject.id, text);
-      return response.data;
     },
-  });
+    [isLoading, addMessage, setIsLoading, setSelectedArtifact]
+  );
 
-  const { mutateAsync: runAction } = useMutation({
-    mutationFn: async (action) => {
-      if (!currentProject) {
-        throw new Error('Nebyl vybrán projekt');
+  const performAction = useCallback(
+    async (projectId, action) => {
+      if (!projectId || !action || isLoading) return;
+
+      setIsLoading(true);
+      try {
+        const res = await triggerAction(projectId, action);
+        addMessage({
+          type: 'ai',
+          text: res.data?.response || 'Akce dokončena',
+        });
+        if (res.data?.artifact) setSelectedArtifact(res.data.artifact);
+      } catch (error) {
+        addMessage({
+          type: 'ai',
+          text: 'Chyba akce: ' + error.message,
+        });
+      } finally {
+        setIsLoading(false);
       }
-      const response = await triggerAction(currentProject.project_id ?? currentProject.id, action);
-      return response.data;
     },
-  });
+    [isLoading, addMessage, setIsLoading, setSelectedArtifact]
+  );
 
-  const handleSendMessage = async (text) => {
-    addMessage({ id: Date.now(), type: 'user', text });
-    setIsLoading(true);
-    try {
-      const data = await sendMessage(text);
-      addMessage({ id: Date.now() + 1, type: 'ai', text: data.response });
-      if (data.artifact) {
-        setSelectedArtifact(data.artifact);
-      }
-    } catch (error) {
-      addMessage({
-        id: Date.now() + 1,
-        type: 'ai',
-        text: error.message || 'Došlo k chybě při odesílání zprávy',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleAction = async (action) => {
-    setIsLoading(true);
-    try {
-      const data = await runAction(action);
-      addMessage({ id: Date.now(), type: 'ai', text: data.response });
-      if (data.artifact) {
-        setSelectedArtifact(data.artifact);
-      }
-    } catch (error) {
-      addMessage({
-        id: Date.now() + 1,
-        type: 'ai',
-        text: error.message || 'Akci se nepodařilo provést',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return {
-    handleSendMessage,
-    handleAction,
-  };
-}
+  return { messages, sendMessage, performAction, isLoading, selectedArtifact };
+};

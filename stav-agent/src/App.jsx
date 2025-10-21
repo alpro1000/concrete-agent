@@ -1,5 +1,6 @@
 import React, { Suspense } from 'react';
 import ChatPage from './pages/ChatPage';
+import ErrorBoundary from './components/common/ErrorBoundary';
 import './styles/globals.css';
 
 function LoadingFallback() {
@@ -15,8 +16,10 @@ function LoadingFallback() {
 
 export default function App() {
   return (
-    <Suspense fallback={<LoadingFallback />}>
-      <ChatPage />
-    </Suspense>
+    <ErrorBoundary resetError={() => window.location.reload()}>
+      <Suspense fallback={<LoadingFallback />}>
+        <ChatPage />
+      </Suspense>
+    </ErrorBoundary>
   );
 }

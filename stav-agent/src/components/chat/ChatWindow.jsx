@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import MessageBubble from './MessageBubble';
+import LoadingSpinner from '../common/LoadingSpinner';
 
 export default function ChatWindow({ messages, isLoading }) {
   const messagesEndRef = useRef(null);
@@ -24,10 +25,8 @@ export default function ChatWindow({ messages, isLoading }) {
       ))}
 
       {isLoading && (
-        <div className="flex justify-start">
-          <div className="bg-gray-200 text-gray-900 p-3 rounded-lg rounded-bl-none animate-pulse">
-            ⏳ Analyzuji...
-          </div>
+        <div className="flex justify-center">
+          <LoadingSpinner size="sm" text="Analyzuji..." />
         </div>
       )}
 

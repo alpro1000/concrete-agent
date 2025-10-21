@@ -12,7 +12,7 @@ export default function ProjectsPage() {
       <div className="flex-1 overflow-y-auto p-8">
         <h2 className="text-xl font-semibold text-gray-800 mb-6">Tvoje projekty</h2>
         {projectsQuery.isLoading ? (
-          <LoadingSpinner label="Načítám projekty" />
+          <LoadingSpinner text="Načítám projekty" />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {projectsQuery.data?.map((project) => (
