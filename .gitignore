@@ -45,6 +45,10 @@ virtualenv/
 **/secrets.json
 **/credentials.json
 
+# Allow tracked environment files for the frontend app
+!stav-agent/.env
+!stav-agent/.env.production
+
 # ==========================================
 # DATA (Project Files)
 # ==========================================
