@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react';
-import ChatPage from './pages/ChatPage';
+import ProjectPage from './pages/ProjectPage';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import './styles/globals.css';
 
@@ -18,7 +18,7 @@ export default function App() {
   return (
     <ErrorBoundary resetError={() => window.location.reload()}>
       <Suspense fallback={<LoadingFallback />}>
-        <ChatPage />
+        <ProjectPage />
       </Suspense>
     </ErrorBoundary>
   );
