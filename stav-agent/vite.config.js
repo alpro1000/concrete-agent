@@ -3,8 +3,17 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  preview: {
+    host: '0.0.0.0',
+    port: 10000,
+    allowedHosts: [
+      'stav-agent.onrender.com',
+      '.onrender.com'
+    ]
+  },
   server: {
-    port: 3000,
+    host: '0.0.0.0',
+    port: 5173,
     proxy: {
       '/api': {
         target: 'https://concrete-agent.onrender.com',
