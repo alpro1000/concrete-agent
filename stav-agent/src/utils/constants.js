@@ -52,3 +52,15 @@ export const MESSAGE_TYPES = {
   AI: 'ai',
   SYSTEM: 'system',
 };
+
+export const THEMES = {
+  LIGHT: 'light',
+  DARK: 'dark',
+};
+
+export const PROJECT_STATUSES = {
+  UPLOADED: 'UPLOADED',
+  AUDITED: 'AUDITED',
+  EXPORTED: 'EXPORTED',
+  ERROR: 'ERROR',
+};

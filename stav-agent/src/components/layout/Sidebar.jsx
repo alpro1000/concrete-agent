@@ -78,6 +78,15 @@ export default function Sidebar({ isOpen, onToggle, projects, onSelectProject, c
           </div>
         </div>
       </div>
+
+      <div className="mt-6 border-t border-gray-700 pt-4">
+        <h3 className="text-xs font-bold text-gray-400 mb-2 uppercase">Последние действия</h3>
+        <div className="text-xs space-y-1 text-gray-400">
+          <div>📋 Audit позиции</div>
+          <div>🧱 Rozebrat SO 202</div>
+          <div>📊 Materiály</div>
+        </div>
+      </div>
     </aside>
   );
 }

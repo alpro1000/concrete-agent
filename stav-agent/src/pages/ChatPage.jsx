@@ -1,11 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAppStore } from '../store/appStore';
-import {
-  sendChatMessage,
-  triggerAction,
-  getProjects,
-  uploadFiles,
-} from '../utils/api';
+import { getProjects, uploadFiles } from '../utils/api';
+import { useChat } from '../hooks/useChat';
 
 import Header from '../components/layout/Header';
 import Sidebar from '../components/layout/Sidebar';
@@ -20,31 +16,16 @@ export default function ChatPage() {
   const fileInputRef = React.useRef(null);
 
   const {
-    messages,
     addMessage,
     currentProject,
     setCurrentProject,
-    selectedArtifact,
     setSelectedArtifact,
-    isLoading,
     setIsLoading,
     sidebarOpen,
     setSidebarOpen,
     clearMessages,
   } = useAppStore();
-
-  // Загрузить проекты при монтировании
-  useEffect(() => {
-    loadProjects();
-  }, []);
-
-  // Очистить при смене проекта
-  useEffect(() => {
-    if (currentProject) {
-      clearMessages();
-      setSelectedArtifact(null);
-    }
-  }, [currentProject, clearMessages, setSelectedArtifact]);
+  const { messages, sendMessage, performAction, isLoading, selectedArtifact } = useChat();
 
   const loadProjects = useCallback(async () => {
     try {
@@ -55,74 +36,50 @@ export default function ChatPage() {
     }
   }, []);
 
-  const handleSendMessage = useCallback(async (text) => {
-    if (!currentProject || !text.trim() || isLoading) return;
+  // Загрузить проекты при монтировании
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
 
-    addMessage({
-      type: 'user',
-      text,
-    });
-
-    setIsLoading(true);
-    try {
-      const res = await sendChatMessage(currentProject.project_id, text);
-
-      addMessage({
-        type: 'ai',
-        text: res.data.response || 'Žádná odpověď',
-      });
-
-      if (res.data.artifact) {
-        setSelectedArtifact(res.data.artifact);
-      }
-    } catch (error) {
-      console.error('Chat error:', error);
-      addMessage({
-        type: 'ai',
-        text: 'Chyba: Nepodařilo se zpracovat požadavek. Zkus později.',
-      });
-    } finally {
-      setIsLoading(false);
+  // Очистить при смене проекта
+  useEffect(() => {
+    if (currentProject) {
+      clearMessages();
+      setSelectedArtifact(null);
     }
-  }, [currentProject, isLoading, addMessage, setIsLoading, setSelectedArtifact]);
+  }, [currentProject, clearMessages, setSelectedArtifact]);
 
-  const handleQuickAction = useCallback(async (action) => {
-    if (!currentProject || isLoading) return;
+  const handleSendMessage = useCallback(
+    (text) => {
+      const projectId = currentProject?.project_id ?? currentProject?.id;
+      if (!projectId) return;
 
-    addMessage({
-      type: 'user',
-      text: `Akce: ${action}`,
-    });
+      sendMessage(projectId, text);
+    },
+    [currentProject, sendMessage]
+  );
 
-    setIsLoading(true);
-    try {
-      const res = await triggerAction(currentProject.project_id, action);
+  const handleQuickAction = useCallback(
+    (action) => {
+      const projectId = currentProject?.project_id ?? currentProject?.id;
+      if (!projectId) return;
 
       addMessage({
-        type: 'ai',
-        text: res.data.response || 'Zpracování...',
+        type: 'user',
+        text: `Akce: ${action}`,
       });
-
-      if (res.data.artifact) {
-        setSelectedArtifact(res.data.artifact);
-      }
-    } catch (error) {
-      console.error('Action error:', error);
-      addMessage({
-        type: 'ai',
-        text: 'Chyba: Akce se nezdařila.',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [currentProject, isLoading, addMessage, setIsLoading, setSelectedArtifact]);
+      performAction(projectId, action);
+    },
+    [addMessage, currentProject, performAction]
+  );
 
   const handleFileUpload = useCallback(async (files) => {
-    if (!currentProject || !files.length) return;
+    const projectId = currentProject?.project_id ?? currentProject?.id;
+    if (!projectId || !files.length || isLoading) return;
 
     setIsLoading(true);
     try {
-      const res = await uploadFiles(currentProject.project_id, Array.from(files));
+      const res = await uploadFiles(projectId, Array.from(files));
 
       addMessage({
         type: 'ai',
@@ -142,7 +99,7 @@ export default function ChatPage() {
       setIsLoading(false);
       setUploadProgress(null);
     }
-  }, [currentProject, isLoading, addMessage, setIsLoading, setSelectedArtifact]);
+  }, [addMessage, currentProject, isLoading, setIsLoading, setSelectedArtifact]);
 
   const handleNewProject = useCallback(() => {
     const name = prompt('Název nového projektu:');
