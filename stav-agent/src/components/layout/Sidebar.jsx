@@ -1,45 +1,83 @@
 import React from 'react';
-import { X, BookOpen } from 'lucide-react';
+import { X, Folder } from 'lucide-react';
 
-export default function Sidebar({ isOpen, onToggle, projects, onSelectProject }) {
+export default function Sidebar({ isOpen, onToggle, projects, onSelectProject, currentProject }) {
+  const handleProjectClick = (project) => {
+    onSelectProject(project);
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      onToggle();
+    }
+  };
+
   return (
-    <div className={`${isOpen ? 'w-64' : 'w-0'} bg-gray-900 text-white transition-all overflow-hidden flex flex-col`}>
+    <aside
+      className={`${
+        isOpen ? 'w-64' : 'w-0'
+      } bg-gray-900 text-white transition-all duration-300 overflow-hidden flex flex-col shadow-lg`}
+    >
       <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-        <h2 className="font-bold">Projekty</h2>
-        <button onClick={onToggle} className="hover:bg-gray-800 p-1 rounded">
+        <h2 className="font-bold text-lg">Projekty</h2>
+        <button onClick={onToggle} className="lg:hidden p-1 hover:bg-gray-800 rounded transition">
           <X size={18} />
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
-        <div className="space-y-2">
-          {projects?.map((project) => (
-            <div
-              key={project.id ?? project.project_id}
-              onClick={() => onSelectProject(project)}
-              className="p-3 rounded bg-gray-800 hover:bg-gray-700 cursor-pointer text-sm transition"
-            >
-              <div className="font-semibold flex items-center gap-2">
-                📋 {project.name}
-              </div>
-              {project.positions_total && (
-                <div className="text-xs text-gray-400 mt-1">
-                  {project.positions_total} pozic
+      <div className="flex-1 overflow-y-auto p-3">
+        {projects && projects.length > 0 ? (
+          <div className="space-y-2">
+            {projects.map((project) => {
+              const projectId = project.project_id ?? project.id;
+              const projectName = project.project_name ?? project.name;
+              const positionsTotal = project.positions_total ?? project.positionsCount;
+
+              return (
+                <div
+                  key={projectId}
+                  onClick={() => handleProjectClick(project)}
+                  className={`p-3 rounded-lg cursor-pointer transition ${
+                    currentProject?.project_id === projectId || currentProject?.id === projectId
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-800 hover:bg-gray-700 text-gray-100'
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <Folder size={16} className="mt-1 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-sm truncate">{projectName}</div>
+                      {positionsTotal != null && (
+                        <div className="text-xs opacity-75 mt-1">{positionsTotal} pozic</div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
-          ))}
-        </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-gray-400">
+            <Folder size={32} className="mx-auto mb-2 opacity-50" />
+            <p className="text-sm">Žádné projekty</p>
+          </div>
+        )}
       </div>
 
-      <div className="border-t border-gray-700 p-4 text-xs space-y-1 text-gray-300">
-        <div className="flex items-center gap-2">
-          <BookOpen size={14} /> KB Status
+      <div className="border-t border-gray-700 p-4 space-y-2">
+        <h3 className="text-xs font-bold text-gray-400 uppercase">Knowledge Base</h3>
+        <div className="text-xs space-y-1 text-gray-300">
+          <div className="flex items-center gap-2">
+            <span className="text-green-400">✓</span>
+            <span>OTSKP: 2847 kódů</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-green-400">✓</span>
+            <span>Ceny: 1254 pos</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-green-400">✓</span>
+            <span>ČSN: aktuální</span>
+          </div>
         </div>
-        <div>✓ OTSKP kódy: 2847</div>
-        <div>✓ Ceny: 1254 pos</div>
-        <div>✓ Normy: ČSN aktuální</div>
       </div>
-    </div>
+    </aside>
   );
 }

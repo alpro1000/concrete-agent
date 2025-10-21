@@ -7,19 +7,30 @@ const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 30000,
 });
 
 // Projects
-export const getProjects = () => apiClient.get('/api/projects');
-export const getProject = (projectId) => apiClient.get(`/api/projects/${projectId}`);
-export const createProject = (name) => apiClient.post('/api/projects', { name });
+export const getProjects = () =>
+  apiClient.get('/api/projects').catch(() => ({ data: { projects: [] } }));
+
+export const getProject = (projectId) =>
+  apiClient.get(`/api/projects/${projectId}`);
+
+export const createProject = (name) =>
+  apiClient.post('/api/projects', { name });
 
 // Upload
-export const uploadFiles = (projectId, files) => {
+export const uploadFiles = (projectId, files, onProgress) => {
   const formData = new FormData();
   files.forEach((file) => formData.append('files', file));
   return apiClient.post(`/api/upload?project_id=${projectId}`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: (event) => {
+      if (!onProgress || !event.total) return;
+      const percent = Math.round((event.loaded * 100) / event.total);
+      onProgress(percent);
+    },
   });
 };
 
@@ -42,7 +53,11 @@ export const triggerAction = (projectId, action, positionId = null) =>
 // Results
 export const getProjectResults = (projectId) =>
   apiClient.get(`/api/projects/${projectId}/results`);
+
 export const getProjectStatus = (projectId) =>
   apiClient.get(`/api/projects/${projectId}/status`);
+
+export const getProjectFiles = (projectId) =>
+  apiClient.get(`/api/projects/${projectId}/files`);
 
 export default apiClient;

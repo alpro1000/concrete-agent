@@ -1,7 +1,7 @@
 import React from 'react';
 import { QUICK_ACTIONS } from '../../utils/constants';
 
-export default function QuickActions({ onAction }) {
+export default function QuickActions({ onAction, isLoading }) {
   return (
     <div className="px-4 py-3 bg-white border-t border-gray-200">
       <div className="flex gap-2 overflow-x-auto pb-2">
@@ -9,7 +9,8 @@ export default function QuickActions({ onAction }) {
           <button
             key={action.id}
             onClick={() => onAction(action.id)}
-            className={`flex-shrink-0 px-3 py-2 rounded text-sm font-medium whitespace-nowrap ${action.color} hover:opacity-80 transition`}
+            disabled={isLoading}
+            className={`flex-shrink-0 px-3 py-2 rounded text-sm font-medium whitespace-nowrap transition ${action.color} disabled:opacity-50 disabled:cursor-not-allowed`}
             title={action.description}
           >
             {action.icon} {action.label}
