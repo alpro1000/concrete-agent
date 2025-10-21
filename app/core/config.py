@@ -159,6 +159,14 @@ class Settings(BaseSettings):
         default=True,
         description="Enable OCR queuing for pages without usable text",
     )
+    PDF_OCR_PAGE_TIMEOUT_SEC: float = Field(
+        default=3.0,
+        description="Maximum time allowed for OCR on a single page",
+    )
+    PDF_OCR_TOTAL_TIMEOUT_SEC: float = Field(
+        default=20.0,
+        description="Maximum cumulative OCR time budget per document",
+    )
     
     # MinerU Settings
     MINERU_OUTPUT_DIR: Optional[Path] = None

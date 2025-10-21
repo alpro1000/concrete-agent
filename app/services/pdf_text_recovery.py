@@ -17,7 +17,7 @@ from __future__ import annotations
 import concurrent.futures
 import logging
 import subprocess
-import threading
+import time
 import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -95,6 +95,7 @@ class PdfRecoverySummary:
     used_pdfium: int = 0
     used_poppler: int = 0
     queued_ocr_pages: List[int] = field(default_factory=list)
+    ocr_elapsed_ms: float = 0.0
 
     def to_dict(self) -> Dict[str, object]:
         return {
@@ -102,6 +103,7 @@ class PdfRecoverySummary:
             "used_pdfium": self.used_pdfium,
             "used_poppler": self.used_poppler,
             "ocr_pages": self.queued_ocr_pages,
+            "ocr_elapsed_ms": round(self.ocr_elapsed_ms, 2),
         }
 
     def page_state_counters(self) -> Dict[str, int]:
@@ -195,13 +197,12 @@ class PdfTextRecovery:
     def __init__(self) -> None:
         self._pdfium_available: Optional[bool] = None
         self._poppler_available: Optional[bool] = None
-        self._ocr_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def recover(self, file_path: Path) -> PdfRecoverySummary:
+    def recover(self, file_path: Path, *, use_ocr: Optional[bool] = None) -> PdfRecoverySummary:
         """Run the recovery cascade for ``file_path``."""
 
         miner_pages = list(self._extract_pdfminer(file_path))
@@ -258,22 +259,88 @@ class PdfTextRecovery:
                     page.extractor = "poppler"
 
         queued_for_ocr: List[int] = []
-        ocr_budget = settings.PDF_MAX_PAGES_FOR_OCR
+        ocr_enabled = settings.PDF_ENABLE_OCR if use_ocr is None else use_ocr
+        ocr_budget = settings.PDF_MAX_PAGES_FOR_OCR if ocr_enabled else 0
+        ocr_elapsed = 0.0
+        ocr_budget_warned = False
+
+        if ocr_enabled and not self._pdfium_available:
+            self._pdfium_available = self._check_pdfium()
+
+        if ocr_enabled and not self._pdfium_available:
+            logger.debug("Cannot perform OCR for %s without pdfium", file_path.name)
+            ocr_enabled = False
+
+        if ocr_enabled:
+            try:  # pragma: no cover - import guard executed in production env
+                import pytesseract  # noqa: F401
+            except ImportError:
+                logger.debug("pytesseract not available. Disabling OCR fallback.")
+                ocr_enabled = False
+
+        per_page_timeout = settings.PDF_OCR_PAGE_TIMEOUT_SEC
+        total_timeout = settings.PDF_OCR_TOTAL_TIMEOUT_SEC
 
         for page in recovery:
-            if page.accepted.valid_ratio >= settings.PDF_VALID_CHAR_RATIO:
+            if not ocr_enabled or ocr_budget <= 0:
+                break
+
+            reason = self._ocr_trigger_reason(page)
+            if reason is None:
                 continue
 
-            if page.extractor in {"pdfium", "poppler"} and page.accepted.valid_ratio >= settings.PDF_FALLBACK_VALID_RATIO:
+            remaining_budget = total_timeout - ocr_elapsed
+            if remaining_budget <= 0:
+                if not ocr_budget_warned:
+                    logger.warning(
+                        "OCR budget exceeded for %s after %.2fs; skipping remaining pages",
+                        file_path.name,
+                        ocr_elapsed,
+                    )
+                    ocr_budget_warned = True
+                break
+
+            timeout = min(per_page_timeout, max(0.0, remaining_budget))
+            text, elapsed, error = self._perform_ocr(file_path, page.page_number, timeout)
+            ocr_elapsed += elapsed
+            ocr_budget -= 1
+
+            page.queued_for_ocr = True
+            queued_for_ocr.append(page.page_number)
+
+            if error == "timeout":
+                logger.warning(
+                    "OCR timed out for %s page %s after %.0f ms",
+                    file_path.name,
+                    page.page_number,
+                    elapsed * 1000,
+                )
                 continue
 
-            if not settings.PDF_ENABLE_OCR or ocr_budget <= 0:
+            if error:
+                logger.warning(
+                    "OCR failed for %s page %s: %s",
+                    file_path.name,
+                    page.page_number,
+                    error,
+                )
                 continue
 
-            if self._enqueue_ocr(file_path, page.page_number):
-                page.queued_for_ocr = True
-                queued_for_ocr.append(page.page_number)
-                ocr_budget -= 1
+            if not text.strip():
+                continue
+
+            metrics = _analyse_text(text)
+            page.fallbacks["ocr"] = metrics
+            page.accepted = metrics
+            page.extractor = "ocr"
+
+            logger.warning(
+                "OCR triggered for %s page %s: reason=%s elapsed_ms=%.0f",
+                file_path.name,
+                page.page_number,
+                reason,
+                elapsed * 1000,
+            )
 
         used_pdfium = sum(1 for page in recovery if page.extractor == "pdfium")
         used_poppler = sum(1 for page in recovery if page.extractor == "poppler")
@@ -283,6 +350,7 @@ class PdfTextRecovery:
             used_pdfium=used_pdfium,
             used_poppler=used_poppler,
             queued_ocr_pages=queued_for_ocr,
+            ocr_elapsed_ms=ocr_elapsed * 1000,
         )
 
     # ------------------------------------------------------------------
@@ -399,61 +467,72 @@ class PdfTextRecovery:
     # OCR queue (placeholder implementation)
     # ------------------------------------------------------------------
 
-    def _enqueue_ocr(self, file_path: Path, page_number: int) -> bool:
-        if not settings.PDF_ENABLE_OCR:
-            return False
+    def _ocr_trigger_reason(self, page: PageRecovery) -> Optional[str]:
+        metrics = page.accepted
+        text = (metrics.text or "").strip()
 
-        if not self._pdfium_available:
-            self._pdfium_available = self._check_pdfium()
+        if metrics.state in {"encoded_text", "image_only"}:
+            return "encoded_text_or_empty"
 
-        if not self._pdfium_available:
-            logger.debug("Cannot queue OCR for %s page %s without pdfium", file_path.name, page_number)
-            return False
+        if len(text) < 20:
+            return "encoded_text_or_empty"
+
+        return None
+
+    def _perform_ocr(
+        self,
+        file_path: Path,
+        page_number: int,
+        timeout: float,
+    ) -> tuple[str, float, Optional[str]]:
+        start = time.perf_counter()
 
         def _worker() -> str:
             try:
                 import pypdfium2 as pdfium
-            except ImportError:  # pragma: no cover - optional dependency missing
-                return ""
+            except ImportError as exc:  # pragma: no cover - dependency missing
+                raise RuntimeError("pypdfium2 not installed") from exc
 
             try:
                 from PIL import Image
-            except ImportError:  # pragma: no cover - optional dependency missing
-                return ""
+            except ImportError as exc:  # pragma: no cover - dependency missing
+                raise RuntimeError("Pillow not installed") from exc
 
             try:
                 import pytesseract
-            except ImportError:  # pragma: no cover - optional dependency missing
-                return ""
+            except ImportError as exc:  # pragma: no cover - dependency missing
+                raise RuntimeError("pytesseract not installed") from exc
 
             with pdfium.PdfDocument(str(file_path)) as document:
                 try:
                     page = document.get_page(page_number - 1)
-                except ValueError:
-                    return ""
+                except ValueError as exc:
+                    raise RuntimeError(f"page {page_number} out of range") from exc
 
-                pil_image = page.render(scale=2.0).to_pil()
+                bitmap = page.render(scale=2.0)
+                pil_image = bitmap.to_pil()
                 page.close()
 
             if not isinstance(pil_image, Image.Image):  # pragma: no cover - safety guard
                 pil_image = Image.fromarray(pil_image)
 
-            ocr_text = pytesseract.image_to_string(pil_image)
-            return ocr_text
+            languages = "ces+eng"
+            return pytesseract.image_to_string(pil_image, lang=languages)
 
-        with self._ocr_lock:
-            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(_worker)
-        try:
-            future.result(timeout=settings.PDF_PAGE_TIMEOUT_SEC)
-        except concurrent.futures.TimeoutError:
-            logger.warning("OCR timed out for %s page %s", file_path.name, page_number)
-            return False
-        finally:
-            executor.shutdown(wait=False)
+            try:
+                text = future.result(timeout=max(timeout, 0.1))
+            except concurrent.futures.TimeoutError:
+                duration = time.perf_counter() - start
+                future.cancel()
+                return "", duration, "timeout"
+            except Exception as exc:  # noqa: BLE001 - propagated for diagnostics
+                duration = time.perf_counter() - start
+                return "", duration, str(exc)
 
-        # Real OCR text is stored asynchronously elsewhere; we just signal enqueue.
-        return True
+        duration = time.perf_counter() - start
+        return text, duration, None
 
     # ------------------------------------------------------------------
     # Utilities

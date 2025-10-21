@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from app.core.config import settings
-from app.api.routes import router as main_router
+from app.api import api_router
 
 # Configure logging
 logging.basicConfig(
@@ -38,7 +38,7 @@ app.add_middleware(
 )
 
 # Include API routes
-app.include_router(main_router)
+app.include_router(api_router)
 
 # Mount static files (if web directory exists)
 web_dir = settings.BASE_DIR / "web"
