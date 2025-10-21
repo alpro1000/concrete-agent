@@ -1,13 +1,11 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAppStore } from '../store/appStore';
 import {
   sendChatMessage,
   triggerAction,
   getProjects,
   uploadFiles,
-  getProjectStatus,
 } from '../utils/api';
-import { QUICK_ACTIONS, MESSAGE_TYPES } from '../utils/constants';
 
 import Header from '../components/layout/Header';
 import Sidebar from '../components/layout/Sidebar';
@@ -17,12 +15,11 @@ import InputArea from '../components/chat/InputArea';
 import ArtifactPanel from '../components/layout/ArtifactPanel';
 
 export default function ChatPage() {
-  const fileInputRef = useRef(null);
+  const [projects, setProjects] = useState([]);
   const [uploadProgress, setUploadProgress] = useState(null);
+  const fileInputRef = React.useRef(null);
 
   const {
-    projects,
-    setProjects,
     messages,
     addMessage,
     currentProject,
@@ -31,239 +28,163 @@ export default function ChatPage() {
     setSelectedArtifact,
     isLoading,
     setIsLoading,
-    error,
-    setError,
-    clearError,
     sidebarOpen,
     setSidebarOpen,
     clearMessages,
   } = useAppStore();
 
-  const loadProjects = useCallback(async () => {
-    try {
-      const res = await getProjects();
-      const fetchedProjects = res.data?.projects || [];
-      setProjects(fetchedProjects);
-
-      if (!currentProject && fetchedProjects.length > 0) {
-        setCurrentProject(fetchedProjects[0]);
-      }
-      clearError();
-    } catch (err) {
-      console.error('Failed to load projects', err);
-      setError('Nepodařilo se načíst projekty');
-    }
-  }, [clearError, currentProject, setCurrentProject, setError, setProjects]);
-
+  // Загрузить проекты при монтировании
   useEffect(() => {
     loadProjects();
-  }, [loadProjects]);
+  }, []);
 
-  const checkProjectStatus = useCallback(async () => {
-    if (!currentProject) return;
-    try {
-      const res = await getProjectStatus(currentProject.project_id ?? currentProject.id);
-      if (res.data?.status === 'AUDITED') {
-        addMessage({
-          type: MESSAGE_TYPES.SYSTEM,
-          text: 'Projekt automaticky naauditován. Zkontroluj výsledky.',
-        });
-      }
-    } catch (err) {
-      console.error('Failed to fetch project status', err);
-    }
-  }, [addMessage, currentProject]);
-
+  // Очистить при смене проекта
   useEffect(() => {
     if (currentProject) {
       clearMessages();
       setSelectedArtifact(null);
-      checkProjectStatus();
     }
-  }, [currentProject, clearMessages, setSelectedArtifact, checkProjectStatus]);
+  }, [currentProject, clearMessages, setSelectedArtifact]);
 
-  const handleSend = useCallback(
-    async (text) => {
-      if (!currentProject) {
-        addMessage({
-          type: MESSAGE_TYPES.AI,
-          text: 'Vyber prosím projekt před odesláním zprávy.',
-        });
-        return;
-      }
-
-      clearError();
-      addMessage({ type: MESSAGE_TYPES.USER, text });
-      setIsLoading(true);
-
-      try {
-        const res = await sendChatMessage(currentProject.project_id ?? currentProject.id, text);
-        const data = res.data;
-        if (data?.response) {
-          addMessage({ type: MESSAGE_TYPES.AI, text: data.response });
-        }
-        if (data?.artifact) {
-          setSelectedArtifact(data.artifact);
-        }
-      } catch (err) {
-        console.error('Failed to send chat message', err);
-        const message = err.response?.data?.message || 'Došlo k chybě při odesílání zprávy.';
-        setError(message);
-        addMessage({ type: MESSAGE_TYPES.SYSTEM, text: message });
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [addMessage, clearError, currentProject, setError, setIsLoading, setSelectedArtifact],
-  );
-
-  const handleQuickAction = useCallback(
-    async (actionId) => {
-      if (!currentProject) {
-        addMessage({
-          type: MESSAGE_TYPES.AI,
-          text: 'Vyber prosím projekt před spuštěním akce.',
-        });
-        return;
-      }
-
-      const action = QUICK_ACTIONS.find((item) => item.id === actionId);
-      if (!action) return;
-
-      clearError();
-      setIsLoading(true);
-
-      try {
-        const res = await triggerAction(
-          currentProject.project_id ?? currentProject.id,
-          action.apiAction,
-        );
-        const data = res.data;
-        if (data?.response) {
-          addMessage({ type: MESSAGE_TYPES.AI, text: data.response });
-        }
-        if (data?.artifact) {
-          setSelectedArtifact(data.artifact);
-        }
-      } catch (err) {
-        console.error('Failed to trigger action', err);
-        const message = err.response?.data?.message || 'Akci se nepodařilo provést.';
-        setError(message);
-        addMessage({ type: MESSAGE_TYPES.SYSTEM, text: message });
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [addMessage, clearError, currentProject, setError, setIsLoading, setSelectedArtifact],
-  );
-
-  const handleUploadClick = useCallback(() => {
-    setUploadProgress(null);
-    fileInputRef.current?.click();
+  const loadProjects = useCallback(async () => {
+    try {
+      const res = await getProjects();
+      setProjects(res.data?.projects || []);
+    } catch (err) {
+      console.error('Failed to load projects:', err);
+    }
   }, []);
 
-  const handleFilesSelected = useCallback(
-    async (event) => {
-      const files = Array.from(event.target.files ?? []);
-      if (!files.length) {
-        return;
+  const handleSendMessage = useCallback(async (text) => {
+    if (!currentProject || !text.trim() || isLoading) return;
+
+    addMessage({
+      type: 'user',
+      text,
+    });
+
+    setIsLoading(true);
+    try {
+      const res = await sendChatMessage(currentProject.project_id, text);
+
+      addMessage({
+        type: 'ai',
+        text: res.data.response || 'Žádná odpověď',
+      });
+
+      if (res.data.artifact) {
+        setSelectedArtifact(res.data.artifact);
       }
+    } catch (error) {
+      console.error('Chat error:', error);
+      addMessage({
+        type: 'ai',
+        text: 'Chyba: Nepodařilo se zpracovat požadavek. Zkus později.',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentProject, isLoading, addMessage, setIsLoading, setSelectedArtifact]);
 
-      if (!currentProject) {
-        addMessage({
-          type: MESSAGE_TYPES.AI,
-          text: 'Vyber prosím projekt před nahráním souborů.',
-        });
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
-        return;
+  const handleQuickAction = useCallback(async (action) => {
+    if (!currentProject || isLoading) return;
+
+    addMessage({
+      type: 'user',
+      text: `Akce: ${action}`,
+    });
+
+    setIsLoading(true);
+    try {
+      const res = await triggerAction(currentProject.project_id, action);
+
+      addMessage({
+        type: 'ai',
+        text: res.data.response || 'Zpracování...',
+      });
+
+      if (res.data.artifact) {
+        setSelectedArtifact(res.data.artifact);
       }
+    } catch (error) {
+      console.error('Action error:', error);
+      addMessage({
+        type: 'ai',
+        text: 'Chyba: Akce se nezdařila.',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentProject, isLoading, addMessage, setIsLoading, setSelectedArtifact]);
 
-      clearError();
-      setIsLoading(true);
-      setUploadProgress(0);
+  const handleFileUpload = useCallback(async (files) => {
+    if (!currentProject || !files.length) return;
 
-      try {
-        await uploadFiles(currentProject.project_id ?? currentProject.id, files, setUploadProgress);
-        addMessage({
-          type: MESSAGE_TYPES.SYSTEM,
-          text: 'Soubor byl úspěšně nahrán. Agent začne zpracování.',
-        });
-      } catch (err) {
-        console.error('File upload failed', err);
-        const message = err.response?.data?.message || 'Nahrání souboru se nezdařilo.';
-        setError(message);
-        addMessage({ type: MESSAGE_TYPES.SYSTEM, text: message });
-      } finally {
-        setIsLoading(false);
-        setUploadProgress(null);
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
+    setIsLoading(true);
+    try {
+      const res = await uploadFiles(currentProject.project_id, Array.from(files));
+
+      addMessage({
+        type: 'ai',
+        text: `Soubory nahrány: ${res.data.message || 'Hotovo'}`,
+      });
+
+      if (res.data.artifact) {
+        setSelectedArtifact(res.data.artifact);
       }
-    },
-    [addMessage, clearError, currentProject, setError, setIsLoading, setUploadProgress],
-  );
+    } catch (error) {
+      console.error('Upload error:', error);
+      addMessage({
+        type: 'ai',
+        text: 'Chyba: Nahrávání selhalo.',
+      });
+    } finally {
+      setIsLoading(false);
+      setUploadProgress(null);
+    }
+  }, [currentProject, isLoading, addMessage, setIsLoading, setSelectedArtifact]);
 
-  const handleSelectProject = useCallback(
-    (project) => {
-      setCurrentProject(project);
-    },
-    [setCurrentProject],
-  );
-
-  const handleToggleSidebar = useCallback(() => {
-    setSidebarOpen((prev) => !prev);
-  }, [setSidebarOpen]);
-
-  const handleDismissError = useCallback(() => {
-    clearError();
-  }, [clearError]);
+  const handleNewProject = useCallback(() => {
+    const name = prompt('Název nového projektu:');
+    if (name) {
+      // TODO: Implementovat createProject
+      console.log('Create project:', name);
+    }
+  }, []);
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
+    <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
       <Header
-        onNewProject={() => console.log('New project')}
-        onToggleSidebar={handleToggleSidebar}
+        onNewProject={handleNewProject}
+        onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
         currentProject={currentProject}
       />
 
       <div className="flex-1 flex overflow-hidden">
         <Sidebar
           isOpen={sidebarOpen}
-          onToggle={handleToggleSidebar}
+          onToggle={() => setSidebarOpen(!sidebarOpen)}
           projects={projects}
-          onSelectProject={handleSelectProject}
+          onSelectProject={setCurrentProject}
           currentProject={currentProject}
         />
 
-        <div className="flex-1 flex flex-col">
-          {error && (
-            <div className="px-4 pt-4">
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded flex items-center justify-between">
-                <span>{error}</span>
-                <button onClick={handleDismissError} className="text-sm text-red-600 hover:underline">
-                  Zavřít
-                </button>
-              </div>
-            </div>
-          )}
-
+        <div className="flex-1 flex flex-col overflow-hidden">
           <ChatWindow messages={messages} isLoading={isLoading} />
-          <QuickActions onAction={handleQuickAction} isLoading={isLoading} />
+          {currentProject && <QuickActions onAction={handleQuickAction} isLoading={isLoading} />}
           <InputArea
-            onSend={handleSend}
-            onUpload={handleUploadClick}
+            onSend={handleSendMessage}
+            onUpload={() => fileInputRef.current?.click()}
             isLoading={isLoading}
             uploadProgress={uploadProgress}
           />
           <input
             ref={fileInputRef}
             type="file"
-            className="hidden"
             multiple
-            onChange={handleFilesSelected}
+            hidden
+            onChange={(e) => handleFileUpload(e.target.files)}
+            accept=".pdf,.xlsx,.xls,.png,.jpg,.jpeg,.dwg"
           />
         </div>
 
