@@ -20,15 +20,15 @@ jobs:
 
     - name: Sync PDF prompt
       run: |
-        ./scripts/sync_pdf_prompt.sh
-        if ! git diff --quiet; then
-          echo "::error::PDF prompt desynchronised. Run scripts/sync_pdf_prompt.sh locally."
-          git --no-pager diff
+        make prompt.sync
+        if ! git diff --quiet -- app/prompts/pdf_extraction_system_prompt_v2_1.py; then
+          echo "::error::PDF prompt desynchronised. Run make prompt.sync locally."
+          git --no-pager diff -- app/prompts/pdf_extraction_system_prompt_v2_1.py
           exit 1
         fi
 
-    - name: Check PDF prompt
-      run: ./scripts/check_pdf_prompt.sh
+    - name: Check PDF prompt wiring
+      run: python scripts/check_pdf_prompt_wired.py
 
     - name: Install dependencies
       run: |

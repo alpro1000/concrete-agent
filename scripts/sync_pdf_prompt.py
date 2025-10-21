@@ -126,6 +126,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--src", type=Path, default=DEFAULT_SRC)
     parser.add_argument("--dst", type=Path, default=DEFAULT_DST)
+    parser.add_argument(
+        "--out",
+        type=Path,
+        dest="dst",
+        help="Alias for --dst; kept for compatibility with Make targets",
+    )
     parser.add_argument("--check", action="store_true", help="Check mode (no write, verify sync)")
     return parser.parse_args(argv)
 
