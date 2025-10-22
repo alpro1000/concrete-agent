@@ -2,11 +2,52 @@ import React, { useCallback, useState } from 'react';
 import type { ChatAction, ChatResponse } from '../services/chatApi';
 import { triggerAction } from '../services/chatApi';
 
-const ACTIONS: Array<{ label: string; action: ChatAction; icon: string }> = [
-  { label: 'Audit', action: 'audit_positions', icon: '🛠️' },
-  { label: 'Materials', action: 'materials_summary', icon: '🧱' },
-  { label: 'Breakdown', action: 'breakdown_structure', icon: '📊' },
-  { label: 'Resources', action: 'calculate_resources', icon: '⚙️' },
+type ActionConfig = {
+  label: string;
+  action: ChatAction;
+  icon: string;
+  options?: Record<string, unknown>;
+  requiresPosition?: boolean;
+  freeFormQuery?: string;
+};
+
+const ACTIONS: ActionConfig[] = [
+  {
+    label: 'Kontrola',
+    action: 'audit_positions',
+    icon: '✓',
+    options: { check_norms: true, check_catalog: true },
+  },
+  {
+    label: 'Výměr',
+    action: 'vykaz_vymer',
+    icon: '📊',
+    options: { by_section: true, totals: true },
+  },
+  {
+    label: 'Materiály',
+    action: 'materials_detailed',
+    icon: '🧱',
+    options: { show_sources: true, show_characteristics: true, show_suppliers: true },
+  },
+  {
+    label: 'Zdroje',
+    action: 'resource_sheet',
+    icon: '⚙️',
+    options: { by_section: true, include_timeline: true },
+  },
+  {
+    label: 'Shrnutí',
+    action: 'project_summary',
+    icon: '📋',
+    options: { detail_level: 'full' },
+  },
+  {
+    label: 'Technická karta',
+    action: 'tech_card',
+    icon: '🛠️',
+    requiresPosition: true,
+  },
 ];
 
 interface ActionBarProps {
@@ -40,11 +81,16 @@ const ActionBar: React.FC<ActionBarProps> = ({
   );
 
   const handleClick = useCallback(
-    async (action: { label: string; action: ChatAction }) => {
+    async (action: ActionConfig) => {
       if (!projectId || disabled || activeAction) {
         if (!projectId) {
           handleError('Vyber projekt a zkus to znovu.');
         }
+        return;
+      }
+
+      if (action.requiresPosition && !positionId) {
+        handleError('Technická karta vyžaduje zvolenou pozici.');
         return;
       }
 
@@ -53,7 +99,13 @@ const ActionBar: React.FC<ActionBarProps> = ({
         onLoadingChange?.(true);
         onActionStart?.(action.label);
 
-        const response = await triggerAction(projectId, action.action, positionId);
+        const response = await triggerAction({
+          projectId,
+          action: action.action,
+          options: action.options,
+          positionId: action.requiresPosition ? positionId : undefined,
+          freeFormQuery: action.freeFormQuery,
+        });
         onActionComplete?.(response, action.label);
       } catch (error) {
         handleError(error instanceof Error ? error.message : 'Neznámá chyba');

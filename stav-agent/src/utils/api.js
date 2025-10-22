@@ -46,12 +46,32 @@ export const sendChatMessage = (projectId, message) =>
   });
 
 // Actions (buttons)
-export const triggerAction = (projectId, action, positionId = null) =>
-  apiClient.post('/api/chat/action', {
+export const triggerAction = ({
+  projectId,
+  action,
+  options = undefined,
+  positionId = undefined,
+  freeFormQuery = undefined,
+}) => {
+  const payload = {
     project_id: projectId,
     action,
-    position_id: positionId,
-  });
+  };
+
+  if (options) {
+    payload.options = options;
+  }
+
+  if (positionId) {
+    payload.position_id = positionId;
+  }
+
+  if (freeFormQuery) {
+    payload.free_form_query = freeFormQuery;
+  }
+
+  return apiClient.post('/api/chat/action', payload);
+};
 
 // Results
 export const getProjectResults = (projectId) =>
