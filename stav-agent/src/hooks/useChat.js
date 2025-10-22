@@ -20,12 +20,14 @@ export const useChat = () => {
       setIsLoading(true);
 
       try {
-        const res = await sendChatMessage(projectId, message);
+        const result = await sendChatMessage(projectId, message.trim());
         addMessage({
           type: 'ai',
-          text: res.data?.response || 'Žádná odpověď',
+          text: result.response || 'Žádná odpověď',
         });
-        if (res.data?.artifact) setSelectedArtifact(res.data.artifact);
+        if (result.artifact) {
+          setSelectedArtifact(result.artifact);
+        }
       } catch (error) {
         addMessage({
           type: 'ai',
@@ -55,7 +57,7 @@ export const useChat = () => {
 
       setIsLoading(true);
       try {
-        const res = await triggerAction({
+        const result = await triggerAction({
           projectId,
           action,
           options,
@@ -65,14 +67,16 @@ export const useChat = () => {
         addMessage({
           type: 'ai',
           text:
-            res.data?.response ||
+            result.response ||
             (label ? `Akce ${label} dokončena` : 'Akce dokončena'),
         });
-        if (res.data?.artifact) setSelectedArtifact(res.data.artifact);
+        if (result.artifact) {
+          setSelectedArtifact(result.artifact);
+        }
       } catch (error) {
         addMessage({
           type: 'ai',
-          text: 'Chyba akce: ' + error.message,
+          text: 'Chyba akce: ' + (error.response?.data?.error || error.message),
         });
       } finally {
         setIsLoading(false);

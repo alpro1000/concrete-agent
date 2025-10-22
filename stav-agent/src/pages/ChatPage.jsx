@@ -1,8 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAppStore } from '../store/appStore';
-import { getProjects, uploadFiles } from '../utils/api';
 import { useChat } from '../hooks/useChat';
-import { QUICK_ACTIONS } from '../utils/constants';
+import {
+  getProjects,
+  uploadFiles,
+  getProjectResults,
+  getProjectStatus,
+  getProjectFiles,
+  normalizeChat,
+} from '../utils/api';
+import { QUICK_ACTIONS, MESSAGE_TYPES } from '../utils/constants';
 
 import Header from '../components/layout/Header';
 import Sidebar from '../components/layout/Sidebar';
@@ -14,6 +21,9 @@ import ArtifactPanel from '../components/layout/ArtifactPanel';
 export default function ChatPage() {
   const [projects, setProjects] = useState([]);
   const [uploadProgress, setUploadProgress] = useState(null);
+  const [projectStatus, setProjectStatus] = useState(null);
+  const [projectFiles, setProjectFiles] = useState([]);
+  const [isProjectLoading, setIsProjectLoading] = useState(false);
   const fileInputRef = React.useRef(null);
 
   const {
@@ -28,6 +38,8 @@ export default function ChatPage() {
   } = useAppStore();
   const { messages, sendMessage, performAction, isLoading, selectedArtifact } = useChat();
 
+  const isBusy = isLoading || isProjectLoading;
+
   const loadProjects = useCallback(async () => {
     try {
       const res = await getProjects();
@@ -37,39 +49,133 @@ export default function ChatPage() {
     }
   }, []);
 
-  // Загрузить проекты при монтировании
   useEffect(() => {
     loadProjects();
   }, [loadProjects]);
 
-  // Очистить при смене проекта
   useEffect(() => {
-    if (currentProject) {
+    const projectId = currentProject?.project_id ?? currentProject?.id;
+
+    if (!projectId) {
       clearMessages();
       setSelectedArtifact(null);
+      setProjectStatus(null);
+      setProjectFiles([]);
+      setIsProjectLoading(false);
+      return;
     }
-  }, [currentProject, clearMessages, setSelectedArtifact]);
+
+    clearMessages();
+    setSelectedArtifact(null);
+    setProjectStatus(null);
+    setProjectFiles([]);
+
+    let cancelled = false;
+    const projectName = currentProject?.project_name ?? currentProject?.name ?? projectId;
+
+    addMessage({
+      type: MESSAGE_TYPES.SYSTEM,
+      text: `Projekt ${projectName} vybrán. Načítám data...`,
+    });
+
+    const fetchProjectContext = async () => {
+      setIsProjectLoading(true);
+      try {
+        const [statusResult, resultsResult, filesResult] = await Promise.allSettled([
+          getProjectStatus(projectId),
+          getProjectResults(projectId),
+          getProjectFiles(projectId),
+        ]);
+
+        if (cancelled) return;
+
+        if (statusResult.status === 'fulfilled') {
+          const status = statusResult.value?.data?.status;
+          if (status) {
+            setProjectStatus(status);
+            addMessage({
+              type: MESSAGE_TYPES.SYSTEM,
+              text: `Status projektu: ${status}`,
+            });
+          }
+        } else {
+          console.error('Failed to load project status:', statusResult.reason);
+        }
+
+        if (resultsResult.status === 'fulfilled') {
+          const resultsData = resultsResult.value?.data;
+          if (resultsData?.artifact) {
+            setSelectedArtifact(resultsData.artifact);
+          } else if (resultsData && Object.keys(resultsData).length > 0) {
+            addMessage({
+              type: MESSAGE_TYPES.SYSTEM,
+              text: 'Výsledky projektu načteny.',
+            });
+          }
+        } else {
+          console.error('Failed to load project results:', resultsResult.reason);
+        }
+
+        if (filesResult.status === 'fulfilled') {
+          const files = filesResult.value?.data?.files || [];
+          setProjectFiles(files);
+          if (files.length > 0) {
+            addMessage({
+              type: MESSAGE_TYPES.SYSTEM,
+              text: `Načteno ${files.length} souborů projektu.`,
+            });
+          }
+        } else {
+          console.error('Failed to load project files:', filesResult.reason);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to load project context:', error);
+          addMessage({
+            type: MESSAGE_TYPES.SYSTEM,
+            text: `Chyba načítání projektu: ${error.message}`,
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setIsProjectLoading(false);
+        }
+      }
+    };
+
+    fetchProjectContext();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    currentProject,
+    addMessage,
+    clearMessages,
+    setSelectedArtifact,
+  ]);
 
   const handleSendMessage = useCallback(
     (text) => {
+      if (isBusy) return;
       const projectId = currentProject?.project_id ?? currentProject?.id;
       if (!projectId) return;
 
       sendMessage(projectId, text);
     },
-    [currentProject, sendMessage]
+    [currentProject, sendMessage, isBusy]
   );
 
   const handleQuickAction = useCallback(
     (actionType) => {
-      if (!actionType) return;
+      if (!actionType || isBusy) return;
       const projectId = currentProject?.project_id ?? currentProject?.id;
       if (!projectId) return;
 
       const quickAction = QUICK_ACTIONS.find(
         (item) => item.apiAction === actionType || item.id === actionType
       );
-      const label = quickAction?.czech_name || quickAction?.label || actionType;
+      const label = quickAction?.label || actionType;
       addMessage({
         type: 'user',
         text: `Akce: ${label}`,
@@ -80,41 +186,50 @@ export default function ChatPage() {
         performAction(projectId, { action: actionType, label });
       }
     },
-    [addMessage, currentProject, performAction]
+    [addMessage, currentProject, performAction, isBusy]
   );
 
-  const handleFileUpload = useCallback(async (files) => {
-    const projectId = currentProject?.project_id ?? currentProject?.id;
-    if (!projectId || !files.length || isLoading) return;
+  const handleFileUpload = useCallback(
+    async (files) => {
+      const projectId = currentProject?.project_id ?? currentProject?.id;
+      if (!projectId || !files.length || isBusy) return;
 
-    setIsLoading(true);
-    try {
-      const res = await uploadFiles(projectId, Array.from(files));
+      setIsLoading(true);
+      try {
+        const res = await uploadFiles(projectId, Array.from(files), setUploadProgress);
+        const payload = normalizeChat(res.data);
 
-      addMessage({
-        type: 'ai',
-        text: `Soubory nahrány: ${res.data.message || 'Hotovo'}`,
-      });
+        addMessage({
+          type: 'ai',
+          text: payload.response || 'Soubory nahrány.',
+        });
 
-      if (res.data.artifact) {
-        setSelectedArtifact(res.data.artifact);
+        if (payload.artifact) {
+          setSelectedArtifact(payload.artifact);
+        }
+      } catch (error) {
+        console.error('Upload error:', error);
+        addMessage({
+          type: 'ai',
+          text: 'Chyba: Nahrávání selhalo.',
+        });
+      } finally {
+        setIsLoading(false);
+        setUploadProgress(null);
       }
-    } catch (error) {
-      console.error('Upload error:', error);
-      addMessage({
-        type: 'ai',
-        text: 'Chyba: Nahrávání selhalo.',
-      });
-    } finally {
-      setIsLoading(false);
-      setUploadProgress(null);
-    }
-  }, [addMessage, currentProject, isLoading, setIsLoading, setSelectedArtifact]);
+    },
+    [
+      addMessage,
+      currentProject,
+      isBusy,
+      setIsLoading,
+      setSelectedArtifact,
+    ]
+  );
 
   const handleNewProject = useCallback(() => {
     const name = prompt('Název nového projektu:');
     if (name) {
-      // TODO: Implementovat createProject
       console.log('Create project:', name);
     }
   }, []);
@@ -125,6 +240,7 @@ export default function ChatPage() {
         onNewProject={handleNewProject}
         onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
         currentProject={currentProject}
+        projectStatus={projectStatus}
       />
 
       <div className="flex-1 flex overflow-hidden">
@@ -134,15 +250,18 @@ export default function ChatPage() {
           projects={projects}
           onSelectProject={setCurrentProject}
           currentProject={currentProject}
+          projectFiles={projectFiles}
         />
 
         <div className="flex-1 flex flex-col overflow-hidden">
           <ChatWindow messages={messages} isLoading={isLoading} />
-          {currentProject && <QuickActions onAction={handleQuickAction} isLoading={isLoading} />}
+          {currentProject && (
+            <QuickActions onAction={handleQuickAction} isLoading={isBusy} />
+          )}
           <InputArea
             onSend={handleSendMessage}
             onUpload={() => fileInputRef.current?.click()}
-            isLoading={isLoading}
+            isLoading={isBusy}
             uploadProgress={uploadProgress}
           />
           <input
@@ -155,7 +274,7 @@ export default function ChatPage() {
           />
         </div>
 
-        <ArtifactPanel artifact={selectedArtifact} isLoading={isLoading} />
+        <ArtifactPanel artifact={selectedArtifact} isLoading={isBusy} />
       </div>
     </div>
   );

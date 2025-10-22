@@ -1,9 +1,10 @@
 import axios, { isAxiosError } from 'axios';
 
+const DEFAULT_API_URL = 'https://concrete-agent.onrender.com';
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
   import.meta.env.VITE_API_URL ||
-  '';
+  DEFAULT_API_URL;
 
 const chatClient = axios.create({
   baseURL: API_BASE_URL || undefined,
@@ -15,11 +16,9 @@ const chatClient = axios.create({
 
 export type ChatAction =
   | 'audit_positions'
-  | 'vykaz_vymer'
-  | 'materials_detailed'
-  | 'resource_sheet'
-  | 'project_summary'
-  | 'tech_card';
+  | 'materials_summary'
+  | 'calculate_resources'
+  | 'position_breakdown';
 
 export interface ArtifactNavigationSection {
   id: string;
@@ -94,14 +93,30 @@ const toError = (error: unknown): Error => {
   return new Error('Neznámá chyba');
 };
 
+const normalizeChat = (data: unknown): ChatResponse => {
+  const payload = (typeof data === 'object' && data !== null ? data : {}) as Record<string, unknown>;
+  const response =
+    typeof payload.response === 'string'
+      ? payload.response
+      : typeof payload.message === 'string'
+      ? payload.message
+      : '';
+
+  return {
+    response,
+    artifact: (payload.artifact as ChatArtifact | undefined) ?? undefined,
+    metadata: (payload.metadata as Record<string, unknown> | undefined) ?? undefined,
+  };
+};
+
 export const sendMessage = async (projectId: string, message: string): Promise<ChatResponse> => {
   try {
-    const { data } = await chatClient.post<ChatResponse>('/api/chat/message', {
+    const { data } = await chatClient.post('/api/chat/message', {
       project_id: projectId,
       message,
       include_history: true,
     });
-    return data;
+    return normalizeChat(data);
   } catch (error) {
     throw toError(error);
   }
@@ -123,14 +138,14 @@ export const triggerAction = async ({
   freeFormQuery,
 }: TriggerActionParams): Promise<ChatResponse> => {
   try {
-    const { data } = await chatClient.post<ChatResponse>('/api/chat/action', {
+    const { data } = await chatClient.post('/api/chat/action', {
       project_id: projectId,
       action,
       position_id: positionId,
       options,
       free_form_query: freeFormQuery,
     });
-    return data;
+    return normalizeChat(data);
   } catch (error) {
     throw toError(error);
   }

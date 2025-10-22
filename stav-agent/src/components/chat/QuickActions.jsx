@@ -13,13 +13,14 @@ export default function QuickActions({ onAction, isLoading }) {
       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
         {QUICK_ACTIONS.map((action) => (
           <button
+            type="button"
             key={action.id}
             onClick={() => handleClick(action)}
             disabled={isLoading}
             className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition ${
               action.color
             } disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-md`}
-            title={action.description}
+            title={action.description || action.label}
           >
             {action.icon} {action.label}
           </button>
