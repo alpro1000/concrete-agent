@@ -1,94 +1,92 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 
-const severityStyles = {
-  GREEN: 'bg-green-50 text-green-700 border-green-200',
-  AMBER: 'bg-amber-50 text-amber-700 border-amber-200',
-  RED: 'bg-red-50 text-red-700 border-red-200',
-};
+export default function AuditResult({ data }) {
+  const [expandedIssue, setExpandedIssue] = useState(null);
 
-const severityLabels = {
-  GREEN: 'Bez problémů',
-  AMBER: 'Varování',
-  RED: 'Kritické',
-};
+  if (!data) return <div className="text-gray-500">Žádná data</div>;
 
-export default function AuditResult({ data = {}, compact = false }) {
-  const {
-    summary,
-    statistics = {},
-    issues = [],
-    statistics_by_severity: severityStats = {},
-  } = data;
-
-  const totalPositions = statistics.total_positions ?? 0;
+  const { statistics_by_severity = {}, issues = [], summary = '' } = data;
+  const { GREEN = 0, AMBER = 0, RED = 0 } = statistics_by_severity;
+  const total = GREEN + AMBER + RED;
+  const getPercent = (value) => (total ? Math.round((value / total) * 100) : 0);
 
   return (
-    <div className={`space-y-4 ${compact ? 'text-xs' : 'text-sm'}`}>
-      {summary && <p className="text-gray-700 leading-relaxed">{summary}</p>}
+    <div className="space-y-4">
+      {/* Summary text */}
+      {summary && (
+        <div className="bg-blue-50 p-3 rounded border border-blue-200 text-sm text-blue-800">
+          {summary}
+        </div>
+      )}
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
-          <div className="text-xs font-semibold uppercase text-blue-600">Pozice</div>
-          <div className="text-lg font-bold text-blue-900">{totalPositions}</div>
+      {/* Status cards */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-green-50 p-3 rounded-lg text-center border border-green-200">
+          <div className="text-2xl font-bold text-green-600">{GREEN}</div>
+          <div className="text-xs text-green-700 font-semibold">OK</div>
+          <div className="text-xs text-green-600">{getPercent(GREEN)}%</div>
         </div>
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-          <div className="text-xs font-semibold uppercase text-emerald-600">Ověřeno</div>
-          <div className="text-lg font-bold text-emerald-900">{statistics.verified ?? 0}</div>
+        <div className="bg-yellow-50 p-3 rounded-lg text-center border border-yellow-200">
+          <div className="text-2xl font-bold text-yellow-600">{AMBER}</div>
+          <div className="text-xs text-yellow-700 font-semibold">VÝSTRAHY</div>
+          <div className="text-xs text-yellow-600">{getPercent(AMBER)}%</div>
         </div>
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-          <div className="text-xs font-semibold uppercase text-amber-600">Varování</div>
-          <div className="text-lg font-bold text-amber-900">{statistics.with_warnings ?? 0}</div>
-        </div>
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3">
-          <div className="text-xs font-semibold uppercase text-red-600">Kritické</div>
-          <div className="text-lg font-bold text-red-900">{statistics.critical_issues ?? 0}</div>
+        <div className="bg-red-50 p-3 rounded-lg text-center border border-red-200">
+          <div className="text-2xl font-bold text-red-600">{RED}</div>
+          <div className="text-xs text-red-700 font-semibold">KRITICKÉ</div>
+          <div className="text-xs text-red-600">{getPercent(RED)}%</div>
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 text-xs">
-        {Object.entries(severityStats).map(([severity, count]) => (
-          <div
-            key={severity}
-            className={`rounded border p-2 text-center font-medium ${severityStyles[severity] || 'bg-gray-50 text-gray-600 border-gray-200'}`}
-          >
-            <div className="text-xs uppercase tracking-wide">{severity}</div>
-            <div className="text-base">{count}</div>
-            <div className="text-[10px] opacity-75">{severityLabels[severity] || ''}</div>
-          </div>
-        ))}
-      </div>
-
-      {issues.length > 0 && (
-        <div className="space-y-2">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-600">
-            Problematické pozice ({issues.length})
+      {/* Issues list */}
+      {issues && issues.length > 0 && (
+        <div>
+          <h4 className="font-semibold text-sm mb-2 text-gray-700">
+            Problémy ({issues.length}):
           </h4>
-          <div className="space-y-2">
-            {issues.map((issue) => (
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {issues.map((issue, i) => (
               <div
-                key={issue.position_id || issue.code}
-                className={`rounded-lg border p-3 text-xs shadow-sm ${
-                  severityStyles[issue.severity] || 'bg-gray-50 text-gray-700 border-gray-200'
+                key={i}
+                className={`rounded-lg border-l-4 p-3 cursor-pointer transition ${
+                  issue.severity === 'RED'
+                    ? 'bg-red-50 border-red-400 text-red-900'
+                    : issue.severity === 'AMBER'
+                    ? 'bg-yellow-50 border-yellow-400 text-yellow-900'
+                    : 'bg-green-50 border-green-400 text-green-900'
                 }`}
+                onClick={() =>
+                  setExpandedIssue(expandedIssue === i ? null : i)
+                }
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="font-mono text-sm font-semibold">{issue.code}</div>
-                    <div className="font-medium">{issue.description}</div>
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="font-mono text-sm font-bold">
+                      [{issue.code}] {issue.description}
+                    </div>
+                    <div className="text-xs mt-1">{issue.problem}</div>
                   </div>
-                  <span className="rounded-full bg-white/60 px-2 py-0.5 text-[10px] font-semibold uppercase">
-                    {issue.severity}
-                  </span>
+                  {expandedIssue === i ? (
+                    <ChevronUp size={18} className="flex-shrink-0" />
+                  ) : (
+                    <ChevronDown size={18} className="flex-shrink-0" />
+                  )}
                 </div>
-                <div className="mt-2 text-[11px] font-semibold">⚠️ {issue.problem}</div>
-                {issue.suggestion && (
-                  <div className="mt-1 text-[11px] text-gray-700">
-                    Návrh: <span className="font-medium">{issue.suggestion}</span>
-                  </div>
-                )}
-                {issue.sources && issue.sources.length > 0 && (
-                  <div className="mt-2 text-[10px] text-gray-600">
-                    Zdroje: {issue.sources.join(', ')}
+
+                {/* Expanded details */}
+                {expandedIssue === i && (
+                  <div className="mt-2 pt-2 border-t border-current opacity-75 text-xs space-y-1">
+                    {issue.suggestion && (
+                      <div>
+                        <strong>💡 Návrh:</strong> {issue.suggestion}
+                      </div>
+                    )}
+                    {issue.sources && (
+                      <div>
+                        <strong>📚 Zdroje:</strong> {issue.sources.join(', ')}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

@@ -1,155 +1,150 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { ChevronDown, ChevronUp, Users, Zap, Briefcase } from 'lucide-react';
 
-const SummaryTile = ({ label, value, icon, tone = 'slate' }) => {
-  const palette = {
-    slate: 'border-slate-200 bg-slate-50 text-slate-900',
-    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-900',
-    blue: 'border-blue-200 bg-blue-50 text-blue-900',
-    amber: 'border-amber-200 bg-amber-50 text-amber-900',
-  };
+export default function ResourceSheet({ data }) {
+  const [expandedSection, setExpandedSection] = useState(0);
 
-  return (
-    <div className={`rounded-lg border p-3 text-xs shadow-sm ${palette[tone] ?? palette.slate}`}>
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-        <span>{icon}</span>
-        <span>{label}</span>
-      </div>
-      <div className="mt-1 text-lg font-bold">{value}</div>
-    </div>
-  );
-};
+  if (!data) return <div className="text-gray-500">Žádná data</div>;
 
-export default function ResourceSheet({ data = {}, compact = false }) {
-  const { summary = {}, by_section = [], team_composition = {}, equipment_schedule = {}, cost_breakdown = {} } = data;
+  const { summary, by_section = [], team_composition, equipment_schedule } = data;
 
   return (
-    <div className={`space-y-4 ${compact ? 'text-xs' : 'text-sm'}`}>
-      <div className="grid grid-cols-2 gap-3">
-        <SummaryTile
-          label="Celkem člověkohodin"
-          value={`${summary.total_labor_hours?.toLocaleString?.() || summary.total_labor_hours || 0} h`}
-          icon="👷"
-          tone="emerald"
-        />
-        <SummaryTile
-          label="Technika"
-          value={`${summary.total_equipment_hours?.toLocaleString?.() || summary.total_equipment_hours || 0} h`}
-          icon="🚜"
-          tone="amber"
-        />
-        <SummaryTile
-          label="Náklady na materiál"
-          value={`${summary.total_materials_cost?.toLocaleString?.() || summary.total_materials_cost || 0} Kč`}
-          icon="💰"
-          tone="blue"
-        />
-        <SummaryTile
-          label="Odhadovaná délka"
-          value={`${summary.estimated_duration_days || 0} dní`}
-          icon="🗓️"
-        />
-      </div>
-
-      {by_section.map((section) => (
-        <div key={section.section} className="rounded-xl border border-lime-200 bg-lime-50 p-3 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <div className="text-xs uppercase text-lime-600">{section.section}</div>
-              <div className="text-base font-semibold text-lime-900">{section.section_title}</div>
-            </div>
-            <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-lime-700">
-              Materiály: {section.materials_cost?.toLocaleString?.() || section.materials_cost || 0} Kč
+    <div className="space-y-3">
+      {/* Summary stats */}
+      {summary && (
+        <div className="grid grid-cols-2 gap-2">
+          <div className="bg-blue-50 p-2 rounded border border-blue-200">
+            <div className="text-xs text-blue-700 font-semibold">Celk. pracovní hodiny</div>
+            <div className="text-lg font-bold text-blue-900">
+              {summary.total_labor_hours?.toLocaleString('cs-CZ') || '?'} h
             </div>
           </div>
+          <div className="bg-orange-50 p-2 rounded border border-orange-200">
+            <div className="text-xs text-orange-700 font-semibold">Stroj. hodiny</div>
+            <div className="text-lg font-bold text-orange-900">
+              {summary.total_equipment_hours?.toLocaleString('cs-CZ') || '?'} h
+            </div>
+          </div>
+          <div className="bg-green-50 p-2 rounded border border-green-200">
+            <div className="text-xs text-green-700 font-semibold">Náklady materiál</div>
+            <div className="text-lg font-bold text-green-900">
+              {Number(summary.total_materials_cost || 0).toLocaleString('cs-CZ')} Kč
+            </div>
+          </div>
+          <div className="bg-purple-50 p-2 rounded border border-purple-200">
+            <div className="text-xs text-purple-700 font-semibold">Odhadovaná doba</div>
+            <div className="text-lg font-bold text-purple-900">
+              {summary.estimated_duration_days} dní
+            </div>
+          </div>
+        </div>
+      )}
 
-          {section.labor && (
-            <div className="mt-3 text-[11px] text-slate-700">
-              <div className="font-semibold uppercase text-slate-500">Pracovní síla</div>
-              <div className="mt-1 grid gap-2 md:grid-cols-2">
-                {Object.entries(section.labor.by_trade || {}).map(([trade, info]) => (
-                  <div key={trade} className="rounded border border-slate-200 bg-white/70 px-2 py-1">
-                    <div className="font-semibold text-slate-900">{trade}</div>
-                    <div className="text-slate-600">
-                      {info.hours?.toLocaleString?.() || info.hours || 0} h • {info.workers || 0} pracovníci
-                      {info.duration_days && ` • ${info.duration_days} dní`}
-                    </div>
-                  </div>
-                ))}
+      {/* By section */}
+      {by_section.map((section, idx) => (
+        <div
+          key={idx}
+          className="border border-gray-200 rounded-lg overflow-hidden"
+        >
+          <button
+            onClick={() => setExpandedSection(expandedSection === idx ? null : idx)}
+            className="w-full p-3 bg-gray-50 hover:bg-gray-100 transition flex items-center justify-between"
+          >
+            <div className="flex-1 text-left">
+              <div className="font-semibold text-sm">{section.section}</div>
+              <div className="text-xs text-gray-600">
+                {section.labor?.total_hours || 0} h práce • {section.section_title}
               </div>
             </div>
-          )}
+            {expandedSection === idx ? (
+              <ChevronUp size={18} />
+            ) : (
+              <ChevronDown size={18} />
+            )}
+          </button>
 
-          {section.equipment && (
-            <div className="mt-3 text-[11px] text-slate-700">
-              <div className="font-semibold uppercase text-slate-500">Technika</div>
-              <div className="mt-1 grid gap-2 md:grid-cols-2">
-                {Object.entries(section.equipment.by_type || {}).map(([equipment, details]) => (
-                  <div key={equipment} className="rounded border border-slate-200 bg-white/70 px-2 py-1">
-                    <div className="font-semibold text-slate-900">{equipment}</div>
-                    <div className="text-slate-600">
-                      {details.hours?.toLocaleString?.() || details.hours || 0} h
-                      {details.daily_rate && ` • ${details.daily_rate.toLocaleString()} Kč/den`}
-                    </div>
+          {expandedSection === idx && (
+            <div className="p-3 space-y-3 border-t border-gray-200 bg-white text-xs">
+              {/* Labor */}
+              {section.labor && (
+                <div>
+                  <div className="font-semibold flex items-center gap-2 mb-2">
+                    <Users size={16} /> Práce
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
+                  <div className="space-y-1 ml-2">
+                    {Object.entries(section.labor.by_trade || {}).map(
+                      ([trade, details], i) => (
+                        <div key={i} className="text-gray-700">
+                          <strong>{trade}:</strong> {details.hours} h ({details.workers} osob)
+                        </div>
+                      )
+                    )}
+                  </div>
+                </div>
+              )}
 
-          {section.timeline && (
-            <div className="mt-3 text-[11px] text-slate-700">
-              <div className="font-semibold uppercase text-slate-500">Harmonogram</div>
-              <div className="rounded border border-slate-200 bg-white/70 px-3 py-2">
-                {section.timeline.start_day && section.timeline.end_day && (
-                  <div>
-                    Den {section.timeline.start_day} → {section.timeline.end_day}
+              {/* Equipment */}
+              {section.equipment && (
+                <div>
+                  <div className="font-semibold flex items-center gap-2 mb-2">
+                    <Zap size={16} /> Technika
                   </div>
-                )}
-                {section.timeline.critical_path && (
-                  <div className="text-slate-600">Kritická cesta: {section.timeline.critical_path}</div>
-                )}
-              </div>
+                  <div className="space-y-1 ml-2">
+                    {Object.entries(section.equipment.by_type || {}).map(
+                      ([equipment, details], i) => (
+                        <div key={i} className="text-gray-700">
+                          <strong>{equipment}:</strong> {details.hours} h
+                        </div>
+                      )
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Timeline */}
+              {section.timeline && (
+                <div>
+                  <div className="font-semibold flex items-center gap-2 mb-2">
+                    <Briefcase size={16} /> Harmonogram
+                  </div>
+                  <div className="ml-2 text-gray-700">
+                    Den {section.timeline.start_day}-{section.timeline.end_day} ({
+                      section.timeline.end_day - section.timeline.start_day
+                    } dní)
+                    <br />
+                    <em>Kritická cesta: {section.timeline.critical_path}</em>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
       ))}
 
-      {Object.keys(team_composition).length > 0 && (
-        <div className="rounded-lg border border-slate-200 bg-white/80 p-3 text-[11px] text-slate-700">
-          <div className="font-semibold uppercase text-slate-500">Složení týmu</div>
-          <div className="mt-1 grid grid-cols-2 gap-2">
-            {Object.entries(team_composition).map(([role, count]) => (
-              <div key={role} className="rounded bg-slate-50 px-2 py-1 font-medium text-slate-900">
-                {role}: {count}
+      {/* Team & equipment at bottom */}
+      {(team_composition || equipment_schedule) && (
+        <div className="bg-gray-50 p-3 rounded border border-gray-200 text-xs space-y-2">
+          {team_composition && (
+            <div>
+              <strong>Složení týmu:</strong>
+              <div className="ml-2 text-gray-700">
+                {Object.entries(team_composition)
+                  .map(([role, count]) => `${role}: ${count}`)
+                  .join(' • ')}
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+            </div>
+          )}
 
-      {Object.keys(equipment_schedule).length > 0 && (
-        <div className="rounded-lg border border-slate-200 bg-white/80 p-3 text-[11px] text-slate-700">
-          <div className="font-semibold uppercase text-slate-500">Plán techniky</div>
-          <ul className="mt-1 space-y-1">
-            {Object.entries(equipment_schedule).map(([equipment, schedule]) => (
-              <li key={equipment} className="rounded bg-slate-50 px-2 py-1 font-medium text-slate-900">
-                {equipment}: <span className="font-normal text-slate-600">{schedule}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {Object.keys(cost_breakdown).length > 0 && (
-        <div className="rounded-lg border border-slate-200 bg-white/80 p-3 text-[11px] text-slate-700">
-          <div className="font-semibold uppercase text-slate-500">Nákladová struktura</div>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            {Object.entries(cost_breakdown).map(([category, cost]) => (
-              <div key={category} className="rounded bg-slate-50 px-2 py-1 font-medium text-slate-900">
-                {category}: {cost.toLocaleString?.() || cost} Kč
+          {equipment_schedule && (
+            <div>
+              <strong>Technika - plán:</strong>
+              <div className="ml-2 text-gray-700 space-y-1">
+                {Object.entries(equipment_schedule).map(([name, schedule], i) => (
+                  <div key={i}>{name}: {schedule}</div>
+                ))}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
         </div>
       )}
     </div>

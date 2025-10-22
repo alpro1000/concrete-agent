@@ -1,117 +1,127 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { ChevronDown, ChevronUp, AlertCircle, CheckCircle } from 'lucide-react';
 
-const StepCard = ({ step }) => (
-  <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-xs">
-    <div className="flex items-center justify-between gap-2">
-      <div className="font-semibold text-amber-700">Krok {step.step_num}: {step.title}</div>
-      {step.duration_minutes && (
-        <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-          {step.duration_minutes} min
-        </span>
-      )}
-    </div>
-    <div className="mt-2 text-amber-900">{step.description}</div>
-    <div className="mt-2 grid grid-cols-2 gap-1 text-[10px] text-amber-700">
-      {step.workers && <div>👷 Pracovníci: {step.workers}</div>}
-      {step.equipment && step.equipment.length > 0 && (
-        <div>⚙️ Vybavení: {step.equipment.join(', ')}</div>
-      )}
-    </div>
-  </div>
-);
+export default function TechCard({ data }) {
+  const [expandedSection, setExpandedSection] = useState('steps');
 
-const ListSection = ({ title, items, tone = 'slate' }) => {
-  if (!items || items.length === 0) return null;
+  if (!data) return <div className="text-gray-500">Žádná data</div>;
 
-  const palette = {
-    slate: 'border-slate-200 bg-white/80 text-slate-700',
-    green: 'border-emerald-200 bg-emerald-50/80 text-emerald-800',
-    red: 'border-rose-200 bg-rose-50/80 text-rose-800',
-  };
+  const { title, steps = [], norms = [], quality_checks = [], safety_requirements = [], materials_used = [] } = data;
 
   return (
-    <div className={`rounded-lg border p-3 text-xs shadow-sm ${palette[tone] || palette.slate}`}>
-      <div className="font-semibold uppercase tracking-wide">{title}</div>
-      <ul className="mt-1 space-y-1">
-        {items.map((item, index) => (
-          <li key={`${title}-${index}`} className="rounded bg-white/70 px-2 py-1">
-            {typeof item === 'string' ? (
-              item
-            ) : (
-              <div className="space-y-1">
-                {item.ref && <div className="font-semibold">{item.ref}</div>}
-                {item.requirement && <div className="text-[11px]">{item.requirement}</div>}
-                {item.tolerance && <div className="text-[10px] text-slate-500">Tolerance: {item.tolerance}</div>}
-                {item.tolerances && (
-                  <div className="text-[10px] text-slate-500">Tolerance: {item.tolerances.join(', ')}</div>
-                )}
-                {item.timing && (
-                  <div className="text-[10px] text-slate-500">Termín: {item.timing}</div>
-                )}
-                {item.pass && (
-                  <div className="text-[10px] text-slate-500">Akceptace: {item.pass}</div>
-                )}
-              </div>
-            )}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-};
+    <div className="space-y-3">
+      {/* Title */}
+      {title && (
+        <div className="bg-blue-50 p-3 rounded border border-blue-200">
+          <div className="font-bold text-sm text-blue-900">{title}</div>
+        </div>
+      )}
 
-export default function TechCard({ data = {}, compact = false }) {
-  const {
-    title,
-    position_code,
-    description,
-    steps = [],
-    norms = [],
-    quality_checks = [],
-    safety_requirements = [],
-    materials_used = [],
-    sources = [],
-  } = data;
-
-  return (
-    <div className={`space-y-4 ${compact ? 'text-xs' : 'text-sm'}`}>
-      <div className="rounded-xl border border-amber-200 bg-white p-3 shadow-sm">
-        <div className="text-xs uppercase text-amber-600">Technologický postup</div>
-        <div className="text-base font-semibold text-amber-900">{title}</div>
-        {position_code && (
-          <div className="font-mono text-xs text-amber-700">Pozice: {position_code}</div>
-        )}
-        {description && <div className="mt-1 text-sm text-amber-800">{description}</div>}
-      </div>
-
+      {/* Steps */}
       {steps.length > 0 && (
-        <div className="space-y-2">
-          {steps.map((step) => (
-            <StepCard key={step.step_num} step={step} />
+        <div className="border border-gray-200 rounded-lg overflow-hidden">
+          <button
+            onClick={() =>
+              setExpandedSection(expandedSection === 'steps' ? null : 'steps')
+            }
+            className="w-full p-3 bg-gray-50 hover:bg-gray-100 flex justify-between items-center"
+          >
+            <span className="font-semibold text-sm">Postup ({steps.length} kroků)</span>
+            {expandedSection === 'steps' ? <ChevronUp /> : <ChevronDown />}
+          </button>
+          {expandedSection === 'steps' && (
+            <div className="p-3 space-y-2 text-xs">
+              {steps.map((step, i) => (
+                <div key={i} className="border-l-4 border-blue-400 pl-3 py-2">
+                  <div className="font-semibold">
+                    Krok {step.step_num}: {step.title}
+                  </div>
+                  <div className="text-gray-700 mt-1">{step.description}</div>
+                  <div className="text-gray-600 mt-1">
+                    ⏱️ {step.duration_minutes} min • 👥 {step.workers} osob
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Quality checks */}
+      {quality_checks && quality_checks.length > 0 && (
+        <div className="border border-green-200 rounded-lg overflow-hidden">
+          <button
+            onClick={() =>
+              setExpandedSection(expandedSection === 'quality' ? null : 'quality')
+            }
+            className="w-full p-3 bg-green-50 hover:bg-green-100 flex justify-between items-center"
+          >
+            <span className="font-semibold text-sm flex items-center gap-2">
+              <CheckCircle size={16} /> Kontrola ({quality_checks.length})
+            </span>
+            {expandedSection === 'quality' ? <ChevronUp /> : <ChevronDown />}
+          </button>
+          {expandedSection === 'quality' && (
+            <div className="p-3 space-y-2 text-xs">
+              {quality_checks.map((check, i) => (
+                <div key={i} className="bg-green-50 p-2 rounded">
+                  <div><strong>🔍 {check.check}</strong></div>
+                  <div className="text-gray-700">Kdy: {check.timing}</div>
+                  <div className="text-green-700">✓ {check.pass}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Safety requirements */}
+      {safety_requirements && safety_requirements.length > 0 && (
+        <div className="border border-red-200 rounded-lg overflow-hidden">
+          <button
+            onClick={() =>
+              setExpandedSection(expandedSection === 'safety' ? null : 'safety')
+            }
+            className="w-full p-3 bg-red-50 hover:bg-red-100 flex justify-between items-center"
+          >
+            <span className="font-semibold text-sm flex items-center gap-2">
+              <AlertCircle size={16} /> Bezpečnost
+            </span>
+            {expandedSection === 'safety' ? <ChevronUp /> : <ChevronDown />}
+          </button>
+          {expandedSection === 'safety' && (
+            <div className="p-3 space-y-1 text-xs">
+              {safety_requirements.map((req, i) => (
+                <div key={i} className="text-red-800">
+                  ⚠️ {req}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Materials */}
+      {materials_used && materials_used.length > 0 && (
+        <div className="bg-orange-50 p-3 rounded border border-orange-200 text-xs space-y-1">
+          <strong>Materiály:</strong>
+          {materials_used.map((mat, i) => (
+            <div key={i} className="text-gray-700 ml-2">
+              {mat.material}: {mat.qty} {mat.unit}
+            </div>
           ))}
         </div>
       )}
 
-      <ListSection title="Normy" items={norms} tone="slate" />
-      <ListSection title="Kontroly kvality" items={quality_checks} tone="green" />
-      <ListSection title="Bezpečnost" items={safety_requirements} tone="red" />
-
-      {materials_used.length > 0 && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-xs shadow-sm">
-          <div className="font-semibold uppercase tracking-wide text-amber-700">Materiály</div>
-          <ul className="mt-1 space-y-1 text-amber-900">
-            {materials_used.map((material, index) => (
-              <li key={`${material.material}-${index}`} className="rounded bg-white/70 px-2 py-1">
-                {material.material}: {material.qty}{material.unit ? ` ${material.unit}` : ''}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {sources.length > 0 && (
-        <div className="rounded-lg border border-slate-200 bg-white/80 p-3 text-[10px] text-slate-600">
-          Zdroje: {sources.map((source) => source.ref || source).join(', ')}
+      {/* Norms */}
+      {norms && norms.length > 0 && (
+        <div className="bg-purple-50 p-3 rounded border border-purple-200 text-xs space-y-1">
+          <strong>Normy a předpisy:</strong>
+          {norms.map((norm, i) => (
+            <div key={i} className="text-gray-700 ml-2">
+              <strong>{norm.ref}</strong> - {norm.requirement}
+            </div>
+          ))}
         </div>
       )}
     </div>

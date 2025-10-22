@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAppStore } from '../store/appStore';
 import { getProjects, uploadFiles } from '../utils/api';
 import { useChat } from '../hooks/useChat';
+import { QUICK_ACTIONS } from '../utils/constants';
 
 import Header from '../components/layout/Header';
 import Sidebar from '../components/layout/Sidebar';
@@ -60,17 +61,24 @@ export default function ChatPage() {
   );
 
   const handleQuickAction = useCallback(
-    (action) => {
-      if (!action) return;
+    (actionType) => {
+      if (!actionType) return;
       const projectId = currentProject?.project_id ?? currentProject?.id;
       if (!projectId) return;
 
-      const label = action.label || action.czech_name || action.apiAction || action.id;
+      const quickAction = QUICK_ACTIONS.find(
+        (item) => item.apiAction === actionType || item.id === actionType
+      );
+      const label = quickAction?.czech_name || quickAction?.label || actionType;
       addMessage({
         type: 'user',
         text: `Akce: ${label}`,
       });
-      performAction(projectId, action);
+      if (quickAction) {
+        performAction(projectId, { ...quickAction, label });
+      } else {
+        performAction(projectId, { action: actionType, label });
+      }
     },
     [addMessage, currentProject, performAction]
   );

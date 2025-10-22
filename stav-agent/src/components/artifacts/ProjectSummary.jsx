@@ -1,139 +1,100 @@
 import React from 'react';
+import { AlertTriangle, Target } from 'lucide-react';
 
-const SectionCard = ({ title, children }) => (
-  <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 shadow-sm">
-    <h4 className="text-xs font-semibold uppercase tracking-wide text-sky-600">{title}</h4>
-    <div className="mt-2 space-y-2 text-sm text-slate-700">{children}</div>
-  </div>
-);
+export default function ProjectSummary({ data }) {
+  if (!data) return <div className="text-gray-500">Žádná data</div>;
 
-const KeyValueList = ({ data }) => (
-  <dl className="grid grid-cols-1 gap-1 text-xs md:grid-cols-2">
-    {Object.entries(data).map(([key, value]) => {
-      let display = '—';
-
-      if (Array.isArray(value)) {
-        display = value.join(', ');
-      } else if (typeof value === 'number') {
-        display = value.toLocaleString();
-      } else if (value !== undefined && value !== null && value !== '') {
-        display = value;
-      }
-
-      return (
-        <div key={key} className="rounded bg-white/80 px-2 py-1">
-          <dt className="font-semibold text-slate-600">{key.replace(/_/g, ' ')}</dt>
-          <dd className="text-slate-900">{display}</dd>
-        </div>
-      );
-    })}
-  </dl>
-);
-
-export default function ProjectSummary({ data = {}, compact = false }) {
-  const {
-    basic_info = {},
-    scope = {},
-    budget = {},
-    kpe = {},
-    source_documents = {},
-    compliance = {},
-    recommendations = [],
-  } = data;
+  const { basic_info, scope, budget, kpe, recommendations } = data;
 
   return (
-    <div className={`space-y-4 ${compact ? 'text-xs' : 'text-sm'}`}>
-      {basic_info.project_name && (
-        <div className="rounded-xl border border-sky-200 bg-white p-3 shadow-sm">
-          <div className="text-xs uppercase text-sky-500">Projekt</div>
-          <div className="text-base font-semibold text-slate-900">{basic_info.project_name}</div>
-          {basic_info.location && (
-            <div className="text-xs text-slate-600">{basic_info.location}</div>
-          )}
+    <div className="space-y-3">
+      {/* Basic info */}
+      {basic_info && (
+        <div className="bg-blue-50 p-3 rounded border border-blue-200 text-xs space-y-1">
+          <div><strong>Projekt:</strong> {basic_info.project_name}</div>
+          <div><strong>Typ:</strong> {basic_info.object_type}</div>
+          <div><strong>Lokace:</strong> {basic_info.location}</div>
+          <div><strong>Délka:</strong> {basic_info.started} → {basic_info.planned_completion}</div>
         </div>
       )}
 
-      {Object.keys(scope).length > 0 && (
-        <SectionCard title="Rozsah">
-          {scope.total_positions != null && (
-            <div className="rounded bg-white/70 px-2 py-1 text-xs font-semibold text-slate-900">
-              Pozic celkem: {scope.total_positions}
+      {/* Key metrics */}
+      {kpe && (
+        <div className="grid grid-cols-2 gap-2">
+          <div className="bg-purple-50 p-2 rounded border border-purple-200">
+            <div className="text-xs text-purple-700 font-semibold">Cena za m²</div>
+            <div className="text-lg font-bold text-purple-900">
+              {kpe.cost_per_m2?.toLocaleString('cs-CZ')} Kč
             </div>
-          )}
-          {Array.isArray(scope.main_sections) && scope.main_sections.length > 0 && (
-            <div className="text-xs text-slate-700">
-              Sekce: {scope.main_sections.join(', ')}
+          </div>
+          <div className="bg-green-50 p-2 rounded border border-green-200">
+            <div className="text-xs text-green-700 font-semibold">Trvání</div>
+            <div className="text-lg font-bold text-green-900">
+              {kpe.duration_weeks} týdnů
             </div>
-          )}
-          {Array.isArray(scope.main_activities) && scope.main_activities.length > 0 && (
-            <ul className="grid gap-1 text-xs md:grid-cols-2">
-              {scope.main_activities.map((activity, idx) => (
-                <li key={`${activity.activity}-${idx}`} className="rounded bg-white/80 px-2 py-1">
-                  {activity.activity}: {activity.qty}{activity.unit ? ` ${activity.unit}` : ''}
-                </li>
+          </div>
+        </div>
+      )}
+
+      {/* Budget breakdown */}
+      {budget && (
+        <div className="bg-yellow-50 p-3 rounded border border-yellow-200 text-xs">
+          <div className="font-semibold mb-2">Rozpočet: {Number(budget.total_budget || 0).toLocaleString('cs-CZ')} Kč</div>
+          <div className="space-y-1 text-gray-700">
+            {Object.entries(budget.breakdown || {})
+              .filter(([, v]) => v > 0)
+              .map(([category, amount]) => (
+                <div key={category} className="flex justify-between">
+                  <span>{category}:</span>
+                  <strong>{Number(amount).toLocaleString('cs-CZ')} Kč</strong>
+                </div>
               ))}
-            </ul>
-          )}
-        </SectionCard>
+          </div>
+        </div>
       )}
 
-      {Object.keys(budget).length > 0 && (
-        <SectionCard title="Rozpočet">
-          {budget.total_budget && (
-            <div className="rounded bg-white/80 px-2 py-1 text-xs font-semibold text-slate-900">
-              Celkem: {budget.total_budget.toLocaleString?.() || budget.total_budget} Kč
+      {/* Scope */}
+      {scope && (
+        <div className="bg-gray-50 p-3 rounded border border-gray-200 text-xs">
+          <div className="font-semibold mb-2">Rozsah: {scope.total_positions} pozic</div>
+          <div className="space-y-1">
+            {scope.main_activities?.slice(0, 5).map((act, i) => (
+              <div key={i} className="text-gray-700">
+                {act.activity}: {act.qty} {act.unit}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Risks & Recommendations */}
+      {kpe?.main_risks && kpe.main_risks.length > 0 && (
+        <div className="bg-red-50 p-3 rounded border border-red-200 text-xs">
+          <div className="font-semibold flex items-center gap-2 mb-2">
+            <AlertTriangle size={16} className="text-red-600" /> Rizika
+          </div>
+          {kpe.main_risks.map((risk, i) => (
+            <div key={i} className="mb-1 text-red-800">
+              • <strong>{risk.risk}</strong> ({risk.probability})
+              <br />
+              &nbsp;&nbsp;→ {risk.mitigation}
             </div>
-          )}
-          {budget.breakdown && <KeyValueList data={budget.breakdown} />}
-        </SectionCard>
+          ))}
+        </div>
       )}
 
-      {Object.keys(kpe).length > 0 && (
-        <SectionCard title="KPI a rizika">
-          <KeyValueList data={{
-            'Cost per m²': kpe.cost_per_m2,
-            'Doba trvání (týdny)': kpe.duration_weeks,
-            'Velikost týmu': kpe.team_size,
-            'Technika': kpe.equipment_count,
-          }} />
-          {Array.isArray(kpe.main_risks) && kpe.main_risks.length > 0 && (
-            <div className="rounded-lg border border-red-200 bg-red-50/70 p-2 text-xs">
-              <div className="font-semibold uppercase text-red-600">Hlavní rizika</div>
-              <ul className="mt-1 space-y-1 text-red-700">
-                {kpe.main_risks.map((risk, idx) => (
-                  <li key={`${risk.risk}-${idx}`} className="rounded bg-white/70 px-2 py-1">
-                    <div className="font-semibold">{risk.risk}</div>
-                    <div className="text-xs text-red-600">
-                      Pravděpodobnost: {risk.probability} • Opatření: {risk.mitigation}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </SectionCard>
-      )}
-
-      {Object.keys(source_documents).length > 0 && (
-        <SectionCard title="Dokumentace">
-          <KeyValueList data={source_documents} />
-        </SectionCard>
-      )}
-
-      {Object.keys(compliance).length > 0 && (
-        <SectionCard title="Soulad s normami">
-          <KeyValueList data={compliance} />
-        </SectionCard>
-      )}
-
-      {recommendations.length > 0 && (
-        <SectionCard title="Doporučení">
-          <ul className="list-disc space-y-1 pl-5 text-xs text-slate-700">
-            {recommendations.map((recommendation, idx) => (
-              <li key={`${recommendation}-${idx}`}>{recommendation}</li>
+      {/* Recommendations */}
+      {recommendations && recommendations.length > 0 && (
+        <div className="bg-green-50 p-3 rounded border border-green-200 text-xs">
+          <div className="font-semibold flex items-center gap-2 mb-2">
+            <Target size={16} className="text-green-600" /> Doporučení
+          </div>
+          <ul className="list-disc list-inside text-green-800 space-y-1">
+            {recommendations.map((rec, i) => (
+              <li key={i}>{rec}</li>
             ))}
           </ul>
-        </SectionCard>
+        </div>
       )}
     </div>
   );
