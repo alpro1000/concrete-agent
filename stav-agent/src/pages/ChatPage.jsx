@@ -61,12 +61,14 @@ export default function ChatPage() {
 
   const handleQuickAction = useCallback(
     (action) => {
+      if (!action) return;
       const projectId = currentProject?.project_id ?? currentProject?.id;
       if (!projectId) return;
 
+      const label = action.label || action.czech_name || action.apiAction || action.id;
       addMessage({
         type: 'user',
-        text: `Akce: ${action}`,
+        text: `Akce: ${label}`,
       });
       performAction(projectId, action);
     },

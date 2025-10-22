@@ -39,15 +39,34 @@ export const useChat = () => {
   );
 
   const performAction = useCallback(
-    async (projectId, action) => {
+    async (projectId, descriptor = {}) => {
+      const {
+        apiAction,
+        action: explicitAction,
+        label,
+        options,
+        freeFormQuery,
+        positionId,
+      } = descriptor;
+
+      const action = explicitAction || apiAction;
+
       if (!projectId || !action || isLoading) return;
 
       setIsLoading(true);
       try {
-        const res = await triggerAction(projectId, action);
+        const res = await triggerAction({
+          projectId,
+          action,
+          options,
+          positionId,
+          freeFormQuery,
+        });
         addMessage({
           type: 'ai',
-          text: res.data?.response || 'Akce dokončena',
+          text:
+            res.data?.response ||
+            (label ? `Akce ${label} dokončena` : 'Akce dokončena'),
         });
         if (res.data?.artifact) setSelectedArtifact(res.data.artifact);
       } catch (error) {

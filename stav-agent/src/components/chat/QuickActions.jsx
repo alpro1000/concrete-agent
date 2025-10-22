@@ -8,12 +8,15 @@ export default function QuickActions({ onAction, isLoading }) {
         {QUICK_ACTIONS.map((action) => (
           <button
             key={action.id}
-            onClick={() => onAction(action.apiAction || action.id)}
+            onClick={() => onAction(action)}
             disabled={isLoading}
             className={`flex-shrink-0 px-3 py-2 rounded text-sm font-medium whitespace-nowrap transition ${action.color} disabled:opacity-50 disabled:cursor-not-allowed`}
             title={action.description}
           >
-            {action.icon} {action.label}
+            <span className="flex items-center gap-1">
+              <span>{action.icon}</span>
+              <span>{action.label}</span>
+            </span>
           </button>
         ))}
       </div>
