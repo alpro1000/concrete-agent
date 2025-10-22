@@ -8,6 +8,7 @@ import {
   triggerAction,
   getProjectResults,
   getProjectStatus,
+  getProjectFiles,
 } from '../utils/api';
 
 export function useAPI() {
@@ -21,6 +22,7 @@ export function useAPI() {
       triggerAction,
       getProjectResults,
       getProjectStatus,
+      getProjectFiles,
     }),
     [],
   );

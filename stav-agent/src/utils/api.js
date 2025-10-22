@@ -1,9 +1,10 @@
 import axios from 'axios';
 
+const DEFAULT_API_URL = 'https://concrete-agent.onrender.com';
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
   import.meta.env.VITE_API_URL ||
-  'https://concrete-agent.onrender.com';
+  import.meta.env.VITE_API_BASE_URL ||
+  DEFAULT_API_URL;
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -11,6 +12,11 @@ const apiClient = axios.create({
     'Content-Type': 'application/json',
   },
   timeout: 30000,
+});
+
+export const normalizeChat = (data) => ({
+  response: data?.response ?? data?.message ?? '',
+  artifact: data?.artifact ?? null,
 });
 
 // Projects
@@ -38,15 +44,18 @@ export const uploadFiles = (projectId, files, onProgress) => {
 };
 
 // Chat
-export const sendChatMessage = (projectId, message) =>
-  apiClient.post('/api/chat/message', {
+export const sendChatMessage = async (projectId, message) => {
+  const { data } = await apiClient.post('/api/chat/message', {
     project_id: projectId,
     message,
     include_history: true,
   });
 
+  return normalizeChat(data);
+};
+
 // Actions (buttons)
-export const triggerAction = ({
+export const triggerAction = async ({
   projectId,
   action,
   options = undefined,
@@ -70,7 +79,8 @@ export const triggerAction = ({
     payload.free_form_query = freeFormQuery;
   }
 
-  return apiClient.post('/api/chat/action', payload);
+  const { data } = await apiClient.post('/api/chat/action', payload);
+  return normalizeChat(data);
 };
 
 // Results
