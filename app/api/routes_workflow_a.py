@@ -3,18 +3,143 @@ API Routes for Workflow A - Specialized Endpoints
 POUZE specifické endpointy pro Workflow A (bez upload!)
 """
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List
 import logging
 import json
 
+import aiofiles
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.core.config import settings
+from app.state.project_store import project_store
+from app.services.workflow_a import workflow_a
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/workflow-a", tags=["Workflow A"])
+
+# Alias for backwards compatibility with legacy in-memory artifacts cache
+projects: Dict[str, Dict[str, Any]] = project_store
+
+
+def _get_cached_artifact(project_id: str, artifact_key: str) -> Any | None:
+    """Retrieve an artifact from the in-memory cache if available."""
+
+    project = projects.get(project_id)
+    if not project:
+        return None
+
+    artifacts = project.get("artifacts")
+    if isinstance(artifacts, dict):
+        return artifacts.get(artifact_key)
+    return None
+
+
+def _cache_artifact(project_id: str, artifact_key: str, artifact_value: Any) -> None:
+    """Store an artifact in the in-memory cache."""
+
+    project = projects.setdefault(project_id, {})
+    artifacts = project.setdefault("artifacts", {})
+    if not isinstance(artifacts, dict):
+        artifacts = {}
+        project["artifacts"] = artifacts
+    artifacts[artifact_key] = artifact_value
+
+
+async def _read_artifact_from_disk(path: Path, project_id: str, artifact_key: str) -> Any | None:
+    """Read an artifact JSON file asynchronously and cache it in memory."""
+
+    if not path.exists():
+        return None
+
+    try:
+        async with aiofiles.open(path, "r", encoding="utf-8") as file_obj:
+            content = await file_obj.read()
+        artifact = json.loads(content)
+    except json.JSONDecodeError as exc:
+        logger.warning(
+            "Project %s: Artifact %s corrupted on disk (%s). Will regenerate.",
+            project_id,
+            artifact_key,
+            exc,
+        )
+        return None
+    except OSError as exc:
+        logger.warning(
+            "Project %s: Failed to read artifact %s from %s: %s",
+            project_id,
+            artifact_key,
+            path,
+            exc,
+        )
+        return None
+
+    _cache_artifact(project_id, artifact_key, artifact)
+    return artifact
+
+
+async def _write_artifact_to_disk(path: Path, data: Any) -> None:
+    """Persist artifact data to disk using async file operations."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        async with aiofiles.open(path, "w", encoding="utf-8") as file_obj:
+            await file_obj.write(json.dumps(data, indent=2, ensure_ascii=False))
+    except OSError as exc:
+        logger.warning("Failed to persist artifact to %s: %s", path, exc)
+
+
+async def _load_artifact(
+    project_id: str,
+    artifact_key: str,
+    filename: str,
+    workflow_action: str,
+) -> Any:
+    """Load an artifact using memory → disk → generation fallback."""
+
+    cached = _get_cached_artifact(project_id, artifact_key)
+    if cached is not None:
+        return cached
+
+    curated_dir = settings.DATA_DIR / "curated" / project_id
+    artifact_path = curated_dir / filename
+
+    artifact = await _read_artifact_from_disk(artifact_path, project_id, artifact_key)
+    if artifact is not None:
+        return artifact
+
+    try:
+        artifact = await workflow_a.run(
+            project_id=project_id,
+            action=workflow_action,
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        logger.warning(
+            "Project %s: Workflow A cannot generate artifact '%s': %s",
+            project_id,
+            artifact_key,
+            exc,
+        )
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.error(
+            "Project %s: Failed to generate artifact '%s': %s",
+            project_id,
+            artifact_key,
+            exc,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Не удалось сгенерировать артефакт '{artifact_key}'.",
+        ) from exc
+
+    await _write_artifact_to_disk(artifact_path, artifact)
+    _cache_artifact(project_id, artifact_key, artifact)
+    return artifact
 
 
 # Request/Response Models
@@ -201,7 +326,7 @@ async def get_project_summary(project_id: str):
 async def get_drawing_context(project_id: str):
     """
     Získat kontext z výkresů
-    
+
     Informace extrahované z výkresů:
     - Materiály a jejich vlastnosti
     - Podmínky zpracování
@@ -238,3 +363,66 @@ async def get_drawing_context(project_id: str):
     except Exception as e:
         logger.error(f"Chyba při načítání kontextu: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/workflow/a/{project_id}/tech-card")
+async def get_tech_card(project_id: str):
+    """Получить техкарту с fallback стратегией"""
+
+    try:
+        return await _load_artifact(
+            project_id=project_id,
+            artifact_key="tech_card",
+            filename="tech_card.json",
+            workflow_action="tech_card",
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.error(
+            "Project %s: Failed to obtain tech card: %s", project_id, exc, exc_info=True
+        )
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/workflow/a/{project_id}/resource-sheet")
+async def get_resource_sheet(project_id: str):
+    """Получить ресурсную ведомость с fallback стратегией"""
+
+    try:
+        return await _load_artifact(
+            project_id=project_id,
+            artifact_key="resource_sheet",
+            filename="resource_sheet.json",
+            workflow_action="resource_sheet",
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.error(
+            "Project %s: Failed to obtain resource sheet: %s", project_id, exc, exc_info=True
+        )
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/workflow/a/{project_id}/material-analysis")
+async def get_material_analysis(project_id: str):
+    """Получить анализ материалов с fallback стратегией"""
+
+    try:
+        return await _load_artifact(
+            project_id=project_id,
+            artifact_key="material_analysis",
+            filename="material_analysis.json",
+            workflow_action="materials",
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.error(
+            "Project %s: Failed to obtain material analysis: %s",
+            project_id,
+            exc,
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail=str(exc))
