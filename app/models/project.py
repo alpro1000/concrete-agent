@@ -10,6 +10,17 @@ from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 from enum import Enum
 
+from app.models.position import (
+    Position,
+    PositionAudit,
+    PositionClassification,
+)
+
+try:  # PositionAnalysis may not be present in all versions of position models
+    from app.models.position import PositionAnalysis
+except ImportError:  # pragma: no cover - optional model
+    PositionAnalysis = None
+
 # SQLAlchemy Base
 Base = declarative_base()
 
@@ -45,11 +56,7 @@ class ProjectStatus(str, Enum):
         return status in active
 
 
-class AuditClassification(str, Enum):
-    """Audit classification for positions"""
-    GREEN = "green"  # All checks passed
-    AMBER = "amber"  # Minor issues, needs attention
-    RED = "red"      # Critical issues, requires review
+AuditClassification = PositionClassification
 
 
 class WorkflowType(str, Enum):
@@ -250,42 +257,6 @@ class ProjectStatusResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
-class Position(BaseModel):
-    """Building position/item model"""
-    position_number: str = Field(..., description="Position number (PČ)")
-    code: Optional[str] = Field(None, description="KROS/ÚRS code")
-    name: str = Field(..., description="Position name/description")
-    unit: str = Field(..., description="Unit of measurement (MJ)")
-    quantity: float = Field(..., gt=0, description="Quantity (Množství)")
-    unit_price: Optional[float] = Field(None, description="Unit price (J.cena)")
-    total_price: Optional[float] = Field(None, description="Total price (Cena celkem)")
-    
-    # Additional fields
-    category: Optional[str] = None
-    section: Optional[str] = None
-
-
-class PositionAudit(BaseModel):
-    """Audit result for a single position"""
-    position: Position
-    classification: AuditClassification  # GREEN/AMBER/RED
-    confidence_score: float = Field(..., ge=0, le=1, description="Confidence in classification")
-    
-    # Audit findings
-    findings: List[str] = Field(default_factory=list, description="List of audit findings")
-    warnings: List[str] = Field(default_factory=list, description="Warnings")
-    errors: List[str] = Field(default_factory=list, description="Critical errors")
-    
-    # HITL flag
-    requires_hitl: bool = Field(False, description="Requires human-in-the-loop review")
-    hitl_reason: Optional[str] = Field(None, description="Reason for HITL")
-    
-    # Matching info
-    matched_code: Optional[str] = None
-    matched_name: Optional[str] = None
-    price_difference_pct: Optional[float] = None
-
-
 class AuditReport(BaseModel):
     """Complete audit report for a project"""
     project_id: str
@@ -397,6 +368,6 @@ def calculate_audit_summary(positions: List[PositionAudit]) -> Dict[str, int]:
         "green": sum(1 for p in positions if p.classification == AuditClassification.GREEN),
         "amber": sum(1 for p in positions if p.classification == AuditClassification.AMBER),
         "red": sum(1 for p in positions if p.classification == AuditClassification.RED),
-        "hitl": sum(1 for p in positions if p.requires_hitl),
+        "hitl": sum(1 for p in positions if getattr(p, "hitl_required", False)),
     }
     return summary
