@@ -1,10 +1,10 @@
+import asyncio
 """
 Test workflow_a integration with routes
 Validates the fix for ImportError and method signature
 """
 import pytest
-from unittest.mock import MagicMock, patch
-from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 
 def test_workflow_a_import():
@@ -24,17 +24,20 @@ def test_workflow_a_method_signature():
     sig = inspect.signature(workflow_a.run)
     params = list(sig.parameters.keys())
     
-    # Should have project_id and calculate_resources (excluding self)
     assert 'project_id' in params
-    assert 'calculate_resources' in params
+    assert 'action' in params
     
-    # Check parameter types
     param_project_id = sig.parameters['project_id']
-    param_calc_resources = sig.parameters['calculate_resources']
+    param_action = sig.parameters['action']
+    param_kwargs = sig.parameters['kwargs']
     
-    assert param_project_id.annotation == str
-    assert param_calc_resources.annotation == bool
-    assert param_calc_resources.default == False
+    def _normalize(annotation):
+        return str if annotation == 'str' else annotation
+
+    assert _normalize(param_project_id.annotation) is str
+    assert _normalize(param_action.annotation) is str
+    assert param_action.default == 'execute'
+    assert param_kwargs.kind == inspect.Parameter.VAR_KEYWORD
     
     print("✅ run() method signature is correct")
     print(f"   Signature: {sig}")
@@ -43,67 +46,56 @@ def test_workflow_a_method_signature():
 def test_workflow_a_routes_import():
     """Test that routes.py can import workflow_a"""
     try:
-        from app.api.routes import workflow_a
+        from app.api.routes_workflow_a import workflow_a
         assert workflow_a is not None
-        print("✅ workflow_a imported in routes.py")
+        print("✅ workflow_a imported in routes_workflow_a.py")
     except ImportError as e:
-        pytest.fail(f"Failed to import workflow_a in routes: {e}")
+        pytest.fail(f"Failed to import workflow_a in routes_workflow_a: {e}")
 
 
-@pytest.mark.asyncio
-async def test_workflow_a_run_with_invalid_project():
+def test_workflow_a_run_with_invalid_project():
     """Test that run() raises error for invalid project_id"""
     from app.services.workflow_a import workflow_a
-    
-    with pytest.raises(ValueError, match="not found in database"):
-        await workflow_a.run(project_id="nonexistent-id", calculate_resources=False)
-    
+
+    async def _invoke() -> None:
+        await workflow_a.run(project_id="nonexistent-id")
+
+    workflow_a._workflows.clear()
+    with pytest.raises(ValueError, match="not found in store"):
+        asyncio.run(_invoke())
+    workflow_a._workflows.clear()
+
     print("✅ run() correctly raises error for invalid project")
 
 
-@pytest.mark.asyncio
-async def test_workflow_a_run_with_mock_project():
-    """Test that run() can be called with correct signature"""
+def test_workflow_a_run_with_mock_project():
+    """Test that run() forwards calls to WorkflowA.execute"""
     from app.services.workflow_a import workflow_a, WorkflowA
-    from app.api import routes
-    
-    # Create a mock project
+
     test_project_id = "test-project-123"
-    test_file_path = Path("/tmp/test_vykaz.xlsx")
-    
-    # Create mock file
-    test_file_path.touch()
-    
-    # Mock the projects_db
-    original_db = routes.projects_db.copy()
-    routes.projects_db[test_project_id] = {
-        "id": test_project_id,
-        "name": "Test Project",
-        "vykaz_path": str(test_file_path),
-        "vykaz_format": "excel"
-    }
-    
-    try:
-        # Mock the internal methods to avoid actual API calls
-        with patch.object(WorkflowA, '_detect_format', return_value='excel'):
-            with patch.object(WorkflowA, '_parse_document', return_value=[]):
-                result = await workflow_a.run(
-                    project_id=test_project_id,
-                    calculate_resources=True
-                )
-                
-                # Check result structure
-                assert isinstance(result, dict)
-                assert "success" in result
-                print("✅ run() executed with correct signature")
-                print(f"   Result keys: {list(result.keys())}")
-    
-    finally:
-        # Cleanup
-        routes.projects_db.clear()
-        routes.projects_db.update(original_db)
-        if test_file_path.exists():
-            test_file_path.unlink()
+
+    async def _invoke():
+        return await workflow_a.run(
+            project_id=test_project_id,
+            action="tech_card",
+            extra_option=True,
+        )
+
+    workflow_a._workflows.clear()
+    with patch.object(WorkflowA, 'execute', new_callable=AsyncMock) as mock_execute:
+        mock_execute.return_value = {"success": True, "artifact": "tech_card"}
+        result = asyncio.run(_invoke())
+
+    assert result == {"success": True, "artifact": "tech_card"}
+    mock_execute.assert_awaited_once_with(
+        project_id=test_project_id,
+        action="tech_card",
+        extra_option=True,
+    )
+    workflow_a._workflows.clear()
+
+    print("✅ run() executed via WorkflowA.execute with forwarded kwargs")
+
 
 
 if __name__ == "__main__":

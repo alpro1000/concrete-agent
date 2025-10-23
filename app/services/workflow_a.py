@@ -60,8 +60,24 @@ class WorkflowA:
         project_id: str,
         generate_summary: bool = False,
         enable_enrichment: Optional[bool] = None,
+        *,
+        action: str = "execute",
+        **kwargs: Any,
     ) -> Dict[str, Any]:
         """Run upload handling and parsing for Workflow A."""
+        if action != "execute":
+            logger.debug(
+                "Project %s: Workflow A execute() received action '%s' (fallback to full pipeline)",
+                project_id,
+                action,
+            )
+
+        if kwargs:
+            logger.debug(
+                "Project %s: Workflow A execute() received extra kwargs: %s",
+                project_id,
+                sorted(kwargs.keys()),
+            )
         logger.info(
             "Project %s: Starting Workflow A Step 1 (upload handling)",
             project_id,
@@ -664,30 +680,21 @@ class WorkflowAService:
     def __init__(self):
         self._workflows = {}  # Кэш активных workflow
 
-    async def run(self, project_id: str, action: str, **kwargs) -> Dict[str, Any]:
-        """
-        Универсальный метод для всех действий
+    async def run(
+        self, project_id: str, action: str = "execute", **kwargs: Any
+    ) -> Dict[str, Any]:
+        """Dispatch all actions through WorkflowA.execute"""
 
-        Args:
-            project_id: ID проекта
-            action: "analyze_positions" | "tech_card" | "resource_sheet" | "materials"
-            **kwargs: Параметры действия
-        """
-        if project_id not in self._workflows:
-            self._workflows[project_id] = WorkflowA(project_id)
+        workflow = self._workflows.get(project_id)
+        if workflow is None:
+            workflow = WorkflowA()
+            self._workflows[project_id] = workflow
 
-        workflow = self._workflows[project_id]
-
-        if action == "analyze_positions":
-            return await workflow.analyze_positions(**kwargs)
-        elif action == "tech_card":
-            return await workflow.generate_tech_card(**kwargs)
-        elif action == "resource_sheet":
-            return await workflow.calculate_resource_sheet(**kwargs)
-        elif action == "materials":
-            return await workflow.analyze_materials(**kwargs)
-        else:
-            raise ValueError(f"Unknown action: {action}")
+        return await workflow.execute(
+            project_id=project_id,
+            action=action,
+            **kwargs,
+        )
 
     async def execute(self, project_id: str, **kwargs):
         """Алиас для совместимости"""

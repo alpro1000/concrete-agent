@@ -1,3 +1,5 @@
+from typing import get_args, get_origin
+
 """
 Tests for model unification and naming consistency
 Validates that the AuditStatus → ProjectStatus refactoring is complete
@@ -16,7 +18,11 @@ def test_project_status_values():
     """Test that ProjectStatus has correct enum values"""
     from app.models.project import ProjectStatus
     
-    expected = {'UPLOADED', 'PROCESSING', 'COMPLETED', 'FAILED'}
+    expected = {
+        'PENDING', 'PARSED', 'VALIDATED', 'AUDITED', 'STAGING', 'CURATED',
+        'AUDIT_IN_PROGRESS', 'AUDIT_COMPLETED', 'HITL_REVIEW',
+        'UPLOADED', 'PROCESSING', 'COMPLETED', 'FAILED',
+    }
     actual = {s.name for s in ProjectStatus}
     
     assert expected == actual, f"Expected {expected}, got {actual}"
@@ -88,11 +94,16 @@ def test_project_status_response_in_project():
     from app.models.project import ProjectStatusResponse, ProjectStatus
     
     assert ProjectStatusResponse is not None
-    # Check it uses ProjectStatus enum
     annotations = ProjectStatusResponse.__annotations__
     assert 'status' in annotations
-    assert annotations['status'] == ProjectStatus
-    print("✅ ProjectStatusResponse correctly defined in project.py with ProjectStatus type")
+
+    status_annotation = annotations['status']
+    origin = get_origin(status_annotation)
+    assert origin is not None, 'status field should allow union types'
+    args = set(get_args(status_annotation))
+    assert ProjectStatus in args
+    assert str in args
+    print("✅ ProjectStatusResponse status accepts ProjectStatus enum and strings")
 
 
 def test_position_classification_in_position():
