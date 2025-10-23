@@ -39,6 +39,13 @@ def normalize_status(status: Union[ProjectStatus, str]) -> str:
 
 
 logger = logging.getLogger(__name__)
+
+DATA_DIR = settings.DATA_DIR or settings.BASE_DIR / "data"
+
+# Создаём каталог для артефактов
+CURATED_DIR = DATA_DIR / "curated"
+CURATED_DIR.mkdir(parents=True, exist_ok=True)
+
 router = APIRouter()
 
 # Constants
