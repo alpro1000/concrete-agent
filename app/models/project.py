@@ -275,7 +275,7 @@ class AuditReport(BaseModel):
     
     # Overall assessment
     overall_risk: AuditClassification
-    recommendations: List[str] = []
+    recommendations: List[str] = Field(default_factory=list)
 
 
 class ErrorResponse(BaseModel):
