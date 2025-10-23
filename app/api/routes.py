@@ -27,6 +27,17 @@ from app.models.project import (
     FileMetadata,
 )
 
+
+def normalize_status(status: Union[ProjectStatus, str]) -> str:
+    """
+    Конвертирует статус в нижний регистр строку
+    Адаптер между внутренним enum и внешним API
+    """
+    if isinstance(status, ProjectStatus):
+        return status.value.lower()
+    return str(status).lower()
+
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -221,7 +232,7 @@ async def root():
     """Health check endpoint"""
     return {
         "service": "Czech Building Audit System",
-        "status": "running",
+        "status": normalize_status("running"),
         "version": "2.0.0",
         "features": {
             "workflow_a": settings.ENABLE_WORKFLOW_A,
@@ -501,7 +512,7 @@ async def upload_project(
             "project_id": project_id,
             "project_name": project_name,
             "workflow": workflow,
-            "status": ProjectStatus.UPLOADED,
+            "status": normalize_status(ProjectStatus.UPLOADED),
             "uploaded_at": datetime.now().isoformat(),
             "progress": 0,
             "files_uploaded": {
@@ -551,7 +562,7 @@ async def get_project_status(project_id: str):
     return {
         "project_id": project_id,
         "project_name": project["project_name"],
-        "status": project["status"],
+        "status": normalize_status(project["status"]),
         "workflow": project["workflow"],
         "created_at": project["created_at"],
         "updated_at": project["updated_at"],
@@ -589,7 +600,7 @@ async def get_project_results(project_id: str):
     if status not in {ProjectStatus.AUDITED, ProjectStatus.COMPLETED}:
         return {
             "project_id": project_id,
-            "status": status,
+            "status": normalize_status(status),
             "message": "Project is still processing",
         }
 
@@ -599,7 +610,7 @@ async def get_project_results(project_id: str):
         "project_id": project_id,
         "project_name": project["project_name"],
         "workflow": project["workflow"],
-        "status": status,
+        "status": normalize_status(status),
         "completed_at": project.get("completed_at"),
         "enrichment_enabled": project.get("enable_enrichment", False),
         "green_count": project.get("green_count", 0),
@@ -634,7 +645,7 @@ async def list_projects(
                 "project_id": p["project_id"],
                 "project_name": p["project_name"],
                 "workflow": p["workflow"],
-                "status": p["status"],
+                "status": normalize_status(p["status"]),
                 "enrichment_enabled": p.get("enable_enrichment", False),
                 "created_at": p["created_at"],
                 "positions_count": p.get("positions_total", 0)
@@ -764,7 +775,7 @@ async def health_check():
     Detailed health check with system status
     """
     return {
-        "status": "healthy",
+        "status": normalize_status("healthy"),
         "version": "2.0.0",
         "timestamp": datetime.now().isoformat(),
         "features": {
