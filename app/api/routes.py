@@ -12,11 +12,12 @@ import aiofiles
 import mimetypes
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Form, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.core.config import settings
 from app.services.workflow_a import WorkflowA
 from app.services.workflow_b import WorkflowB
+from app.services.feature_flags import flags_summary, read_flag
 from app.state.project_store import project_store
 from app.models.project import (
     Project,
@@ -165,6 +166,20 @@ async def run_workflow_b(project_id: str, drawings_path: str, project_name: str)
         )
         return
 
+    if not read_flag("ENABLE_WORKFLOW_B", default=False):
+        logger.warning(
+            "Skipping Workflow B background task for project %s: flag disabled",
+            project_id,
+        )
+        project.update(
+            {
+                "updated_at": datetime.now().isoformat(),
+                "message": "Workflow B is disabled by feature flag.",
+                "error": "workflow_b_disabled",
+            }
+        )
+        return
+
     workflow_service = WorkflowB()
 
     try:
@@ -237,13 +252,14 @@ async def run_workflow_b(project_id: str, drawings_path: str, project_name: str)
 @router.get("/", operation_id="get_root_status")
 async def root():
     """Health check endpoint"""
+    workflow_flags = flags_summary()
     return {
         "service": "Czech Building Audit System",
         "status": normalize_status("running"),
         "version": "2.0.0",
         "features": {
-            "workflow_a": settings.ENABLE_WORKFLOW_A,
-            "workflow_b": settings.ENABLE_WORKFLOW_B,
+            "workflow_a": workflow_flags["ENABLE_WORKFLOW_A"],
+            "workflow_b": workflow_flags["ENABLE_WORKFLOW_B"],
             "drawing_enrichment": True,  # NEW FEATURE
             "csn_validation": True        # NEW FEATURE
         }
@@ -313,6 +329,21 @@ async def upload_project(
         workflow = workflow.upper()
         if workflow not in ['A', 'B']:
             raise HTTPException(400, "workflow must be 'A' or 'B'")
+
+        workflow_flags = flags_summary()
+        if workflow == 'A' and not workflow_flags["ENABLE_WORKFLOW_A"]:
+            logger.warning("Workflow A upload rejected: flag disabled")
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Workflow A is disabled by feature flag"},
+            )
+
+        if workflow == 'B' and not workflow_flags["ENABLE_WORKFLOW_B"]:
+            logger.warning("Workflow B upload rejected: flag disabled")
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Workflow B is disabled by feature flag"},
+            )
         
         # Normalize files
         vykaz_vymer = _normalize_optional_file(vykaz_vymer)
@@ -498,20 +529,32 @@ async def upload_project(
             )
 
             if workflow == 'A':
-                workflow_service = WorkflowA()
-                background_tasks.add_task(
-                    workflow_service.execute,
-                    project_id,
-                    generate_summary,
-                    enable_enrichment  # ✨ NEW: Pass enrichment flag
-                )
+                if read_flag("ENABLE_WORKFLOW_A", default=False):
+                    workflow_service = WorkflowA()
+                    background_tasks.add_task(
+                        workflow_service.execute,
+                        project_id,
+                        generate_summary,
+                        enable_enrichment  # ✨ NEW: Pass enrichment flag
+                    )
+                else:
+                    logger.warning(
+                        "Skipping Workflow A background task for project %s: flag disabled",
+                        project_id,
+                    )
             elif workflow == 'B':
-                background_tasks.add_task(
-                    run_workflow_b,
-                    project_id,
-                    str(vykresy_dir),
-                    project_name
-                )
+                if read_flag("ENABLE_WORKFLOW_B", default=False):
+                    background_tasks.add_task(
+                        run_workflow_b,
+                        project_id,
+                        str(vykresy_dir),
+                        project_name
+                    )
+                else:
+                    logger.warning(
+                        "Skipping Workflow B background task for project %s: flag disabled",
+                        project_id,
+                    )
         
         # ✅ Return project_id in response
         return {
@@ -781,13 +824,14 @@ async def health_check():
     """
     Detailed health check with system status
     """
+    workflow_flags = flags_summary()
     return {
         "status": normalize_status("healthy"),
         "version": "2.0.0",
         "timestamp": datetime.now().isoformat(),
         "features": {
-            "workflow_a": settings.ENABLE_WORKFLOW_A,
-            "workflow_b": settings.ENABLE_WORKFLOW_B,
+            "workflow_a": workflow_flags["ENABLE_WORKFLOW_A"],
+            "workflow_b": workflow_flags["ENABLE_WORKFLOW_B"],
             "drawing_enrichment": True,
             "csn_validation": True
         },

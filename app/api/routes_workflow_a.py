@@ -3,16 +3,18 @@ API Routes for Workflow A - Specialized Endpoints
 POUZE specifické endpointy pro Workflow A (bez upload!)
 """
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import logging
 import json
 
 import aiofiles
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
 from app.state.project_store import project_store
+from app.services.feature_flags import read_flag
 from app.services.workflow_a import workflow_a
 
 logger = logging.getLogger(__name__)
@@ -142,6 +144,19 @@ async def _load_artifact(
     return artifact
 
 
+def _guard_workflow_a_enabled() -> Optional[JSONResponse]:
+    """Return a guard response when Workflow A is disabled."""
+
+    if read_flag("ENABLE_WORKFLOW_A", default=False):
+        return None
+
+    logger.warning("Workflow A endpoint called while disabled by feature flag")
+    return JSONResponse(
+        status_code=400,
+        content={"error": "Workflow A is disabled by feature flag"},
+    )
+
+
 # Request/Response Models
 class AnalyzePositionsRequest(BaseModel):
     """Request pro analýzu vybraných pozic"""
@@ -157,13 +172,17 @@ class AnalyzePositionsRequest(BaseModel):
 async def get_positions(project_id: str):
     """
     Získat všechny pozice z výkazu výměr
-    
+
     Args:
         project_id: ID projektu
-    
+
     Returns:
         Seznam všech pozic
     """
+    guard_response = _guard_workflow_a_enabled()
+    if guard_response is not None:
+        return guard_response
+
     try:
         # Načíst project info
         project_dir = settings.DATA_DIR / "raw" / project_id
@@ -231,6 +250,10 @@ async def analyze_selected_positions(
     Returns:
         Detailní výsledky analýzy
     """
+    guard_response = _guard_workflow_a_enabled()
+    if guard_response is not None:
+        return guard_response
+
     try:
         logger.info(f"Analýza {len(request.selected_indices)} pozic pro {project_id}")
         
@@ -296,6 +319,10 @@ async def get_project_summary(project_id: str):
     Returns:
         Shrnutí projektu
     """
+    guard_response = _guard_workflow_a_enabled()
+    if guard_response is not None:
+        return guard_response
+
     try:
         curated_dir = settings.DATA_DIR / "curated" / project_id
         summary_path = curated_dir / "project_summary.json"
@@ -339,6 +366,10 @@ async def get_drawing_context(project_id: str):
     Returns:
         Kontext z výkresů
     """
+    guard_response = _guard_workflow_a_enabled()
+    if guard_response is not None:
+        return guard_response
+
     try:
         curated_dir = settings.DATA_DIR / "curated" / project_id
         context_path = curated_dir / "drawing_context.json"
@@ -369,6 +400,10 @@ async def get_drawing_context(project_id: str):
 async def get_tech_card(project_id: str):
     """Получить техкарту с fallback стратегией"""
 
+    guard_response = _guard_workflow_a_enabled()
+    if guard_response is not None:
+        return guard_response
+
     try:
         return await _load_artifact(
             project_id=project_id,
@@ -389,6 +424,10 @@ async def get_tech_card(project_id: str):
 async def get_resource_sheet(project_id: str):
     """Получить ресурсную ведомость с fallback стратегией"""
 
+    guard_response = _guard_workflow_a_enabled()
+    if guard_response is not None:
+        return guard_response
+
     try:
         return await _load_artifact(
             project_id=project_id,
@@ -408,6 +447,10 @@ async def get_resource_sheet(project_id: str):
 @router.get("/workflow/a/{project_id}/material-analysis")
 async def get_material_analysis(project_id: str):
     """Получить анализ материалов с fallback стратегией"""
+
+    guard_response = _guard_workflow_a_enabled()
+    if guard_response is not None:
+        return guard_response
 
     try:
         return await _load_artifact(

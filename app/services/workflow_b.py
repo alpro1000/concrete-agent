@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Optional
 from app.core.claude_client import ClaudeClient
 from app.core.gpt4_client import GPT4VisionClient
 from app.core.config import settings
+from app.services.feature_flags import read_flag
 
 # ✅ ДОБАВЛЕНО: SmartParser для документации
 from app.parsers import SmartParser
@@ -34,7 +35,9 @@ class WorkflowB:
     def __init__(self):
         """Initialize Workflow B services"""
         self.claude = ClaudeClient()
-        self.gpt4v = GPT4VisionClient() if settings.ENABLE_WORKFLOW_B else None
+        self.gpt4v = (
+            GPT4VisionClient() if read_flag("ENABLE_WORKFLOW_B", default=False) else None
+        )
         
         # ✅ ДОБАВЛЕНО: SmartParser для обработки документации
         self.smart_parser = SmartParser()

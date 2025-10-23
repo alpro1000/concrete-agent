@@ -10,6 +10,7 @@ from pathlib import Path
 
 from app.core.config import settings
 from app.api import api_router
+from app.services.feature_flags import flags_summary
 
 # Configure logging
 logging.basicConfig(
@@ -59,8 +60,15 @@ async def startup_event():
     logger.info(f"📝 Prompts directory: {settings.PROMPTS_DIR}")
     logger.info(f"📊 Logs directory: {settings.LOGS_DIR}")
     logger.info("-" * 80)
-    logger.info(f"⚙️  Workflow A enabled: {settings.ENABLE_WORKFLOW_A}")
-    logger.info(f"⚙️  Workflow B enabled: {settings.ENABLE_WORKFLOW_B}")
+    workflow_flags = flags_summary()
+    logger.info(
+        "⚙️  Workflow A enabled: %s",
+        workflow_flags["ENABLE_WORKFLOW_A"],
+    )
+    logger.info(
+        "⚙️  Workflow B enabled: %s",
+        workflow_flags["ENABLE_WORKFLOW_B"],
+    )
     logger.info(f"⚙️  KROS matching: {settings.ENABLE_KROS_MATCHING}")
     logger.info("-" * 80)
     

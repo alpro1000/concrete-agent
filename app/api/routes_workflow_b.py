@@ -3,16 +3,18 @@ API Routes for Workflow B - Specialized Endpoints
 POUZE specifické endpointy pro Workflow B (bez upload!)
 """
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 import logging
 import json
 
 import aiofiles
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.state.project_store import project_store
 from app.services.workflow_b import workflow_b
+from app.services.feature_flags import read_flag
 
 logger = logging.getLogger(__name__)
 
@@ -152,6 +154,19 @@ async def _load_artifact(
     return artifact
 
 
+def _guard_workflow_b_enabled() -> Optional[JSONResponse]:
+    """Return a guard response when Workflow B is disabled."""
+
+    if read_flag("ENABLE_WORKFLOW_B", default=False):
+        return None
+
+    logger.warning("Workflow B endpoint called while disabled by feature flag")
+    return JSONResponse(
+        status_code=400,
+        content={"error": "Workflow B is disabled by feature flag"},
+    )
+
+
 # =============================================================================
 # WORKFLOW B SPECIFIC ENDPOINTS
 # =============================================================================
@@ -160,6 +175,10 @@ async def _load_artifact(
 @router.get("/{project_id}/tech-card")
 async def get_tech_card(project_id: str):
     """Retrieve the technology card using the memory → disk → generation fallback."""
+
+    guard_response = _guard_workflow_b_enabled()
+    if guard_response is not None:
+        return guard_response
 
     _validate_workflow_b_project(project_id)
 
@@ -191,6 +210,10 @@ async def get_tech_card(project_id: str):
 async def get_material_calculations(project_id: str):
     """Retrieve material calculations with fallback strategy."""
 
+    guard_response = _guard_workflow_b_enabled()
+    if guard_response is not None:
+        return guard_response
+
     _validate_workflow_b_project(project_id)
 
     try:
@@ -221,6 +244,10 @@ async def get_material_calculations(project_id: str):
 async def get_drawing_analysis(project_id: str):
     """Retrieve drawing analysis with fallback strategy."""
 
+    guard_response = _guard_workflow_b_enabled()
+    if guard_response is not None:
+        return guard_response
+
     _validate_workflow_b_project(project_id)
 
     try:
@@ -250,6 +277,10 @@ async def get_drawing_analysis(project_id: str):
 @router.get("/{project_id}/generated-vykaz")
 async def get_generated_vykaz(project_id: str):
     """Retrieve the generated bill of quantities with fallback strategy."""
+
+    guard_response = _guard_workflow_b_enabled()
+    if guard_response is not None:
+        return guard_response
 
     _validate_workflow_b_project(project_id)
 
@@ -299,6 +330,10 @@ async def compare_with_similar_projects(project_id: str):
     Returns:
         Srovnání s podobnými projekty
     """
+
+    guard_response = _guard_workflow_b_enabled()
+    if guard_response is not None:
+        return guard_response
 
     try:
         # TODO: Implementovat logiku porovnání
