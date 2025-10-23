@@ -9,7 +9,7 @@ import json
 
 import aiofiles
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.config import settings
 from app.state.project_store import project_store
@@ -146,7 +146,7 @@ async def _load_artifact(
 class AnalyzePositionsRequest(BaseModel):
     """Request pro analýzu vybraných pozic"""
     selected_indices: List[int]
-    context: dict = {}
+    context: Dict[str, Any] = Field(default_factory=dict)
 
 
 # =============================================================================
