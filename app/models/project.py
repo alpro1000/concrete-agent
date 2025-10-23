@@ -11,15 +11,11 @@ from datetime import datetime
 from enum import Enum
 
 from app.models.position import (
-    Position,
-    PositionAudit,
-    PositionClassification,
+    PositionAudit as _PositionAudit,
+    PositionClassification as _PositionClassification,
 )
 
-try:  # PositionAnalysis may not be present in all versions of position models
-    from app.models.position import PositionAnalysis
-except ImportError:  # pragma: no cover - optional model
-    PositionAnalysis = None
+AuditClassification = _PositionClassification
 
 # SQLAlchemy Base
 Base = declarative_base()
@@ -34,15 +30,22 @@ class ProjectStatus(str, Enum):
     Статусы проекта (согласно контракту API)
     """
 
+    # Legacy statuses preserved for backward compatibility
+    PENDING = "PENDING"                    # Очередь на обработку
+    PARSED = "PARSED"                      # Данные распарсены
+    VALIDATED = "VALIDATED"                # Валидировано
+    AUDITED = "AUDITED"                    # Аудит завершён
+    STAGING = "STAGING"                    # Промежуточная стадия
+    CURATED = "CURATED"                    # Курирование данных
+    AUDIT_IN_PROGRESS = "AUDIT_IN_PROGRESS"  # Аудит выполняется
+    AUDIT_COMPLETED = "AUDIT_COMPLETED"      # Аудит завершён
+    HITL_REVIEW = "HITL_REVIEW"            # Ручная проверка
+
+    # Active statuses used by текущий API
     UPLOADED = "UPLOADED"      # Файлы загружены
     PROCESSING = "PROCESSING"  # Обработка в процессе
     COMPLETED = "COMPLETED"    # Успешно завершено
     FAILED = "FAILED"          # Ошибка при обработке
-
-    # DEPRECATED (устаревшие, оставлены для совместимости)
-    # PENDING = "PENDING"
-    # PARSED = "PARSED"
-    # VALIDATED = "VALIDATED"
 
     @classmethod
     def is_active_status(cls, status: Union[str, 'ProjectStatus']) -> bool:
@@ -56,7 +59,6 @@ class ProjectStatus(str, Enum):
         return status in active
 
 
-AuditClassification = PositionClassification
 
 
 class WorkflowType(str, Enum):
@@ -179,7 +181,7 @@ class ProjectResponse(BaseModel):
     
     # Status and workflow
     workflow: Union[WorkflowType, str]
-    status: Optional[ProjectStatus] = None
+    status: Optional[Union[ProjectStatus, str]] = None
     
     # Timestamps (flexible format)
     uploaded_at: Union[datetime, str]
@@ -271,7 +273,7 @@ class AuditReport(BaseModel):
     hitl_count: int
     
     # Detailed results
-    positions: List[PositionAudit]
+    positions: List[_PositionAudit]
     
     # Overall assessment
     overall_risk: AuditClassification
@@ -353,7 +355,7 @@ def db_project_to_response(db_project: Project) -> ProjectResponse:
     )
 
 
-def calculate_audit_summary(positions: List[PositionAudit]) -> Dict[str, int]:
+def calculate_audit_summary(positions: List[_PositionAudit]) -> Dict[str, int]:
     """
     Calculate audit summary statistics
     
