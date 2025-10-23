@@ -2,6 +2,7 @@
 Workflow B: Generate estimate from technical drawings
 Workflow B - Генерация сметы из чертежей (без готового выказа)
 """
+import json
 import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -12,6 +13,7 @@ from app.core.config import settings
 
 # ✅ ДОБАВЛЕНО: SmartParser для документации
 from app.parsers import SmartParser
+from app.state.project_store import project_store
 
 logger = logging.getLogger(__name__)
 
@@ -468,3 +470,145 @@ class WorkflowB:
         tech_card["elements"] = list(unique_elements.values())
         
         return tech_card
+
+
+class WorkflowBService:
+    """Service wrapper providing cached access to Workflow B artifacts."""
+
+    _SUPPORTED_ACTIONS = {
+        "tech_card",
+        "material_calculations",
+        "drawing_analysis",
+        "generated_vykaz",
+    }
+
+    def __init__(self) -> None:
+        self._workflows: Dict[str, WorkflowB] = {}
+
+    async def run(self, project_id: str, action: str, **kwargs) -> Any:  # noqa: D401 - keep signature consistent
+        """Generate or retrieve Workflow B artifacts for the given action."""
+
+        if action not in self._SUPPORTED_ACTIONS:
+            raise ValueError(f"Unknown action for Workflow B: {action}")
+
+        project_meta = self._get_or_create_project_meta(project_id)
+        artifacts = project_meta.setdefault("artifacts", {})
+
+        if action in artifacts and artifacts[action] is not None:
+            return artifacts[action]
+
+        source_payload = project_meta.get("audit_results")
+        if isinstance(source_payload, dict) and source_payload:
+            artifacts.update(self._extract_artifacts(source_payload))
+            if action in artifacts and artifacts[action] is not None:
+                return artifacts[action]
+
+        generation_result = await self._execute_workflow(project_meta)
+        if not generation_result.get("success", False):
+            raise ValueError(
+                generation_result.get("error")
+                or f"Workflow B failed to generate artifact '{action}'"
+            )
+
+        project_meta["audit_results"] = generation_result
+        artifacts.update(self._extract_artifacts(generation_result))
+
+        artifact = artifacts.get(action)
+        if artifact is None:
+            raise ValueError(f"Workflow B did not produce artifact '{action}'")
+        return artifact
+
+    def _get_or_create_project_meta(self, project_id: str) -> Dict[str, Any]:
+        """Ensure minimal project metadata is available for Workflow B."""
+
+        project_meta = project_store.get(project_id)
+        if project_meta is not None:
+            workflow = project_meta.get("workflow")
+            if workflow and workflow != "B":
+                raise ValueError(
+                    f"Project {project_id} is not configured for Workflow B (workflow={workflow})"
+                )
+            project_meta.setdefault("workflow", "B")
+            project_meta.setdefault("project_id", project_id)
+            return project_meta
+
+        uploads_dir = settings.DATA_DIR / "uploads" / project_id
+        if not uploads_dir.exists():
+            raise ValueError(f"Project {project_id} not found for Workflow B")
+
+        project_name = project_id
+        info_path = uploads_dir / "project_info.json"
+        if info_path.exists():
+            try:
+                with info_path.open("r", encoding="utf-8") as fp:
+                    info_payload = json.load(fp)
+                project_name = info_payload.get("project_name", project_name)
+            except (OSError, json.JSONDecodeError):
+                logger.warning(
+                    "Project %s: Failed to read project_info.json for Workflow B reconstruction",
+                    project_id,
+                )
+
+        reconstructed = {
+            "project_id": project_id,
+            "workflow": "B",
+            "project_name": project_name,
+            "drawings_path": str(uploads_dir / "vykresy"),
+            "artifacts": {},
+        }
+        project_store[project_id] = reconstructed
+        return reconstructed
+
+    async def _execute_workflow(self, project_meta: Dict[str, Any]) -> Dict[str, Any]:
+        """Run Workflow B on stored project files and return the generation payload."""
+
+        project_id = project_meta.get("project_id", "unknown")
+        project_name = project_meta.get("project_name") or project_id
+        drawings_root = project_meta.get("drawings_path")
+        if not drawings_root:
+            raise ValueError(
+                f"Project {project_id} does not contain drawings_path required for Workflow B"
+            )
+
+        drawing_dir = Path(drawings_root)
+        if not drawing_dir.exists():
+            raise ValueError(
+                f"Drawings directory does not exist for project {project_id}: {drawing_dir}"
+            )
+
+        drawing_files = [path for path in sorted(drawing_dir.iterdir()) if path.is_file()]
+        if not drawing_files:
+            raise ValueError(
+                f"No drawing files available for Workflow B project {project_id}"
+            )
+
+        workflow = self._workflows.setdefault(project_id, WorkflowB())
+        result = await workflow.execute(
+            project_id=project_id,
+            vykresy_paths=drawing_files,
+            project_name=project_name,
+        )
+        return result
+
+    @staticmethod
+    def _extract_artifacts(result: Dict[str, Any]) -> Dict[str, Any]:
+        """Map workflow results into individual artifacts for caching."""
+
+        generated_positions = list(result.get("generated_positions") or [])
+        artifact_map: Dict[str, Any] = {
+            "tech_card": result.get("tech_card") or {},
+            "material_calculations": result.get("calculations") or {},
+            "drawing_analysis": result.get("drawing_analysis") or [],
+            "generated_vykaz": {
+                "positions": generated_positions,
+                "total_positions": len(generated_positions),
+            },
+        }
+        return artifact_map
+
+
+# Singleton-style adapter for API routes
+workflow_b = WorkflowBService()
+
+
+__all__ = ["WorkflowB", "workflow_b"]
