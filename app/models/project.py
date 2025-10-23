@@ -19,20 +19,30 @@ Base = declarative_base()
 # =============================================================================
 
 class ProjectStatus(str, Enum):
-    """Project processing status"""
+    """
+    Статусы проекта (согласно контракту API)
+    """
 
-    PENDING = "PENDING"  # Initial state after upload
-    UPLOADED = "UPLOADED"  # Files uploaded, ready to process
-    PROCESSING = "PROCESSING"  # Currently processing
-    PARSED = "PARSED"  # Parsing completed
-    AUDITED = "AUDITED"  # Automated audit completed
-    STAGING = "STAGING"  # In staging phase
-    CURATED = "CURATED"  # Data curated
-    AUDIT_IN_PROGRESS = "AUDIT_IN_PROGRESS"  # Audit running
-    AUDIT_COMPLETED = "AUDIT_COMPLETED"  # Legacy flag
-    HITL_REVIEW = "HITL_REVIEW"  # Human review needed
-    COMPLETED = "COMPLETED"  # Fully completed
-    FAILED = "FAILED"  # Processing failed
+    UPLOADED = "UPLOADED"      # Файлы загружены
+    PROCESSING = "PROCESSING"  # Обработка в процессе
+    COMPLETED = "COMPLETED"    # Успешно завершено
+    FAILED = "FAILED"          # Ошибка при обработке
+
+    # DEPRECATED (устаревшие, оставлены для совместимости)
+    # PENDING = "PENDING"
+    # PARSED = "PARSED"
+    # VALIDATED = "VALIDATED"
+
+    @classmethod
+    def is_active_status(cls, status: Union[str, 'ProjectStatus']) -> bool:
+        """Проверка что статус из активного множества"""
+        active = {cls.UPLOADED, cls.PROCESSING, cls.COMPLETED, cls.FAILED}
+        if isinstance(status, str):
+            try:
+                status = cls(status)
+            except ValueError:
+                return False
+        return status in active
 
 
 class AuditClassification(str, Enum):
