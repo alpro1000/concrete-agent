@@ -111,7 +111,7 @@ def _normalize_file_list(files: Any) -> List[UploadFile]:
 
 
 async def _save_file_streaming(
-    file: UploadFile, 
+    file: UploadFile,
     save_path: Path
 ) -> FileMetadata:
     """Save uploaded file with streaming"""
@@ -134,6 +134,86 @@ async def _save_file_streaming(
         uploaded_at=datetime.now().isoformat(),
         file_type=Path(file.filename).suffix[1:]
     )
+
+
+async def run_workflow_b(project_id: str, drawings_path: str, project_name: str) -> None:
+    """Background task to process Workflow B projects."""
+
+    project = project_store.get(project_id)
+    if not project:
+        logger.error(
+            "Workflow B background task: project %s not found in store",
+            project_id,
+        )
+        return
+
+    workflow_service = WorkflowB()
+
+    try:
+        project["status"] = ProjectStatus.PROCESSING
+        project["updated_at"] = datetime.now().isoformat()
+
+        drawings_dir = Path(drawings_path)
+        if not drawings_dir.exists():
+            raise FileNotFoundError(
+                f"Drawings directory does not exist: {drawings_dir}"
+            )
+
+        drawing_files = [
+            path for path in sorted(drawings_dir.iterdir()) if path.is_file()
+        ]
+
+        if not drawing_files:
+            raise ValueError(
+                f"No drawing files found in directory: {drawings_dir}"
+            )
+
+        result = await workflow_service.execute(
+            project_id=project_id,
+            vykresy_paths=drawing_files,
+            project_name=project_name,
+        )
+
+        if not result.get("success", False):
+            raise RuntimeError(result.get("error", "Workflow B execution failed"))
+
+        project.update(
+            {
+                "status": ProjectStatus.COMPLETED,
+                "updated_at": datetime.now().isoformat(),
+                "completed_at": datetime.now().isoformat(),
+                "message": "Workflow B processing completed successfully.",
+                "progress": 100,
+                "error": None,
+                "audit_results": result,
+                "total_positions": result.get("total_positions", 0),
+                "positions_total": result.get("total_positions", 0),
+                "positions_processed": result.get("total_positions", 0),
+                "green_count": result.get("green_count", 0),
+                "amber_count": result.get("amber_count", 0),
+                "red_count": result.get("red_count", 0),
+            }
+        )
+
+        logger.info(
+            "Workflow B background task completed for project %s", project_id
+        )
+
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error(
+            "Workflow B background task failed for project %s: %s",
+            project_id,
+            exc,
+            exc_info=True,
+        )
+        project.update(
+            {
+                "status": ProjectStatus.FAILED,
+                "updated_at": datetime.now().isoformat(),
+                "error": str(exc),
+                "message": f"Workflow B processing failed: {exc}",
+            }
+        )
 
 
 @router.get("/", operation_id="get_root_status")
@@ -245,7 +325,8 @@ async def upload_project(
         )
         
         # Create project directory
-        project_dir = settings.DATA_DIR / "raw" / project_id
+        storage_root = "uploads" if workflow == 'B' else "raw"
+        project_dir = settings.DATA_DIR / storage_root / project_id
         project_dir.mkdir(parents=True, exist_ok=True)
 
         safe_files: List[Dict[str, Any]] = []
@@ -386,6 +467,7 @@ async def upload_project(
                 "used_poppler": 0,
                 "ocr_pages": [],
             },
+            "drawings_path": str(vykresy_dir) if workflow == 'B' else None,
         }
         
         logger.info(f"✅ Nahrání dokončeno: {project_id}")
@@ -396,7 +478,7 @@ async def upload_project(
                 f"🚀 Začínám zpracování projektu {project_id} "
                 f"(Workflow {workflow}, Enrichment: {'ON' if enable_enrichment else 'OFF'})"
             )
-            
+
             if workflow == 'A':
                 workflow_service = WorkflowA()
                 background_tasks.add_task(
@@ -406,10 +488,11 @@ async def upload_project(
                     enable_enrichment  # ✨ NEW: Pass enrichment flag
                 )
             elif workflow == 'B':
-                workflow_service = WorkflowB()
                 background_tasks.add_task(
-                    workflow_service.execute,
-                    project_id
+                    run_workflow_b,
+                    project_id,
+                    str(vykresy_dir),
+                    project_name
                 )
         
         # ✅ Return project_id in response
