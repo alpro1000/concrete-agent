@@ -657,3 +657,46 @@ class WorkflowA:
             "red": audit_stats.get("red", totals.get("r", 0)),
         }
 
+
+class WorkflowAService:
+    """Синглтон сервис для Workflow A"""
+
+    def __init__(self):
+        self._workflows = {}  # Кэш активных workflow
+
+    async def run(self, project_id: str, action: str, **kwargs) -> Dict[str, Any]:
+        """
+        Универсальный метод для всех действий
+
+        Args:
+            project_id: ID проекта
+            action: "analyze_positions" | "tech_card" | "resource_sheet" | "materials"
+            **kwargs: Параметры действия
+        """
+        if project_id not in self._workflows:
+            self._workflows[project_id] = WorkflowA(project_id)
+
+        workflow = self._workflows[project_id]
+
+        if action == "analyze_positions":
+            return await workflow.analyze_positions(**kwargs)
+        elif action == "tech_card":
+            return await workflow.generate_tech_card(**kwargs)
+        elif action == "resource_sheet":
+            return await workflow.calculate_resource_sheet(**kwargs)
+        elif action == "materials":
+            return await workflow.analyze_materials(**kwargs)
+        else:
+            raise ValueError(f"Unknown action: {action}")
+
+    async def execute(self, project_id: str, **kwargs):
+        """Алиас для совместимости"""
+        return await self.run(project_id, **kwargs)
+
+
+# Создаём синглтон
+workflow_a = WorkflowAService()
+
+
+# Экспортируем
+__all__ = ['WorkflowA', 'workflow_a']
