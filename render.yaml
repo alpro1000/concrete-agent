@@ -13,9 +13,9 @@ services:
     envVars:
       # CRITICAL: API Keys (set in Render Dashboard)
       - key: ANTHROPIC_API_KEY
-        sync: false
+        sync: true
       - key: OPENAI_API_KEY
-        sync: false
+        sync: true
       
       # AI Models
       - key: CLAUDE_MODEL
@@ -31,7 +31,7 @@ services:
       - key: ENABLE_WORKFLOW_A
         value: true
       - key: ENABLE_WORKFLOW_B
-        value: false
+        value: true
       - key: ENABLE_KROS_MATCHING
         value: true
       - key: ENABLE_RTS_MATCHING
@@ -41,7 +41,7 @@ services:
       
       # Resource Calculation
       - key: ALLOW_WEB_SEARCH
-        value: false
+        value: true
       - key: USE_OFFICIAL_NORMS
         value: true
       
