@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -67,7 +68,7 @@ class WorkflowA:
         """Run upload handling and parsing for Workflow A."""
         if action != "execute":
             logger.debug(
-                "Project %s: Workflow A execute() received action '%s' (fallback to full pipeline)",
+                "Project %s: Workflow A execute() received action '%s'",
                 project_id,
                 action,
             )
@@ -78,12 +79,24 @@ class WorkflowA:
                 project_id,
                 sorted(kwargs.keys()),
             )
+
+        project_meta = self._load_project_metadata(project_id)
+
+        if action != "execute":
+            cached_artifact = self._get_cached_artifact(project_meta, action)
+            if cached_artifact is not None and not kwargs:
+                logger.info(
+                    "Project %s: Returning cached Workflow A artifact '%s'",
+                    project_id,
+                    action,
+                )
+                return cached_artifact
+
         logger.info(
             "Project %s: Starting Workflow A Step 1 (upload handling)",
             project_id,
         )
 
-        project_meta = self._load_project_metadata(project_id)
         uploads = self._resolve_uploads(project_id, project_meta)
 
         base_cache = {
@@ -210,6 +223,18 @@ class WorkflowA:
         )
         cache_data["updated_at"] = datetime.now().isoformat()
 
+        artifacts_bundle = self._build_artifacts(
+            project_id=project_id,
+            project_meta=project_meta,
+            audit_payload=audit_payload,
+            parsing_summary=parsing_summary,
+            drawing_summary=drawing_summary,
+            uploads=uploads,
+        )
+        if artifacts_bundle:
+            cache_data["artifacts"] = artifacts_bundle
+            project_meta.setdefault("artifacts", {}).update(artifacts_bundle)
+
         save_field(project_id, "audit_results", audit_payload)
 
         logger.info(
@@ -241,7 +266,7 @@ class WorkflowA:
             diagnostics["normalized_total"],
         )
 
-        return {
+        result = {
             "project_id": project_id,
             "workflow": "A",
             "status": "AUDITED",
@@ -259,6 +284,17 @@ class WorkflowA:
             "progress": 90,
             "message": "Parsed + Enriched + Validated + Audited (Steps 1–6). Ready to export.",
         }
+
+        if artifacts_bundle:
+            result["artifacts"] = artifacts_bundle
+
+        if action == "execute":
+            return result
+
+        artifact = artifacts_bundle.get(action)
+        if artifact is None:
+            raise ValueError(f"Unknown action for Workflow A: {action}")
+        return artifact
 
     def _build_audit_payload(
         self,
@@ -288,6 +324,440 @@ class WorkflowA:
         )
 
         return enriched_payload
+
+    def _build_artifacts(
+        self,
+        *,
+        project_id: str,
+        project_meta: Dict[str, Any],
+        audit_payload: Dict[str, Any],
+        parsing_summary: Dict[str, Any],
+        drawing_summary: Dict[str, Any],
+        uploads: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Derive Workflow A artifacts from the normalized audit payload."""
+
+        positions = [
+            item
+            for item in audit_payload.get("items", [])
+            if isinstance(item, dict)
+        ]
+        totals = dict(audit_payload.get("totals") or {})
+        meta = dict(audit_payload.get("meta") or {})
+        parsing_diagnostics = dict(parsing_summary.get("diagnostics") or {})
+        documents = list(parsing_summary.get("documents") or [])
+
+        artifacts = {
+            "tech_card": self._build_tech_card_artifact(
+                project_id=project_id,
+                project_meta=project_meta,
+                positions=positions,
+                totals=totals,
+                meta=meta,
+                parsing_diagnostics=parsing_diagnostics,
+                documents=documents,
+                drawing_summary=drawing_summary or {},
+                uploads=uploads or {},
+            ),
+            "resource_sheet": self._build_resource_sheet_artifact(
+                project_id=project_id,
+                project_meta=project_meta,
+                positions=positions,
+                totals=totals,
+                meta=meta,
+                parsing_diagnostics=parsing_diagnostics,
+                documents=documents,
+                drawing_summary=drawing_summary or {},
+                uploads=uploads or {},
+            ),
+            "materials": self._build_materials_artifact(
+                project_id=project_id,
+                project_meta=project_meta,
+                positions=positions,
+                totals=totals,
+                meta=meta,
+                parsing_diagnostics=parsing_diagnostics,
+                documents=documents,
+                drawing_summary=drawing_summary or {},
+                uploads=uploads or {},
+            ),
+        }
+
+        return artifacts
+
+    def _build_tech_card_artifact(
+        self,
+        *,
+        project_id: str,
+        project_meta: Dict[str, Any],
+        positions: List[Dict[str, Any]],
+        totals: Dict[str, Any],
+        meta: Dict[str, Any],
+        parsing_diagnostics: Dict[str, Any],
+        documents: List[Dict[str, Any]],
+        drawing_summary: Dict[str, Any],
+        uploads: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        project_name = (
+            project_meta.get("project_name")
+            or project_meta.get("name")
+            or project_id
+        )
+        now_iso = datetime.now().isoformat()
+        totals_block = {
+            "green": int(totals.get("g", 0)),
+            "amber": int(totals.get("a", 0)),
+            "red": int(totals.get("r", 0)),
+            "total": int(totals.get("total", len(positions))),
+        }
+
+        meta_block = dict(meta)
+        audit_meta = dict(meta_block.get("audit") or {})
+        if not audit_meta:
+            audit_meta = {
+                "green": totals_block["green"],
+                "amber": totals_block["amber"],
+                "red": totals_block["red"],
+            }
+        validation_stats = dict(meta_block.get("validation") or {})
+        enrichment_stats = dict(meta_block.get("enrichment") or {})
+        schema_stats = dict(meta_block.get("schema_validation") or {})
+
+        drawing_specs = list(drawing_summary.get("specifications") or [])
+        drawing_diagnostics = dict(drawing_summary.get("diagnostics") or {})
+        documents_processed = int(parsing_diagnostics.get("documents_processed", len(documents)))
+
+        focus_position = self._select_focus_position(positions)
+        focus_overview: Dict[str, Any] = {
+            "code": None,
+            "description": None,
+            "unit": None,
+            "quantity": None,
+            "status": None,
+            "issues": [],
+            "provenance": {},
+        }
+        if focus_position:
+            focus_overview = {
+                "code": focus_position.get("code"),
+                "description": focus_position.get("description"),
+                "unit": focus_position.get("unit"),
+                "quantity": focus_position.get("quantity"),
+                "status": focus_position.get("status"),
+                "issues": list(focus_position.get("issues") or []),
+                "provenance": dict(focus_position.get("provenance") or {}),
+            }
+
+        documents_overview = [
+            {
+                "filename": doc.get("filename"),
+                "file_type": doc.get("file_type"),
+                "positions_count": doc.get("positions_count"),
+            }
+            for doc in documents
+            if isinstance(doc, dict)
+        ]
+
+        recent_positions = [
+            {
+                "code": item.get("code"),
+                "description": item.get("description"),
+                "status": item.get("status"),
+                "quantity": item.get("quantity"),
+                "unit": item.get("unit"),
+            }
+            for item in positions[:5]
+        ]
+
+        steps = [
+            {
+                "name": "Cost document parsing",
+                "status": "completed",
+                "details": {
+                    "documents_processed": documents_processed,
+                    "raw_positions": parsing_diagnostics.get("raw_total"),
+                },
+            },
+            {
+                "name": "Schema validation",
+                "status": "completed",
+                "details": schema_stats,
+            },
+            {
+                "name": "Drawing enrichment",
+                "status": "completed" if drawing_specs else "skipped",
+                "details": {
+                    "specifications_detected": len(drawing_specs),
+                    "files_processed": drawing_diagnostics.get("files_processed", 0),
+                },
+            },
+            {
+                "name": "Audit classification",
+                "status": "completed",
+                "details": audit_meta,
+            },
+        ]
+
+        tech_card = {
+            "type": "tech_card",
+            "project_id": project_id,
+            "project_name": project_name,
+            "workflow": project_meta.get("workflow", "A"),
+            "generated_at": now_iso,
+            "summary": {
+                "positions_total": totals_block["total"],
+                "status_breakdown": totals_block,
+                "documents_processed": documents_processed,
+                "drawing_specs_detected": len(drawing_specs),
+            },
+            "focus_position": focus_overview,
+            "recent_positions": recent_positions,
+            "quality": {
+                "schema_validation": schema_stats,
+                "validation": validation_stats,
+                "enrichment": enrichment_stats,
+                "audit": audit_meta,
+            },
+            "source_documents": documents_overview,
+            "drawing_diagnostics": drawing_diagnostics,
+            "steps": steps,
+            "issues": focus_overview.get("issues", []),
+        }
+
+        files_by_type = uploads.get("files_by_type")
+        if isinstance(files_by_type, dict):
+            tech_card["input_files"] = {
+                key: len(value) if isinstance(value, list) else 0
+                for key, value in files_by_type.items()
+            }
+
+        return tech_card
+
+    def _build_resource_sheet_artifact(
+        self,
+        *,
+        project_id: str,
+        project_meta: Dict[str, Any],
+        positions: List[Dict[str, Any]],
+        totals: Dict[str, Any],
+        meta: Dict[str, Any],  # noqa: ARG002 - kept for consistent signature
+        parsing_diagnostics: Dict[str, Any],
+        documents: List[Dict[str, Any]],
+        drawing_summary: Dict[str, Any],  # noqa: ARG002
+        uploads: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        project_name = (
+            project_meta.get("project_name")
+            or project_meta.get("name")
+            or project_id
+        )
+        now_iso = datetime.now().isoformat()
+
+        sections: defaultdict[str, List[Dict[str, Any]]] = defaultdict(list)
+        for item in positions:
+            provenance = item.get("provenance") or {}
+            section_name = provenance.get("section") or "Unassigned"
+            sections[section_name].append(item)
+
+        section_payload: List[Dict[str, Any]] = []
+        for section_name in sorted(sections.keys()):
+            section_positions = sections[section_name]
+            status_counts = Counter(
+                ((pos.get("status") or "UNKNOWN").upper()) for pos in section_positions
+            )
+            total_quantity = 0.0
+            for pos in section_positions:
+                quantity = pos.get("quantity")
+                if isinstance(quantity, (int, float)):
+                    total_quantity += float(quantity)
+
+            section_payload.append(
+                {
+                    "section": section_name,
+                    "positions_count": len(section_positions),
+                    "status_breakdown": {
+                        "green": status_counts.get("GREEN", 0),
+                        "amber": status_counts.get("AMBER", 0),
+                        "red": status_counts.get("RED", 0),
+                    },
+                    "total_quantity": total_quantity,
+                    "positions": [
+                        {
+                            "code": pos.get("code"),
+                            "description": pos.get("description"),
+                            "unit": pos.get("unit"),
+                            "quantity": pos.get("quantity"),
+                            "status": pos.get("status"),
+                        }
+                        for pos in section_positions[:20]
+                    ],
+                }
+            )
+
+        flagged_positions = sum(
+            1
+            for pos in positions
+            if (pos.get("status") or "").upper() in {"AMBER", "RED"}
+        )
+
+        documents_payload = [
+            {
+                "filename": doc.get("filename"),
+                "file_type": doc.get("file_type"),
+                "positions_count": doc.get("positions_count"),
+            }
+            for doc in documents
+            if isinstance(doc, dict)
+        ]
+
+        files_snapshot: List[Dict[str, Any]] = []
+        files_by_type = uploads.get("files_by_type")
+        if isinstance(files_by_type, dict):
+            for file_type, entries in files_by_type.items():
+                files_snapshot.append(
+                    {
+                        "file_type": file_type,
+                        "count": len(entries) if isinstance(entries, list) else 0,
+                    }
+                )
+
+        resource_sheet = {
+            "type": "resource_sheet",
+            "project_id": project_id,
+            "project_name": project_name,
+            "workflow": project_meta.get("workflow", "A"),
+            "generated_at": now_iso,
+            "summary": {
+                "total_positions": len(positions),
+                "sections": len(section_payload),
+                "flagged_positions": flagged_positions,
+                "documents_processed": int(
+                    parsing_diagnostics.get("documents_processed", len(documents))
+                ),
+                "status_breakdown": {
+                    "green": int(totals.get("g", 0)),
+                    "amber": int(totals.get("a", 0)),
+                    "red": int(totals.get("r", 0)),
+                },
+            },
+            "sections": section_payload,
+            "documents": documents_payload,
+            "files": files_snapshot,
+        }
+
+        return resource_sheet
+
+    def _build_materials_artifact(
+        self,
+        *,
+        project_id: str,
+        project_meta: Dict[str, Any],
+        positions: List[Dict[str, Any]],
+        totals: Dict[str, Any],
+        meta: Dict[str, Any],  # noqa: ARG002
+        parsing_diagnostics: Dict[str, Any],  # noqa: ARG002
+        documents: List[Dict[str, Any]],  # noqa: ARG002
+        drawing_summary: Dict[str, Any],
+        uploads: Dict[str, Any],  # noqa: ARG002
+    ) -> Dict[str, Any]:
+        project_name = (
+            project_meta.get("project_name")
+            or project_meta.get("name")
+            or project_id
+        )
+        now_iso = datetime.now().isoformat()
+
+        unit_totals: defaultdict[str, float] = defaultdict(float)
+        status_counts = Counter()
+        issues_total = 0
+        for item in positions:
+            status = (item.get("status") or "GREEN").upper()
+            status_counts[status] += 1
+            issues_total += len(item.get("issues") or [])
+            quantity = item.get("quantity")
+            if isinstance(quantity, (int, float)):
+                unit = str(item.get("unit") or "").strip() or "UNSPECIFIED"
+                unit_totals[unit] += float(quantity)
+
+        unit_summary = [
+            {
+                "unit": unit,
+                "quantity": round(total, 6),
+            }
+            for unit, total in sorted(unit_totals.items())
+        ]
+
+        top_positions = sorted(
+            [
+                item
+                for item in positions
+                if isinstance(item.get("quantity"), (int, float))
+            ],
+            key=lambda item: float(item.get("quantity") or 0),
+            reverse=True,
+        )[:10]
+
+        top_payload = [
+            {
+                "code": item.get("code"),
+                "description": item.get("description"),
+                "quantity": item.get("quantity"),
+                "unit": item.get("unit"),
+                "status": item.get("status"),
+                "issues": list(item.get("issues") or []),
+            }
+            for item in top_positions
+        ]
+
+        drawing_specs = list(drawing_summary.get("specifications") or [])
+        drawing_diag = dict(drawing_summary.get("diagnostics") or {})
+
+        materials = {
+            "type": "material_analysis",
+            "project_id": project_id,
+            "project_name": project_name,
+            "workflow": project_meta.get("workflow", "A"),
+            "generated_at": now_iso,
+            "summary": {
+                "total_positions": len(positions),
+                "status_breakdown": {
+                    "green": status_counts.get("GREEN", int(totals.get("g", 0))),
+                    "amber": status_counts.get("AMBER", int(totals.get("a", 0))),
+                    "red": status_counts.get("RED", int(totals.get("r", 0))),
+                },
+                "units_tracked": len(unit_summary),
+                "issues_detected": issues_total,
+            },
+            "unit_totals": unit_summary,
+            "top_positions": top_payload,
+            "drawing_context": {
+                "specifications_detected": len(drawing_specs),
+                "files_processed": drawing_diag.get("files_processed", 0),
+            },
+        }
+
+        return materials
+
+    @staticmethod
+    def _select_focus_position(
+        positions: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        for item in positions:
+            status = (item.get("status") or "").upper()
+            if status in {"AMBER", "RED"}:
+                return item
+        return positions[0] if positions else {}
+
+    @staticmethod
+    def _get_cached_artifact(
+        project_meta: Dict[str, Any], action: str
+    ) -> Optional[Dict[str, Any]]:
+        artifacts = project_meta.get("artifacts")
+        if isinstance(artifacts, dict):
+            cached = artifacts.get(action)
+            if cached is not None:
+                return cached
+        return None
 
     @staticmethod
     def _load_project_metadata(project_id: str) -> Dict[str, Any]:
