@@ -3,6 +3,7 @@ FastAPI Application Entry Point
 Czech Building Audit System
 """
 import logging
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -59,11 +60,25 @@ async def startup_event():
     logger.info(f"📝 Prompts directory: {settings.PROMPTS_DIR}")
     logger.info(f"📊 Logs directory: {settings.LOGS_DIR}")
     logger.info("-" * 80)
-    logger.info(f"⚙️  Workflow A enabled: {settings.ENABLE_WORKFLOW_A}")
-    logger.info(f"⚙️  Workflow B enabled: {settings.ENABLE_WORKFLOW_B}")
+    raw_a = os.getenv("ENABLE_WORKFLOW_A")
+    raw_b = os.getenv("ENABLE_WORKFLOW_B")
+    logger.info(
+        "⚙️  ENABLE_WORKFLOW_A env=%s parsed=%s",
+        raw_a,
+        settings.ENABLE_WORKFLOW_A,
+    )
+    logger.info(
+        "⚙️  ENABLE_WORKFLOW_B env=%s parsed=%s",
+        raw_b,
+        settings.ENABLE_WORKFLOW_B,
+    )
     logger.info(f"⚙️  KROS matching: {settings.ENABLE_KROS_MATCHING}")
     logger.info("-" * 80)
-    
+
+    # Ensure base project directories exist
+    settings.PROJECT_DIR.mkdir(parents=True, exist_ok=True)
+    logger.info("✅ Project directories initialized at %s", settings.PROJECT_DIR)
+
     # Load Knowledge Base
     try:
         from app.core.kb_loader import init_kb_loader

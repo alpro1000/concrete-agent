@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def _ensure_cache_dir() -> Path:
     """Ensure the project cache directory exists."""
-    cache_dir = settings.DATA_DIR / "projects"
+    cache_dir = settings.PROJECT_DIR
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir
 

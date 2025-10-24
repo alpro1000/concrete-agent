@@ -9,7 +9,7 @@ from typing import Dict, Any, List, Optional
 
 from app.core.claude_client import ClaudeClient
 from app.core.gpt4_client import GPT4VisionClient
-from app.core.config import settings
+from app.core.config import settings, ArtifactPaths
 
 # ✅ ДОБАВЛЕНО: SmartParser для документации
 from app.parsers import SmartParser
@@ -257,7 +257,7 @@ class WorkflowB:
     async def execute(
         self,
         project_id: str,
-        vykresy_paths: List[Path],
+        drawing_paths: List[Path],
         project_name: str
     ) -> Dict[str, Any]:
         """
@@ -267,7 +267,7 @@ class WorkflowB:
         
         Args:
             project_id: Project ID
-            vykresy_paths: List of paths to drawings
+            drawing_paths: List of paths to drawings
             project_name: Project name
         
         Returns:
@@ -278,7 +278,7 @@ class WorkflowB:
             
             # Call the existing process_drawings method
             result = await self.process_drawings(
-                drawings=vykresy_paths,
+                drawings=drawing_paths,
                 documentation=None,
                 project_name=project_name
             )
@@ -512,6 +512,7 @@ class WorkflowBService:
 
         project_meta["audit_results"] = generation_result
         artifacts.update(self._extract_artifacts(generation_result))
+        self._persist_generation_result(project_id, generation_result)
 
         artifact = artifacts.get(action)
         if artifact is None:
@@ -532,7 +533,7 @@ class WorkflowBService:
             project_meta.setdefault("project_id", project_id)
             return project_meta
 
-        uploads_dir = settings.DATA_DIR / "uploads" / project_id
+        uploads_dir = ArtifactPaths.raw_dir(project_id)
         if not uploads_dir.exists():
             raise ValueError(f"Project {project_id} not found for Workflow B")
 
@@ -585,7 +586,7 @@ class WorkflowBService:
         workflow = self._workflows.setdefault(project_id, WorkflowB())
         result = await workflow.execute(
             project_id=project_id,
-            vykresy_paths=drawing_files,
+            drawing_paths=drawing_files,
             project_name=project_name,
         )
         return result
@@ -605,6 +606,32 @@ class WorkflowBService:
             },
         }
         return artifact_map
+
+    def _persist_generation_result(self, project_id: str, result: Dict[str, Any]) -> None:
+        """Persist Workflow B generation outputs into artifact files."""
+
+        try:
+            ArtifactPaths.artifacts_dir(project_id).mkdir(parents=True, exist_ok=True)
+            generated_positions_path = ArtifactPaths.generated_positions(project_id)
+            positions_payload = {
+                "items": result.get("generated_positions", []),
+                "meta": {
+                    "project_id": project_id,
+                    "total_positions": len(result.get("generated_positions") or []),
+                },
+            }
+            with generated_positions_path.open("w", encoding="utf-8") as fp:
+                json.dump(positions_payload, fp, ensure_ascii=False, indent=2)
+
+            audit_results_path = ArtifactPaths.audit_results(project_id)
+            with audit_results_path.open("w", encoding="utf-8") as fp:
+                json.dump(result, fp, ensure_ascii=False, indent=2)
+        except OSError as exc:  # pragma: no cover - defensive logging
+            logger.warning(
+                "Project %s: failed to persist Workflow B artifacts: %s",
+                project_id,
+                exc,
+            )
 
 
 # Singleton-style adapter for API routes

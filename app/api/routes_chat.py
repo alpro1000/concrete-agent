@@ -903,7 +903,7 @@ async def create_project(request: CreateProjectRequest):
             "project_id": project_id,
             "project_name": request.name,
             "workflow": workflow,
-            "status": ProjectStatus.PENDING,
+            "status": ProjectStatus.UPLOADED,
             "created_at": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat(),
             "progress": 0,
@@ -921,7 +921,7 @@ async def create_project(request: CreateProjectRequest):
             "project_id": project_id,
             "project_name": request.name,
             "workflow": workflow,
-            "status": ProjectStatus.PENDING,
+            "status": ProjectStatus.UPLOADED,
             "created_at": datetime.now().isoformat(),
             "message": "Project created successfully",
         }

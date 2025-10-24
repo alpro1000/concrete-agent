@@ -24,16 +24,17 @@ class MultiRoleConfig(BaseSettings):
 
 class Settings(BaseSettings):
     """Main application settings"""
-    
+
     @property
     def BASE_DIR(self) -> Path:
         """Base directory of the project"""
         return Path(__file__).resolve().parent.parent.parent
-    
+
     # ==========================================
     # PROJECT PATHS
     # ==========================================
     DATA_DIR: Optional[Path] = None
+    PROJECT_DIR: Optional[Path] = None
     KB_DIR: Optional[Path] = None
     PROMPTS_DIR: Optional[Path] = None
     LOGS_DIR: Optional[Path] = None
@@ -220,11 +221,13 @@ class Settings(BaseSettings):
     def __init__(self, **kwargs):
         """Initialize settings with proper path defaults"""
         super().__init__(**kwargs)
-        
+
         base = self.BASE_DIR
-        
+
         if self.DATA_DIR is None:
             self.DATA_DIR = base / "data"
+        if self.PROJECT_DIR is None:
+            self.PROJECT_DIR = self.DATA_DIR / "projects"
         if self.KB_DIR is None:
             self.KB_DIR = base / "app" / "knowledge_base"
         if self.PROMPTS_DIR is None:
@@ -238,10 +241,8 @@ class Settings(BaseSettings):
         
         try:
             self.DATA_DIR.mkdir(parents=True, exist_ok=True)
-            (self.DATA_DIR / "raw").mkdir(exist_ok=True)
-            (self.DATA_DIR / "processed").mkdir(exist_ok=True)
-            (self.DATA_DIR / "results").mkdir(exist_ok=True)
-            
+            self.PROJECT_DIR.mkdir(parents=True, exist_ok=True)
+
             self.LOGS_DIR.mkdir(parents=True, exist_ok=True)
             (self.LOGS_DIR / "claude_calls").mkdir(exist_ok=True)
             (self.LOGS_DIR / "gpt4_calls").mkdir(exist_ok=True)
@@ -267,6 +268,61 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+class ArtifactPaths:
+    """Utility helpers for addressing project artifact storage."""
+
+    @staticmethod
+    def _project_dir(project_id: str) -> Path:
+        return settings.PROJECT_DIR / project_id
+
+    @staticmethod
+    def artifacts_dir(project_id: str) -> Path:
+        """Return path to the artifact directory for *project_id*."""
+        return ArtifactPaths._project_dir(project_id) / "artifacts"
+
+    @staticmethod
+    def raw_dir(project_id: str) -> Path:
+        """Return path to the raw uploads directory for *project_id*."""
+        return ArtifactPaths._project_dir(project_id) / "raw"
+
+    @staticmethod
+    def project_json(project_id: str) -> Path:
+        """Return path to project metadata file."""
+        return ArtifactPaths._project_dir(project_id) / "project.json"
+
+    @staticmethod
+    def project_info(project_id: str) -> Path:
+        return ArtifactPaths.artifacts_dir(project_id) / "project_info.json"
+
+    @staticmethod
+    def parsed_positions(project_id: str) -> Path:
+        return ArtifactPaths.artifacts_dir(project_id) / "parsed_positions.json"
+
+    @staticmethod
+    def audit_results(project_id: str) -> Path:
+        return ArtifactPaths.artifacts_dir(project_id) / "audit_results.json"
+
+    @staticmethod
+    def drawing_specs(project_id: str) -> Path:
+        return ArtifactPaths.artifacts_dir(project_id) / "drawing_specs.json"
+
+    @staticmethod
+    def generated_positions(project_id: str) -> Path:
+        return ArtifactPaths.artifacts_dir(project_id) / "generated_positions.json"
+
+    @staticmethod
+    def tech_card(project_id: str, position_id: str) -> Path:
+        return ArtifactPaths.artifacts_dir(project_id) / f"tech_card.{position_id}.json"
+
+    @staticmethod
+    def resource_sheet(project_id: str, position_id: str) -> Path:
+        return ArtifactPaths.artifacts_dir(project_id) / f"resource_sheet.{position_id}.json"
+
+    @staticmethod
+    def materials(project_id: str, position_id: str) -> Path:
+        return ArtifactPaths.artifacts_dir(project_id) / f"materials.{position_id}.json"
 
 # Validation
 if not settings.ANTHROPIC_API_KEY and settings.ENABLE_WORKFLOW_A:

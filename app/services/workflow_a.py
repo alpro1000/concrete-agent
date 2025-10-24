@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from app.core.config import settings
+from app.core.config import settings, ArtifactPaths
 from app.models.project import ProjectStatus
 from app.parsers.smart_parser import SmartParser
 from app.parsers.drawing_specs_parser import DrawingSpecsParser
@@ -159,6 +159,12 @@ class WorkflowA:
         cache_data["diagnostics"]["schema_validation"] = schema_result.stats
 
         positions = schema_result.positions
+        try:
+            ArtifactPaths.parsed_positions(project_id).parent.mkdir(parents=True, exist_ok=True)
+            with ArtifactPaths.parsed_positions(project_id).open("w", encoding="utf-8") as fp:
+                json.dump({"items": positions}, fp, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            logger.warning("Project %s: failed to persist parsed positions: %s", project_id, exc)
         cache_data["positions"] = positions
         cache_data["documents"] = parsing_summary["documents"]
         cache_data["updated_at"] = datetime.now().isoformat()
@@ -176,6 +182,12 @@ class WorkflowA:
         drawing_summary = self._extract_drawing_specs(
             project_id, uploads.get("drawing_files", [])
         )
+
+        try:
+            with ArtifactPaths.drawing_specs(project_id).open("w", encoding="utf-8") as fp:
+                json.dump(drawing_summary, fp, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            logger.warning("Project %s: failed to persist drawing specs: %s", project_id, exc)
 
         logger.info(
             "Project %s: Drawing specs detected=%s",
@@ -227,7 +239,7 @@ class WorkflowA:
         cache_data["amber_count"] = audit_meta.get("amber", totals.get("a", 0))
         cache_data["red_count"] = audit_meta.get("red", totals.get("r", 0))
         cache_data["drawing_specs"] = drawing_summary
-        cache_data["status"] = "AUDITED"
+        cache_data["status"] = ProjectStatus.COMPLETED.value
         cache_data["progress"] = 90
         cache_data["message"] = (
             "Parsed + Enriched + Validated + Audited (Steps 1–6). Ready to export."
@@ -235,6 +247,11 @@ class WorkflowA:
         cache_data["updated_at"] = datetime.now().isoformat()
 
         save_field(project_id, "audit_results", audit_payload)
+        try:
+            with ArtifactPaths.audit_results(project_id).open("w", encoding="utf-8") as fp:
+                json.dump(audit_payload, fp, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            logger.warning("Project %s: failed to persist audit results: %s", project_id, exc)
 
         logger.info(
             "audit_results normalized: total=%d g=%d a=%d r=%d",
@@ -287,7 +304,7 @@ class WorkflowA:
         return {
             "project_id": project_id,
             "workflow": "A",
-            "status": "AUDITED",
+            "status": ProjectStatus.COMPLETED.value,
             "cache_path": str(cache_path),
             "documents_processed": diagnostics["documents_processed"],
             "positions_total": totals.get("total", len(audited_positions)),
@@ -570,7 +587,7 @@ class WorkflowA:
             project_store[project_id] = {
                 "project_id": project_id,
                 "workflow": "A",
-                "status": ProjectStatus.PARSED,
+                "status": ProjectStatus.PROCESSING,
                 "created_at": now_iso,
                 "updated_at": now_iso,
                 "progress": 50,
@@ -590,7 +607,7 @@ class WorkflowA:
             }
             return
 
-        project_meta["status"] = ProjectStatus.PARSED
+        project_meta["status"] = ProjectStatus.PROCESSING
         project_meta["progress"] = max(project_meta.get("progress", 0), 50)
         project_meta["positions_total"] = total_positions
         project_meta["positions_processed"] = total_positions
@@ -663,7 +680,7 @@ class WorkflowA:
             {
                 "project_id": project_id,
                 "workflow": "A",
-                "status": ProjectStatus.AUDITED,
+                "status": ProjectStatus.COMPLETED,
                 "updated_at": now_iso,
                 "progress": 90,
                 "cache_path": str(cache_path),
@@ -755,7 +772,7 @@ class WorkflowA:
         return generated
 
     def _artifact_dir(self, project_id: str) -> Path:
-        return settings.DATA_DIR / "curated" / project_id
+        return ArtifactPaths.artifacts_dir(project_id)
 
     def _write_artifact_to_disk(
         self, project_id: str, filename: str, artifact: Dict[str, Any]
