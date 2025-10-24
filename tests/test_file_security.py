@@ -2,6 +2,7 @@
 Security tests for file path leakage vulnerability fix
 Tests that API endpoints do NOT expose server paths
 """
+import logging
 import pytest
 import tempfile
 import shutil
@@ -160,6 +161,40 @@ class TestUploadEndpointSecurity:
         
         finally:
             # Cleanup
+            if temp_data_dir.exists():
+                shutil.rmtree(temp_data_dir)
+
+    def test_upload_rejects_traversal_filename(self, client, monkeypatch, caplog):
+        """Ensure crafted filenames with traversal sequences are rejected."""
+        temp_data_dir = Path(tempfile.mkdtemp())
+
+        from app.core import config
+        monkeypatch.setattr(config.settings, 'DATA_DIR', temp_data_dir)
+
+        try:
+            caplog.set_level(logging.WARNING, logger="app.api.routes")
+
+            response = client.post(
+                "/api/upload",
+                data={
+                    "project_name": "Traversal Test",
+                    "workflow": "A",
+                    "auto_start_audit": "false"
+                },
+                files={
+                    "vykaz_vymer": ("../../escape.txt", BytesIO(b"malicious"), "text/plain"),
+                }
+            )
+
+            assert response.status_code == 400
+            detail = response.json()["detail"].lower()
+            assert "invalid filename" in detail or "filename" in detail
+
+            assert any(
+                "Rejected unsafe filename" in record.getMessage()
+                for record in caplog.records
+            )
+        finally:
             if temp_data_dir.exists():
                 shutil.rmtree(temp_data_dir)
 
