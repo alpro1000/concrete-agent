@@ -324,6 +324,23 @@ class ArtifactPaths:
     def materials(project_id: str, position_id: str) -> Path:
         return ArtifactPaths.artifacts_dir(project_id) / f"materials.{position_id}.json"
 
+    @staticmethod
+    def enriched_position(project_id: str, position_id: str) -> Path:
+        """Path to enriched position artifact."""
+        return (
+            ArtifactPaths.artifacts_dir(project_id)
+            / "enriched_positions"
+            / f"{position_id}_enriched.json"
+        )
+
+    @staticmethod
+    def enrichment_metadata(project_id: str) -> Path:
+        """Path to enrichment metadata."""
+        return (
+            ArtifactPaths.artifacts_dir(project_id)
+            / "enrichment_metadata.json"
+        )
+
 # Validation
 if not settings.ANTHROPIC_API_KEY and settings.ENABLE_WORKFLOW_A:
     import warnings
