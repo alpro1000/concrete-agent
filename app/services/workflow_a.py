@@ -1,6 +1,7 @@
 """Workflow A - Steps 1–6 implementation (upload → audit)."""
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -13,6 +14,7 @@ from app.parsers.drawing_specs_parser import DrawingSpecsParser
 from app.services.audit_classifier import AuditClassifier
 from app.services.position_enricher import PositionEnricher
 from app.services.project_cache import (
+    load_project_cache,
     load_or_create_project_cache,
     save_field,
     save_project_cache,
@@ -23,6 +25,22 @@ from app.state.project_store import project_store
 from app.utils.audit_contracts import build_audit_contract
 
 logger = logging.getLogger(__name__)
+
+
+_ARTIFACT_CONFIG: Dict[str, Dict[str, str]] = {
+    "tech_card": {
+        "cache_key": "tech_card",
+        "filename": "tech_card.json",
+    },
+    "resource_sheet": {
+        "cache_key": "resource_sheet",
+        "filename": "resource_sheet.json",
+    },
+    "materials": {
+        "cache_key": "material_analysis",
+        "filename": "material_analysis.json",
+    },
+}
 
 
 def _classify_position(position: Dict[str, Any]) -> str:
@@ -65,6 +83,12 @@ class WorkflowA:
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """Run upload handling and parsing for Workflow A."""
+        if action in _ARTIFACT_CONFIG:
+            logger.info(
+                "Project %s: Workflow A serving cached artifact '%s'", project_id, action
+            )
+            return self._serve_artifact(project_id, action)
+
         if action != "execute":
             logger.debug(
                 "Project %s: Workflow A execute() received action '%s' (fallback to full pipeline)",
@@ -220,6 +244,25 @@ class WorkflowA:
             totals.get("r", 0),
         )
 
+        artifacts = self._build_artifacts(
+            project_id=project_id,
+            project_meta=project_store.setdefault(project_id, {}),
+            audit_payload=audit_payload,
+            parsing_diagnostics=parsing_summary["diagnostics"],
+            drawing_summary=drawing_summary,
+            enrichment_stats=enrichment_stats,
+            validation_stats=validation_stats,
+            schema_stats=schema_result.stats,
+        )
+
+        cache_data.setdefault("artifacts", {})
+
+        for action_name, artifact in artifacts.items():
+            config = _ARTIFACT_CONFIG[action_name]
+            cache_data["artifacts"][config["cache_key"]] = artifact
+            self._cache_artifact(project_id, config["cache_key"], artifact)
+            self._write_artifact_to_disk(project_id, config["filename"], artifact)
+
         save_project_cache(project_id, cache_data)
 
         self._update_project_store_after_audit(
@@ -258,6 +301,10 @@ class WorkflowA:
             "drawing_specs": drawing_summary["diagnostics"],
             "progress": 90,
             "message": "Parsed + Enriched + Validated + Audited (Steps 1–6). Ready to export.",
+            "artifacts": {
+                _ARTIFACT_CONFIG[action_name]["cache_key"]: artifact
+                for action_name, artifact in artifacts.items()
+            },
         }
 
     def _build_audit_payload(
@@ -672,6 +719,621 @@ class WorkflowA:
             "amber": audit_stats.get("amber", totals.get("a", 0)),
             "red": audit_stats.get("red", totals.get("r", 0)),
         }
+
+        artifacts = project_meta.get("artifacts")
+        if isinstance(artifacts, dict):
+            project_meta["artifacts"] = dict(artifacts)
+
+    # ------------------------------------------------------------------
+    # Artifact generation & caching helpers
+    # ------------------------------------------------------------------
+
+    def _serve_artifact(self, project_id: str, action: str) -> Dict[str, Any]:
+        config = _ARTIFACT_CONFIG[action]
+        project_meta = project_store.get(project_id)
+        if not project_meta:
+            raise ValueError(f"Project {project_id} not found in store")
+
+        artifacts = project_meta.get("artifacts")
+        if isinstance(artifacts, dict) and config["cache_key"] in artifacts:
+            return artifacts[config["cache_key"]]
+
+        disk_payload = self._read_artifact_from_disk(project_id, config["filename"])
+        if disk_payload is not None:
+            self._cache_artifact(project_id, config["cache_key"], disk_payload)
+            self._update_cache_artifacts_field(project_id, config["cache_key"], disk_payload)
+            return disk_payload
+
+        generated = self._generate_artifact_from_cache(
+            project_id=project_id,
+            action=action,
+            project_meta=project_meta,
+        )
+        self._cache_artifact(project_id, config["cache_key"], generated)
+        self._write_artifact_to_disk(project_id, config["filename"], generated)
+        self._update_cache_artifacts_field(project_id, config["cache_key"], generated)
+        return generated
+
+    def _artifact_dir(self, project_id: str) -> Path:
+        return settings.DATA_DIR / "curated" / project_id
+
+    def _write_artifact_to_disk(
+        self, project_id: str, filename: str, artifact: Dict[str, Any]
+    ) -> Path:
+        path = self._artifact_dir(project_id) / filename
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as file_obj:
+            json.dump(artifact, file_obj, ensure_ascii=False, indent=2)
+        logger.info("Project %s: Artifact %s saved to %s", project_id, filename, path)
+        return path
+
+    def _read_artifact_from_disk(
+        self, project_id: str, filename: str
+    ) -> Optional[Dict[str, Any]]:
+        path = self._artifact_dir(project_id) / filename
+        if not path.exists():
+            return None
+        try:
+            with path.open("r", encoding="utf-8") as file_obj:
+                payload = json.load(file_obj)
+        except json.JSONDecodeError:
+            logger.warning(
+                "Project %s: Artifact %s corrupted on disk, ignoring cache", project_id, filename
+            )
+            return None
+        logger.info("Project %s: Loaded artifact %s from disk", project_id, filename)
+        return payload
+
+    def _cache_artifact(self, project_id: str, cache_key: str, artifact: Dict[str, Any]) -> None:
+        project_meta = project_store.setdefault(project_id, {})
+        artifacts = project_meta.setdefault("artifacts", {})
+        if not isinstance(artifacts, dict):
+            artifacts = {}
+            project_meta["artifacts"] = artifacts
+        artifacts[cache_key] = artifact
+        project_meta.setdefault("artifacts_updated_at", {})[cache_key] = datetime.now().isoformat()
+
+    def _update_cache_artifacts_field(
+        self, project_id: str, cache_key: str, artifact: Dict[str, Any]
+    ) -> None:
+        cache_payload, _ = load_project_cache(project_id)
+        if cache_payload is None:
+            cache_payload = {"project_id": project_id}
+        artifacts = cache_payload.setdefault("artifacts", {})
+        artifacts[cache_key] = artifact
+        save_project_cache(project_id, cache_payload)
+
+    def _generate_artifact_from_cache(
+        self,
+        project_id: str,
+        action: str,
+        project_meta: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        cache_payload, _ = load_project_cache(project_id)
+        if cache_payload is None:
+            raise ValueError(f"Project {project_id} cache not initialised")
+
+        audit_payload = cache_payload.get("audit_results")
+        if not isinstance(audit_payload, dict):
+            raise ValueError(f"Project {project_id} cache missing audit results")
+
+        diagnostics = cache_payload.get("diagnostics") or {}
+        parsing_diagnostics = diagnostics.get("parsing", {})
+        enrichment_stats = diagnostics.get("enrichment")
+        validation_stats = diagnostics.get("validation")
+        schema_stats = diagnostics.get("schema_validation")
+        drawing_summary = cache_payload.get("drawing_specs") or {}
+
+        artifacts = self._build_artifacts(
+            project_id=project_id,
+            project_meta=project_meta,
+            audit_payload=audit_payload,
+            parsing_diagnostics=parsing_diagnostics,
+            drawing_summary=drawing_summary,
+            enrichment_stats=enrichment_stats,
+            validation_stats=validation_stats,
+            schema_stats=schema_stats,
+        )
+        return artifacts[action]
+
+    def _build_artifacts(
+        self,
+        project_id: str,
+        project_meta: Dict[str, Any],
+        audit_payload: Dict[str, Any],
+        parsing_diagnostics: Dict[str, Any],
+        drawing_summary: Dict[str, Any],
+        *,
+        enrichment_stats: Optional[Dict[str, Any]] = None,
+        validation_stats: Optional[Dict[str, Any]] = None,
+        schema_stats: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Dict[str, Any]]:
+        totals = audit_payload.get("totals", {})
+        meta = audit_payload.get("meta", {})
+        enrichment_stats = enrichment_stats or meta.get("enrichment", {})
+        validation_stats = validation_stats or meta.get("validation", {})
+        schema_stats = schema_stats or meta.get("schema_validation", {})
+        audit_stats = meta.get("audit") or {
+            "green": totals.get("g", 0),
+            "amber": totals.get("a", 0),
+            "red": totals.get("r", 0),
+        }
+
+        items: List[Dict[str, Any]] = [
+            item
+            for item in (audit_payload.get("items") or [])
+            if isinstance(item, dict)
+        ]
+
+        project_name = (
+            project_meta.get("project_name")
+            or project_meta.get("name")
+            or f"Projekt {project_id}"
+        )
+
+        tech_card = self._build_tech_card_artifact(
+            items,
+            parsing_diagnostics=parsing_diagnostics,
+            drawing_summary=drawing_summary,
+            audit_stats=audit_stats,
+            validation_stats=validation_stats,
+            metadata=self._build_artifact_metadata(project_id, project_name),
+        )
+
+        resource_sheet = self._build_resource_sheet_artifact(
+            items,
+            totals=totals,
+            parsing_diagnostics=parsing_diagnostics,
+            audit_stats=audit_stats,
+            metadata=self._build_artifact_metadata(project_id, project_name),
+        )
+
+        materials = self._build_materials_artifact(
+            items,
+            enrichment_stats=enrichment_stats,
+            validation_stats=validation_stats,
+            metadata=self._build_artifact_metadata(project_id, project_name),
+        )
+
+        # Include schema stats for completeness in cache metadata
+        for artifact in (tech_card, resource_sheet, materials):
+            artifact.setdefault("metadata", {}).setdefault(
+                "schema_validation", schema_stats
+            )
+
+        return {
+            "tech_card": tech_card,
+            "resource_sheet": resource_sheet,
+            "materials": materials,
+        }
+
+    def _build_artifact_metadata(
+        self, project_id: str, project_name: str
+    ) -> Dict[str, Any]:
+        return {
+            "project_id": project_id,
+            "project_name": project_name,
+            "generated_at": datetime.now().isoformat(),
+            "generated_by": "workflow_a",
+        }
+
+    def _build_tech_card_artifact(
+        self,
+        items: List[Dict[str, Any]],
+        *,
+        parsing_diagnostics: Dict[str, Any],
+        drawing_summary: Dict[str, Any],
+        audit_stats: Dict[str, Any],
+        validation_stats: Dict[str, Any],
+        metadata: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        total_documents = parsing_diagnostics.get("documents_processed", 0)
+        total_positions = parsing_diagnostics.get("total_positions") or len(items)
+
+        steps = [
+            {
+                "step_num": 1,
+                "title": "Příprava a normalizace",
+                "description": "Zpracování vstupních dokumentů a sjednocení jednotek a čísel.",
+                "duration_minutes": max(30, total_documents * 12),
+                "workers": 2,
+            },
+            {
+                "step_num": 2,
+                "title": "Validace a obohacení",
+                "description": "Automatická validace struktur a doplnění údajů ze znalostních bází.",
+                "duration_minutes": max(45, total_positions * 3),
+                "workers": 3,
+            },
+            {
+                "step_num": 3,
+                "title": "Audit a doporučení",
+                "description": "Kontrola souladu s normami, příprava doporučení a exportních výstupů.",
+                "duration_minutes": max(
+                    60,
+                    (
+                        audit_stats.get("green", 0)
+                        + audit_stats.get("amber", 0)
+                        + audit_stats.get("red", 0)
+                    )
+                    * 4,
+                ),
+                "workers": 2,
+            },
+        ]
+
+        quality_checks = [
+            {
+                "check": "Schválení datových struktur",
+                "timing": "po parsování",
+                "pass": f"{validation_stats.get('passed', 0)} položek bez chyb",
+            },
+            {
+                "check": "Kontrola na odchylky",
+                "timing": "po auditu",
+                "pass": f"{audit_stats.get('amber', 0)} položek vyžaduje dohled, {audit_stats.get('red', 0)} kritických",
+            },
+        ]
+
+        drawing_specs = drawing_summary.get("specifications") or []
+        norms: List[Dict[str, Any]] = []
+        for spec in drawing_specs[:5]:
+            ref = spec.get("standard") or spec.get("id") or spec.get("code")
+            detail = spec.get("description") or spec.get("title") or spec.get("type")
+            if ref or detail:
+                norms.append(
+                    {
+                        "ref": str(ref or detail),
+                        "requirement": detail or "Viz specifikace výkresů",
+                    }
+                )
+
+        if not norms:
+            norms = [
+                {
+                    "ref": "ČSN 73 2601",
+                    "requirement": "Technologická kázeň betonáže a kontrola krytí výztuže.",
+                }
+            ]
+
+        safety_requirements = [
+            "Používat OOPP pro práce ve výškách",
+            "Zajistit vymezení pracovních zón a kontrolu vibrační techniky",
+        ]
+
+        sorted_items = sorted(
+            items,
+            key=lambda entry: entry.get("quantity") or 0,
+            reverse=True,
+        )
+        materials_used = [
+            {
+                "material": entry.get("description", "Neznámá položka"),
+                "qty": entry.get("quantity", 0) or 0,
+                "unit": entry.get("unit") or "",
+            }
+            for entry in sorted_items[:5]
+            if entry.get("quantity")
+        ]
+
+        status = "OK"
+        warnings: List[Dict[str, Any]] = []
+        if audit_stats.get("red", 0):
+            status = "ERROR"
+            warnings.append(
+                {
+                    "level": "ERROR",
+                    "message": "Byly zjištěny kritické položky vyžadující zásah.",
+                }
+            )
+        elif audit_stats.get("amber", 0):
+            status = "WARNING"
+            warnings.append(
+                {
+                    "level": "WARNING",
+                    "message": "Některé položky vyžadují ruční ověření.",
+                }
+            )
+
+        artifact = {
+            "type": "tech_card",
+            "title": f"Technologická karta – {metadata['project_name']}",
+            "data": {
+                "title": f"Technologický postup projektu {metadata['project_name']}",
+                "steps": steps,
+                "quality_checks": quality_checks,
+                "safety_requirements": safety_requirements,
+                "materials_used": materials_used,
+                "norms": norms,
+            },
+            "metadata": metadata,
+            "navigation": {
+                "title": "Technologický postup",
+                "sections": [
+                    {"id": "steps", "label": "Postup", "icon": "🛠️"},
+                    {"id": "quality", "label": "Kontroly", "icon": "✅"},
+                    {"id": "safety", "label": "Bezpečnost", "icon": "⚠️"},
+                ],
+                "active_section": "steps",
+            },
+            "actions": [],
+            "status": status,
+            "warnings": warnings,
+        }
+        return artifact
+
+    def _build_resource_sheet_artifact(
+        self,
+        items: List[Dict[str, Any]],
+        *,
+        totals: Dict[str, Any],
+        parsing_diagnostics: Dict[str, Any],
+        audit_stats: Dict[str, Any],
+        metadata: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        section_stats: Dict[str, Dict[str, Any]] = {}
+        for entry in items:
+            provenance = entry.get("provenance") or {}
+            section_name = provenance.get("section") or "SO-001"
+            bucket = section_stats.setdefault(
+                section_name,
+                {
+                    "labor_hours": 0.0,
+                    "equipment_hours": 0.0,
+                    "materials_cost": 0.0,
+                    "positions": [],
+                },
+            )
+            quantity = entry.get("quantity") or 0.0
+            bucket["labor_hours"] += max(quantity * 1.8, 1.0)
+            bucket["equipment_hours"] += max(quantity * 0.6, 0.5)
+            bucket["materials_cost"] += max(quantity * 950, 500)
+            bucket["positions"].append(entry)
+
+        by_section = []
+        for section, stats in section_stats.items():
+            labor_hours = int(round(stats["labor_hours"]))
+            equipment_hours = int(round(stats["equipment_hours"]))
+            materials_cost = int(round(stats["materials_cost"]))
+            positions = stats.get("positions") or []
+            first_position = positions[0] if positions else {}
+            provenance = (
+                first_position.get("provenance")
+                if isinstance(first_position, dict)
+                else {}
+            ) or {}
+            labor_by_trade = {
+                "Tesař": {
+                    "hours": int(labor_hours * 0.4),
+                    "workers": 4,
+                    "duration_days": max(2, labor_hours // 8),
+                },
+                "Betonář": {
+                    "hours": int(labor_hours * 0.35),
+                    "workers": 3,
+                    "duration_days": max(2, labor_hours // 10),
+                },
+                "Kontrolor": {
+                    "hours": max(4, labor_hours // 6),
+                    "workers": 1,
+                    "duration_days": max(1, labor_hours // 12),
+                },
+            }
+            equipment_by_type = {
+                "Jeřáb mobilní": {"hours": int(equipment_hours * 0.45)},
+                "Vibrátor": {"hours": int(equipment_hours * 0.35)},
+                "Doprava": {"hours": max(2, int(equipment_hours * 0.2))},
+            }
+
+            timeline_duration = max(3, labor_hours // 6)
+            timeline = {
+                "start_day": 1,
+                "end_day": timeline_duration + 1,
+                "critical_path": "Oppalubka → Armování → Betonáž",
+            }
+
+            by_section.append(
+                {
+                    "section": section,
+                    "section_title": provenance.get("sheet") or section,
+                    "labor": {
+                        "total_hours": labor_hours,
+                        "by_trade": labor_by_trade,
+                    },
+                    "equipment": {
+                        "total_hours": equipment_hours,
+                        "by_type": equipment_by_type,
+                    },
+                    "materials_cost": materials_cost,
+                    "timeline": timeline,
+                }
+            )
+
+        total_labor_hours = sum(section["labor"]["total_hours"] for section in by_section)
+        total_equipment_hours = sum(
+            section["equipment"]["total_hours"] for section in by_section
+        )
+        total_materials_cost = sum(section["materials_cost"] for section in by_section)
+
+        summary = {
+            "total_labor_hours": total_labor_hours,
+            "total_equipment_hours": total_equipment_hours,
+            "total_materials_cost": total_materials_cost,
+            "estimated_duration_days": max(1, parsing_diagnostics.get("documents_processed", 1) * 10),
+        }
+
+        team_composition = {
+            "Mistr": 1,
+            "Technolog": max(1, totals.get("a", 0) + totals.get("r", 0)),
+            "Kontrolor": max(1, totals.get("r", 0)),
+            "Dělníci": max(4, totals.get("total", len(items)) // 3 or 4),
+        }
+
+        equipment_schedule = {
+            "Jeřáb mobilní": "Den 1-30",
+            "Autodomíchávač": "Den 5-20",
+            "Vibrátor": "Podle potřeby během betonáže",
+        }
+
+        status = "OK"
+        warnings: List[Dict[str, Any]] = []
+        if audit_stats.get("red", 0):
+            status = "ERROR"
+            warnings.append(
+                {
+                    "level": "ERROR",
+                    "message": "Kritické položky mohou ovlivnit kapacitní plán.",
+                }
+            )
+        elif audit_stats.get("amber", 0):
+            status = "WARNING"
+            warnings.append(
+                {
+                    "level": "WARNING",
+                    "message": "Plán zahrnuje položky s varováním, zvažte revizi zdrojů.",
+                }
+            )
+
+        artifact = {
+            "type": "resource_sheet",
+            "title": "Zdroje",
+            "data": {
+                "summary": summary,
+                "by_section": by_section,
+                "team_composition": team_composition,
+                "equipment_schedule": equipment_schedule,
+            },
+            "metadata": metadata,
+            "navigation": {
+                "title": "Zdroje - přehled",
+                "sections": [
+                    {"id": "summary", "label": "Souhrn", "icon": "📊"},
+                    {"id": "labor", "label": "Práce", "icon": "👷"},
+                    {"id": "equipment", "label": "Technika", "icon": "🚜"},
+                ],
+                "active_section": "summary",
+            },
+            "actions": [],
+            "status": status,
+            "warnings": warnings,
+        }
+        return artifact
+
+    def _build_materials_artifact(
+        self,
+        items: List[Dict[str, Any]],
+        *,
+        enrichment_stats: Dict[str, Any],
+        validation_stats: Dict[str, Any],
+        metadata: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        materials_block = []
+        total_cost = 0.0
+        material_types: List[str] = []
+
+        for entry in items:
+            quantity = entry.get("quantity") or 0.0
+            unit = entry.get("unit") or ""
+            description = entry.get("description", "Neznámá položka")
+            material_type = self._guess_material_type(description)
+            material_types.append(material_type)
+            estimated_cost = float(quantity) * (1500 if entry.get("status") == "RED" else 1100)
+            total_cost += estimated_cost
+            provenance = entry.get("provenance") or {}
+
+            materials_block.append(
+                {
+                    "id": provenance.get("position_id") or entry.get("code") or description,
+                    "type": material_type,
+                    "brand": description,
+                    "quantity": {"total": quantity, "unit": unit},
+                    "unit": unit,
+                    "characteristics": {
+                        "status": entry.get("status", "UNKNOWN"),
+                        "issues": len(entry.get("issues") or []),
+                    },
+                    "used_in": [
+                        {
+                            "section": provenance.get("section") or "SO-001",
+                            "work": provenance.get("sheet") or "Výkaz",
+                            "qty": quantity,
+                        }
+                    ],
+                    "suppliers": [
+                        {
+                            "name": "Regionální dodavatel",
+                            "distance": "do 50 km",
+                            "price": int(estimated_cost / quantity) if quantity else None,
+                            "delivery": "48 h",
+                        }
+                    ],
+                    "norms": ["ČSN", "Interní standardy"],
+                }
+            )
+
+        summary = {
+            "total_materials": len(materials_block),
+            "material_types": sorted({typ for typ in material_types}),
+            "total_cost": int(round(total_cost)),
+            "enrichment_matched": enrichment_stats.get("matched") if isinstance(enrichment_stats, dict) else None,
+            "validation_passed": validation_stats.get("passed") if isinstance(validation_stats, dict) else None,
+        }
+
+        status = "OK"
+        warnings: List[Dict[str, Any]] = []
+        amber_total = enrichment_stats.get("partial") if isinstance(enrichment_stats, dict) else 0
+        red_total = enrichment_stats.get("unmatched") if isinstance(enrichment_stats, dict) else 0
+        if red_total:
+            status = "ERROR"
+            warnings.append(
+                {
+                    "level": "ERROR",
+                    "message": "Některé materiály nebyly ověřeny v znalostní bázi.",
+                }
+            )
+        elif amber_total:
+            status = "WARNING"
+            warnings.append(
+                {
+                    "level": "WARNING",
+                    "message": "Část materiálů má pouze částečné shody v enrichmentu.",
+                }
+            )
+
+        artifact = {
+            "type": "materials_detailed",
+            "title": "Materiály",
+            "data": {
+                "materials": materials_block,
+                "summary": summary,
+            },
+            "metadata": metadata,
+            "navigation": {
+                "title": "Materiály - detailní přehled",
+                "sections": [
+                    {"id": "summary", "label": "Souhrn", "icon": "📦"},
+                    {"id": "materials", "label": "Materiály", "icon": "🧱"},
+                ],
+                "active_section": "materials",
+            },
+            "actions": [],
+            "status": status,
+            "warnings": warnings,
+        }
+        return artifact
+
+    @staticmethod
+    def _guess_material_type(description: str) -> str:
+        token = (description or "").lower()
+        if "beton" in token:
+            return "Beton"
+        if "arm" in token or "výzt" in token:
+            return "Armatura"
+        if "ocel" in token:
+            return "Ocel"
+        if "zem" in token:
+            return "Zemní práce"
+        return "Materiál"
 
 
 class WorkflowAService:
