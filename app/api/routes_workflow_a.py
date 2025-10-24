@@ -568,7 +568,7 @@ async def generate_materials(request: MaterialsRequest) -> APIResponse:
 # ============================================================================
 
 
-@legacy_router.get("/workflow/a/{project_id}/tech-card", include_in_schema=False)
+@legacy_router.get("/{project_id}/tech-card", include_in_schema=False)
 async def legacy_get_tech_card(
     project_id: str,
     position_id: Optional[str] = Query(default=None, alias="positionId"),
@@ -593,7 +593,7 @@ async def legacy_get_tech_card(
     return response.data["artifact"]
 
 
-@legacy_router.get("/workflow/a/{project_id}/resource-sheet", include_in_schema=False)
+@legacy_router.get("/{project_id}/resource-sheet", include_in_schema=False)
 async def legacy_get_resource_sheet(
     project_id: str,
     position_id: Optional[str] = Query(default=None, alias="positionId"),
@@ -618,7 +618,7 @@ async def legacy_get_resource_sheet(
     return response.data["artifact"]
 
 
-@legacy_router.get("/workflow/a/{project_id}/material-analysis", include_in_schema=False)
+@legacy_router.get("/{project_id}/material-analysis", include_in_schema=False)
 async def legacy_get_materials(
     project_id: str,
     position_id: Optional[str] = Query(default=None, alias="positionId"),
