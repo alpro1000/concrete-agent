@@ -93,4 +93,37 @@ export const getProjectStatus = (projectId) =>
 export const getProjectFiles = (projectId) =>
   apiClient.get(`/api/projects/${projectId}/files`);
 
+// Workflow A artifacts
+export const getWorkflowAParsedPositions = (projectId) =>
+  apiClient.get(`/api/workflow-a/${projectId}/positions`);
+
+export const generateWorkflowATechCard = (projectId, positionId) =>
+  apiClient.post(`/api/workflow-a/${projectId}/tech-card`, {
+    position_id: positionId,
+  });
+
+export const generateWorkflowATov = (projectId, positionId) =>
+  apiClient.post(`/api/workflow-a/${projectId}/tov`, {
+    position_id: positionId,
+  });
+
+export const generateWorkflowAMaterials = (projectId, positionId) =>
+  apiClient.post(`/api/workflow-a/${projectId}/materials`, {
+    position_id: positionId,
+  });
+
+// Workflow B artifacts
+export const getWorkflowBPositions = (projectId) =>
+  apiClient.get(`/api/workflow-b/${projectId}/positions`);
+
+export const generateWorkflowBTechCard = (projectId, positionId) =>
+  apiClient.post(`/api/workflow-b/${projectId}/tech-card`, {
+    position_id: positionId,
+  });
+
+export const generateWorkflowBTov = (projectId, positionId) =>
+  apiClient.post(`/api/workflow-b/${projectId}/tov`, {
+    position_id: positionId,
+  });
+
 export default apiClient;

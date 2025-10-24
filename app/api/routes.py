@@ -14,7 +14,7 @@ import mimetypes
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Form, Query
 from fastapi.responses import FileResponse
 
-from app.core.config import settings
+from app.core.config import settings, ArtifactPaths
 from app.services.workflow_a import WorkflowA
 from app.services.workflow_b import WorkflowB
 from app.state.project_store import project_store
@@ -26,6 +26,7 @@ from app.models.project import (
     WorkflowType,
     FileMetadata,
 )
+from app.services.workflow_selector import select
 
 
 def normalize_status(status: Union[ProjectStatus, str]) -> str:
@@ -219,7 +220,7 @@ async def run_workflow_b(project_id: str, drawings_path: str, project_name: str)
 
         result = await workflow_service.execute(
             project_id=project_id,
-            vykresy_paths=drawing_files,
+            drawing_paths=drawing_files,
             project_name=project_name,
         )
 
@@ -383,12 +384,12 @@ async def upload_project(
         )
         
         # Create project directory
-        storage_root = "uploads" if workflow == 'B' else "raw"
-        project_dir = settings.DATA_DIR / storage_root / project_id
+        project_dir = ArtifactPaths.raw_dir(project_id)
         project_dir.mkdir(parents=True, exist_ok=True)
 
         safe_files: List[Dict[str, Any]] = []
         file_locations: Dict[str, str] = {}
+        saved_file_paths: List[Path] = []
 
         # Save files
         vykaz_vymer_meta = None
@@ -419,6 +420,7 @@ async def upload_project(
             )
             safe_files.append(safe_meta)
             file_locations[safe_meta["file_id"]] = str(vykaz_path)
+            saved_file_paths.append(vykaz_path)
 
         rozpocet_meta = None
         rozpocet_name: Optional[str] = None
@@ -444,6 +446,7 @@ async def upload_project(
             )
             safe_files.append(safe_meta)
             file_locations[safe_meta["file_id"]] = str(rozpocet_path)
+            saved_file_paths.append(rozpocet_path)
 
         # Save vykresy
         vykresy_dir = project_dir / "vykresy"
@@ -467,6 +470,7 @@ async def upload_project(
             safe_files.append(safe_meta)
             file_locations[safe_meta["file_id"]] = str(vykres_path)
             vykresy_names.append(vykres_name)
+            saved_file_paths.append(vykres_path)
 
         # Save dokumentace
         dokumentace_dir = project_dir / "dokumentace"
@@ -490,6 +494,7 @@ async def upload_project(
             safe_files.append(safe_meta)
             file_locations[safe_meta["file_id"]] = str(doc_path)
             dokumentace_names.append(doc_name)
+            saved_file_paths.append(doc_path)
 
         # Save zmeny
         zmeny_dir = project_dir / "zmeny"
@@ -513,7 +518,35 @@ async def upload_project(
             safe_files.append(safe_meta)
             file_locations[safe_meta["file_id"]] = str(zmena_path)
             zmeny_names.append(zmena_name)
+            saved_file_paths.append(zmena_path)
         
+        ArtifactPaths.artifacts_dir(project_id).mkdir(parents=True, exist_ok=True)
+
+        requested_workflow = workflow
+        selected_workflow, selection_status = select(
+            workflow_param=requested_workflow,
+            enable_a=settings.ENABLE_WORKFLOW_A,
+            enable_b=settings.ENABLE_WORKFLOW_B,
+            saved_files=saved_file_paths,
+        )
+
+        if selected_workflow != requested_workflow:
+            logger.warning(
+                "Project %s: workflow override %s -> %s (status=%s)",
+                project_id,
+                requested_workflow,
+                selected_workflow,
+                selection_status,
+            )
+        workflow = selected_workflow
+        logger.info(
+            "Workflow selection for %s: requested=%s selected=%s status=%s",
+            project_id,
+            requested_workflow,
+            workflow,
+            selection_status,
+        )
+
         # Store project metadata
         project_store[project_id] = {
             "project_id": project_id,
@@ -563,10 +596,33 @@ async def upload_project(
                 "ocr_pages": [],
             },
             "drawings_path": str(vykresy_dir) if workflow == 'B' else None,
+            "workflow_selection": {
+                "requested": requested_workflow,
+                "selected": workflow,
+                "status": selection_status,
+            },
         }
-        
+
+        project_manifest = {
+            "project_id": project_id,
+            "project_name": project_name,
+            "workflow": workflow,
+            "requested_workflow": requested_workflow,
+            "selected_workflow": workflow,
+            "selection_status": selection_status,
+            "uploaded_at": datetime.now().isoformat(),
+            "files": safe_files,
+        }
+        try:
+            with ArtifactPaths.project_info(project_id).open("w", encoding="utf-8") as fp:
+                json.dump(project_manifest, fp, ensure_ascii=False, indent=2)
+            with ArtifactPaths.project_json(project_id).open("w", encoding="utf-8") as fp:
+                json.dump(project_manifest, fp, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            logger.warning("Project %s: failed to persist project manifest: %s", project_id, exc)
+
         logger.info(f"✅ Nahrání dokončeno: {project_id}")
-        
+
         # Start processing in background if requested
         if auto_start_audit:
             logger.info(
@@ -625,6 +681,7 @@ async def upload_project(
                 "used_poppler": 0,
                 "ocr_pages": [],
             },
+            "workflow_selection": project_store[project_id].get("workflow_selection", {}),
         }
     
     except HTTPException:
@@ -662,7 +719,8 @@ async def get_project_status(project_id: str):
         "message": project.get("message"),
         "error": project.get("error"),
         "error_message": project.get("error"),
-        "enrichment_enabled": project.get("enable_enrichment")
+        "enrichment_enabled": project.get("enable_enrichment"),
+        "workflow_selection": project.get("workflow_selection", {}),
     }
 
 
@@ -681,7 +739,7 @@ async def get_project_results(project_id: str):
     
     status = project["status"]
 
-    if status not in {ProjectStatus.AUDITED, ProjectStatus.COMPLETED}:
+    if status != ProjectStatus.COMPLETED:
         return {
             "project_id": project_id,
             "status": normalize_status(status),
@@ -870,7 +928,7 @@ async def health_check():
         },
         "stats": {
             "total_projects": len(project_store),
-            "pending": sum(1 for p in project_store.values() if p["status"] == ProjectStatus.PENDING),
+            "uploaded": sum(1 for p in project_store.values() if p["status"] == ProjectStatus.UPLOADED),
             "processing": sum(1 for p in project_store.values() if p["status"] == ProjectStatus.PROCESSING),
             "completed": sum(1 for p in project_store.values() if p["status"] == ProjectStatus.COMPLETED),
             "failed": sum(1 for p in project_store.values() if p["status"] == ProjectStatus.FAILED)

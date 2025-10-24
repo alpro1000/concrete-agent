@@ -9,6 +9,13 @@ import {
   getProjectResults,
   getProjectStatus,
   getProjectFiles,
+  getWorkflowAParsedPositions,
+  generateWorkflowATechCard,
+  generateWorkflowATov,
+  generateWorkflowAMaterials,
+  getWorkflowBPositions,
+  generateWorkflowBTechCard,
+  generateWorkflowBTov,
 } from '../utils/api';
 
 export function useAPI() {
@@ -23,6 +30,13 @@ export function useAPI() {
       getProjectResults,
       getProjectStatus,
       getProjectFiles,
+      getWorkflowAParsedPositions,
+      generateWorkflowATechCard,
+      generateWorkflowATov,
+      generateWorkflowAMaterials,
+      getWorkflowBPositions,
+      generateWorkflowBTechCard,
+      generateWorkflowBTov,
     }),
     [],
   );

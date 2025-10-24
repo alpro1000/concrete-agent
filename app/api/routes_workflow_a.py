@@ -1,428 +1,249 @@
-"""
-API Routes for Workflow A - Specialized Endpoints
-POUZE specifické endpointy pro Workflow A (bez upload!)
-"""
-from pathlib import Path
-from typing import Any, Dict, List
-import logging
-import json
+"""Workflow A artifact endpoints following unified API contract."""
+from __future__ import annotations
 
-import aiofiles
+import json
+import logging
+from pathlib import Path
+from typing import Any, Dict, Optional
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.core.config import settings
-from app.state.project_store import project_store
-from app.services.workflow_a import workflow_a
+from app.core.config import ArtifactPaths
+from app.models.project import APIResponse
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/workflow-a", tags=["Workflow A"])
 
-# Alias for backwards compatibility with legacy in-memory artifacts cache
-projects: Dict[str, Dict[str, Any]] = project_store
+
+class PositionRequest(BaseModel):
+    """Request body for position-scoped artifact generation."""
+
+    position_id: str = Field(..., description="Identifier of the requested position")
 
 
-def _get_cached_artifact(project_id: str, artifact_key: str) -> Any | None:
-    """Retrieve an artifact from the in-memory cache if available."""
-
-    project = projects.get(project_id)
-    if not project:
+def _load_json(path: Path) -> Optional[Any]:
+    if not path.exists():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as fp:
+            return json.load(fp)
+    except (OSError, json.JSONDecodeError) as exc:  # pragma: no cover - defensive
+        logger.warning("Failed to read artifact %s: %s", path, exc)
         return None
 
-    artifacts = project.get("artifacts")
-    if isinstance(artifacts, dict):
-        return artifacts.get(artifact_key)
+
+def _dump_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as fp:
+        json.dump(payload, fp, ensure_ascii=False, indent=2)
+
+
+def _extract_position(payload: Any, position_id: str) -> Optional[Dict[str, Any]]:
+    items: list[Dict[str, Any]] = []
+    if isinstance(payload, dict):
+        candidates = payload.get("items") or payload.get("positions")
+        if isinstance(candidates, list):
+            items = [item for item in candidates if isinstance(item, dict)]
+    elif isinstance(payload, list):
+        items = [item for item in payload if isinstance(item, dict)]
+
+    for item in items:
+        identifiers = (
+            item.get("id"),
+            item.get("position_id"),
+            item.get("code"),
+            item.get("position"),
+        )
+        if any(str(identifier) == position_id for identifier in identifiers if identifier is not None):
+            return item
     return None
 
 
-def _cache_artifact(project_id: str, artifact_key: str, artifact_value: Any) -> None:
-    """Store an artifact in the in-memory cache."""
+@router.get("/{project_id}/positions", response_model=APIResponse)
+async def get_positions(project_id: str) -> APIResponse:
+    """Return parsed positions for *project_id* (if available)."""
 
-    project = projects.setdefault(project_id, {})
-    artifacts = project.setdefault("artifacts", {})
-    if not isinstance(artifacts, dict):
-        artifacts = {}
-        project["artifacts"] = artifacts
-    artifacts[artifact_key] = artifact_value
+    positions_path = ArtifactPaths.parsed_positions(project_id)
+    payload = _load_json(positions_path)
 
-
-async def _read_artifact_from_disk(path: Path, project_id: str, artifact_key: str) -> Any | None:
-    """Read an artifact JSON file asynchronously and cache it in memory."""
-
-    if not path.exists():
-        return None
-
-    try:
-        async with aiofiles.open(path, "r", encoding="utf-8") as file_obj:
-            content = await file_obj.read()
-        artifact = json.loads(content)
-    except json.JSONDecodeError as exc:
-        logger.warning(
-            "Project %s: Artifact %s corrupted on disk (%s). Will regenerate.",
-            project_id,
-            artifact_key,
-            exc,
+    if payload is None:
+        logger.info("Project %s: parsed positions not ready", project_id)
+        return APIResponse(
+            status="success",
+            data=None,
+            warning="Positions not yet parsed",
+            meta={"project_id": project_id},
         )
-        return None
-    except OSError as exc:
-        logger.warning(
-            "Project %s: Failed to read artifact %s from %s: %s",
-            project_id,
-            artifact_key,
-            path,
-            exc,
-        )
-        return None
 
-    _cache_artifact(project_id, artifact_key, artifact)
-    return artifact
+    positions: list[Dict[str, Any]]
+    if isinstance(payload, dict):
+        candidates = payload.get("positions") or payload.get("items") or []
+        positions = [item for item in candidates if isinstance(item, dict)]
+    elif isinstance(payload, list):
+        positions = [item for item in payload if isinstance(item, dict)]
+    else:
+        positions = []
 
-
-async def _write_artifact_to_disk(path: Path, data: Any) -> None:
-    """Persist artifact data to disk using async file operations."""
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        async with aiofiles.open(path, "w", encoding="utf-8") as file_obj:
-            await file_obj.write(json.dumps(data, indent=2, ensure_ascii=False))
-    except OSError as exc:
-        logger.warning("Failed to persist artifact to %s: %s", path, exc)
+    return APIResponse(
+        status="success",
+        data={"items": positions},
+        meta={
+            "project_id": project_id,
+            "count": len(positions),
+            "source": str(positions_path),
+        },
+    )
 
 
-async def _load_artifact(
-    project_id: str,
-    artifact_key: str,
-    filename: str,
-    workflow_action: str,
-) -> Any:
-    """Load an artifact using memory → disk → generation fallback."""
+@router.post("/{project_id}/tech-card", response_model=APIResponse)
+async def generate_tech_card(project_id: str, request: PositionRequest) -> APIResponse:
+    """Generate or fetch a tech card artifact for a position."""
 
-    cached = _get_cached_artifact(project_id, artifact_key)
+    artifact_path = ArtifactPaths.tech_card(project_id, request.position_id)
+    cached = _load_json(artifact_path)
     if cached is not None:
-        return cached
-
-    curated_dir = settings.DATA_DIR / "curated" / project_id
-    artifact_path = curated_dir / filename
-
-    artifact = await _read_artifact_from_disk(artifact_path, project_id, artifact_key)
-    if artifact is not None:
-        return artifact
-
-    try:
-        artifact = await workflow_a.run(
-            project_id=project_id,
-            action=workflow_action,
+        return APIResponse(
+            status="success",
+            data={"tech_card": cached},
+            meta={
+                "project_id": project_id,
+                "position_id": request.position_id,
+                "file": str(artifact_path),
+            },
         )
-    except HTTPException:
-        raise
-    except ValueError as exc:
-        logger.warning(
-            "Project %s: Workflow A cannot generate artifact '%s': %s",
-            project_id,
-            artifact_key,
-            exc,
+
+    audit_payload = _load_json(ArtifactPaths.audit_results(project_id))
+    if audit_payload is None:
+        return APIResponse(
+            status="success",
+            data=None,
+            warning="Audit results not ready",
+            meta={"project_id": project_id, "position_id": request.position_id},
         )
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except Exception as exc:  # pragma: no cover - defensive logging
-        logger.error(
-            "Project %s: Failed to generate artifact '%s': %s",
-            project_id,
-            artifact_key,
-            exc,
-            exc_info=True,
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=f"Не удалось сгенерировать артефакт '{artifact_key}'.",
-        ) from exc
 
-    await _write_artifact_to_disk(artifact_path, artifact)
-    _cache_artifact(project_id, artifact_key, artifact)
-    return artifact
+    position = _extract_position(audit_payload, request.position_id)
+    if position is None:
+        raise HTTPException(status_code=404, detail="Position not found in audit results")
 
+    tech_card = {
+        "position_id": request.position_id,
+        "description": position.get("description") or position.get("name"),
+        "unit": position.get("unit"),
+        "quantity": position.get("quantity"),
+        "classification": position.get("classification"),
+        "audit": position.get("audit"),
+    }
+    _dump_json(artifact_path, tech_card)
 
-# Request/Response Models
-class AnalyzePositionsRequest(BaseModel):
-    """Request pro analýzu vybraných pozic"""
-    selected_indices: List[int]
-    context: Dict[str, Any] = Field(default_factory=dict)
-
-
-# =============================================================================
-# WORKFLOW A SPECIFIC ENDPOINTS
-# =============================================================================
-
-@router.get("/{project_id}/positions")
-async def get_positions(project_id: str):
-    """
-    Získat všechny pozice z výkazu výměr
-    
-    Args:
-        project_id: ID projektu
-    
-    Returns:
-        Seznam všech pozic
-    """
-    try:
-        # Načíst project info
-        project_dir = settings.DATA_DIR / "raw" / project_id
-        info_path = project_dir / "project_info.json"
-        
-        if not info_path.exists():
-            raise HTTPException(status_code=404, detail="Projekt nenalezen")
-        
-        with open(info_path, 'r', encoding='utf-8') as f:
-            project_info = json.load(f)
-        
-        # Ověřit že je to Workflow A
-        if project_info.get("workflow") != "A":
-            raise HTTPException(
-                status_code=400,
-                detail="Tento endpoint je pouze pro Workflow A"
-            )
-        
-        # Načíst parsované pozice
-        curated_dir = settings.DATA_DIR / "curated" / project_id
-        positions_path = curated_dir / "parsed_positions.json"
-        
-        if not positions_path.exists():
-            raise HTTPException(
-                status_code=404,
-                detail="Pozice ještě nebyly zpracovány"
-            )
-        
-        with open(positions_path, 'r', encoding='utf-8') as f:
-            positions_data = json.load(f)
-        
-        return {
-            "success": True,
+    return APIResponse(
+        status="success",
+        data={"tech_card": tech_card},
+        meta={
             "project_id": project_id,
-            "project_name": project_info["project_name"],
-            "total_positions": len(positions_data.get("positions", [])),
-            "positions": positions_data.get("positions", [])
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Chyba při získávání pozic: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+            "position_id": request.position_id,
+            "file": str(artifact_path),
+            "source": "generated_from_audit",
+        },
+    )
 
 
-@router.post("/{project_id}/analyze")
-async def analyze_selected_positions(
-    project_id: str,
-    request: AnalyzePositionsRequest
-):
-    """
-    Detailní analýza vybraných pozic
-    
-    Provede hloubkovou kontrolu:
-    - Správnost kódů KROS/RTS
-    - Ceny vs. databáze
-    - Normy ČSN
-    - Materiály a podmínky (z výkresů)
-    
-    Args:
-        project_id: ID projektu
-        request: Vybrané indexy pozic
-    
-    Returns:
-        Detailní výsledky analýzy
-    """
-    try:
-        logger.info(f"Analýza {len(request.selected_indices)} pozic pro {project_id}")
-        
-        # Načíst pozice
-        curated_dir = settings.DATA_DIR / "curated" / project_id
-        positions_path = curated_dir / "parsed_positions.json"
-        
-        if not positions_path.exists():
-            raise HTTPException(
-                status_code=404,
-                detail="Pozice nenalezeny"
-            )
-        
-        with open(positions_path, 'r', encoding='utf-8') as f:
-            positions_data = json.load(f)
-        
-        all_positions = positions_data.get("positions", [])
-        
-        # Vybrat požadované pozice
-        selected = []
-        for idx in request.selected_indices:
-            if 0 <= idx < len(all_positions):
-                selected.append(all_positions[idx])
-        
-        if not selected:
-            raise HTTPException(
-                status_code=400,
-                detail="Žádné platné pozice k analýze"
-            )
-        
-        # TODO: Spustit detailní analýzu přes Workflow A service
-        # Pro teď vrátíme placeholder
-        
-        return {
-            "success": True,
+@router.post("/{project_id}/tov", response_model=APIResponse)
+async def generate_resource_sheet(project_id: str, request: PositionRequest) -> APIResponse:
+    """Generate a resource sheet (TOV) for a position."""
+
+    artifact_path = ArtifactPaths.resource_sheet(project_id, request.position_id)
+    cached = _load_json(artifact_path)
+    if cached is not None:
+        return APIResponse(
+            status="success",
+            data={"resource_sheet": cached},
+            meta={
+                "project_id": project_id,
+                "position_id": request.position_id,
+                "file": str(artifact_path),
+            },
+        )
+
+    audit_payload = _load_json(ArtifactPaths.audit_results(project_id))
+    if audit_payload is None:
+        return APIResponse(
+            status="success",
+            data=None,
+            warning="Audit results not ready",
+            meta={"project_id": project_id, "position_id": request.position_id},
+        )
+
+    position = _extract_position(audit_payload, request.position_id)
+    if position is None:
+        raise HTTPException(status_code=404, detail="Position not found in audit results")
+
+    resources = position.get("resources") or position.get("materials") or []
+    resource_sheet = {
+        "position_id": request.position_id,
+        "resources": resources,
+        "quantity": position.get("quantity"),
+        "unit": position.get("unit"),
+    }
+    _dump_json(artifact_path, resource_sheet)
+
+    return APIResponse(
+        status="success",
+        data={"resource_sheet": resource_sheet},
+        meta={
             "project_id": project_id,
-            "analyzed_count": len(selected),
-            "positions": selected,
-            "message": "Analýza probíhá v pozadí"
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Chyba při analýze: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+            "position_id": request.position_id,
+            "file": str(artifact_path),
+            "source": "generated_from_audit",
+        },
+    )
 
 
-@router.get("/{project_id}/summary")
-async def get_project_summary(project_id: str):
-    """
-    Získat shrnutí projektu
-    
-    Obsahuje:
-    - Informace z výkresu (typ stavby, charakteristika)
-    - Statistiky pozic
-    - Hlavní práce
-    - Speciální požadavky
-    
-    Args:
-        project_id: ID projektu
-    
-    Returns:
-        Shrnutí projektu
-    """
-    try:
-        curated_dir = settings.DATA_DIR / "curated" / project_id
-        summary_path = curated_dir / "project_summary.json"
-        
-        if not summary_path.exists():
-            raise HTTPException(
-                status_code=404,
-                detail="Shrnutí ještě nebylo vygenerováno"
-            )
-        
-        with open(summary_path, 'r', encoding='utf-8') as f:
-            summary = json.load(f)
-        
-        return {
-            "success": True,
+@router.post("/{project_id}/materials", response_model=APIResponse)
+async def generate_materials(project_id: str, request: PositionRequest) -> APIResponse:
+    """Generate materials specification for a position."""
+
+    artifact_path = ArtifactPaths.materials(project_id, request.position_id)
+    cached = _load_json(artifact_path)
+    if cached is not None:
+        return APIResponse(
+            status="success",
+            data={"materials": cached},
+            meta={
+                "project_id": project_id,
+                "position_id": request.position_id,
+                "file": str(artifact_path),
+            },
+        )
+
+    audit_payload = _load_json(ArtifactPaths.audit_results(project_id))
+    if audit_payload is None:
+        return APIResponse(
+            status="success",
+            data=None,
+            warning="Audit results not ready",
+            meta={"project_id": project_id, "position_id": request.position_id},
+        )
+
+    position = _extract_position(audit_payload, request.position_id)
+    if position is None:
+        raise HTTPException(status_code=404, detail="Position not found in audit results")
+
+    materials = position.get("materials") or position.get("resources") or []
+    material_payload = {
+        "position_id": request.position_id,
+        "items": materials,
+    }
+    _dump_json(artifact_path, material_payload)
+
+    return APIResponse(
+        status="success",
+        data={"materials": material_payload},
+        meta={
             "project_id": project_id,
-            "summary": summary
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Chyba při načítání shrnutí: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/{project_id}/context")
-async def get_drawing_context(project_id: str):
-    """
-    Získat kontext z výkresů
-
-    Informace extrahované z výkresů:
-    - Materiály a jejich vlastnosti
-    - Podmínky zpracování
-    - Technologické detaily
-    - Speciální požadavky
-    
-    Args:
-        project_id: ID projektu
-    
-    Returns:
-        Kontext z výkresů
-    """
-    try:
-        curated_dir = settings.DATA_DIR / "curated" / project_id
-        context_path = curated_dir / "drawing_context.json"
-        
-        if not context_path.exists():
-            raise HTTPException(
-                status_code=404,
-                detail="Kontext z výkresů nebyl zpracován"
-            )
-        
-        with open(context_path, 'r', encoding='utf-8') as f:
-            context = json.load(f)
-        
-        return {
-            "success": True,
-            "project_id": project_id,
-            "context": context
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Chyba při načítání kontextu: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/workflow/a/{project_id}/tech-card")
-async def get_tech_card(project_id: str):
-    """Получить техкарту с fallback стратегией"""
-
-    try:
-        return await _load_artifact(
-            project_id=project_id,
-            artifact_key="tech_card",
-            filename="tech_card.json",
-            workflow_action="tech_card",
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:  # pragma: no cover - defensive logging
-        logger.error(
-            "Project %s: Failed to obtain tech card: %s", project_id, exc, exc_info=True
-        )
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@router.get("/workflow/a/{project_id}/resource-sheet")
-async def get_resource_sheet(project_id: str):
-    """Получить ресурсную ведомость с fallback стратегией"""
-
-    try:
-        return await _load_artifact(
-            project_id=project_id,
-            artifact_key="resource_sheet",
-            filename="resource_sheet.json",
-            workflow_action="resource_sheet",
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:  # pragma: no cover - defensive logging
-        logger.error(
-            "Project %s: Failed to obtain resource sheet: %s", project_id, exc, exc_info=True
-        )
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@router.get("/workflow/a/{project_id}/material-analysis")
-async def get_material_analysis(project_id: str):
-    """Получить анализ материалов с fallback стратегией"""
-
-    try:
-        return await _load_artifact(
-            project_id=project_id,
-            artifact_key="material_analysis",
-            filename="material_analysis.json",
-            workflow_action="materials",
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:  # pragma: no cover - defensive logging
-        logger.error(
-            "Project %s: Failed to obtain material analysis: %s",
-            project_id,
-            exc,
-            exc_info=True,
-        )
-        raise HTTPException(status_code=500, detail=str(exc))
+            "position_id": request.position_id,
+            "file": str(artifact_path),
+            "source": "generated_from_audit",
+        },
+    )

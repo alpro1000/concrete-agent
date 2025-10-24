@@ -19,8 +19,6 @@ def test_project_status_values():
     from app.models.project import ProjectStatus
     
     expected = {
-        'PENDING', 'PARSED', 'VALIDATED', 'AUDITED', 'STAGING', 'CURATED',
-        'AUDIT_IN_PROGRESS', 'AUDIT_COMPLETED', 'HITL_REVIEW',
         'UPLOADED', 'PROCESSING', 'COMPLETED', 'FAILED',
     }
     actual = {s.name for s in ProjectStatus}

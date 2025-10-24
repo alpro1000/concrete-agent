@@ -26,37 +26,25 @@ Base = declarative_base()
 # =============================================================================
 
 class ProjectStatus(str, Enum):
-    """
-    Статусы проекта (согласно контракту API)
-    """
+    """Four-state project lifecycle used across API and workflows."""
 
-    # Legacy statuses preserved for backward compatibility
-    PENDING = "PENDING"                    # Очередь на обработку
-    PARSED = "PARSED"                      # Данные распарсены
-    VALIDATED = "VALIDATED"                # Валидировано
-    AUDITED = "AUDITED"                    # Аудит завершён
-    STAGING = "STAGING"                    # Промежуточная стадия
-    CURATED = "CURATED"                    # Курирование данных
-    AUDIT_IN_PROGRESS = "AUDIT_IN_PROGRESS"  # Аудит выполняется
-    AUDIT_COMPLETED = "AUDIT_COMPLETED"      # Аудит завершён
-    HITL_REVIEW = "HITL_REVIEW"            # Ручная проверка
-
-    # Active statuses used by текущий API
-    UPLOADED = "UPLOADED"      # Файлы загружены
-    PROCESSING = "PROCESSING"  # Обработка в процессе
-    COMPLETED = "COMPLETED"    # Успешно завершено
-    FAILED = "FAILED"          # Ошибка при обработке
+    UPLOADED = "uploaded"      # Files uploaded, processing not started
+    PROCESSING = "processing"  # Parsing/auditing in progress
+    COMPLETED = "completed"    # Successfully completed
+    FAILED = "failed"          # Error occurred
 
     @classmethod
-    def is_active_status(cls, status: Union[str, 'ProjectStatus']) -> bool:
-        """Проверка что статус из активного множества"""
-        active = {cls.UPLOADED, cls.PROCESSING, cls.COMPLETED, cls.FAILED}
-        if isinstance(status, str):
-            try:
-                status = cls(status)
-            except ValueError:
-                return False
-        return status in active
+    def is_active_status(cls, status: Union[str, "ProjectStatus"]) -> bool:
+        """Return True if *status* is a valid lifecycle status."""
+        try:
+            return cls(status) in {
+                cls.UPLOADED,
+                cls.PROCESSING,
+                cls.COMPLETED,
+                cls.FAILED,
+            }
+        except ValueError:
+            return False
 
 
 
@@ -259,6 +247,48 @@ class ProjectStatusResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class APIResponse(BaseModel):
+    """Unified API response envelope used by all endpoints."""
+
+    status: str = Field(..., description="success|error")
+    data: Optional[Any] = Field(
+        None,
+        description="Primary payload for the response",
+    )
+    warning: Optional[str] = Field(
+        None,
+        description="Optional warning message for non-critical issues",
+    )
+    error: Optional[str] = Field(
+        None,
+        description="Human readable error description",
+    )
+    code: Optional[str] = Field(
+        None,
+        description="Machine readable error code",
+    )
+    meta: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Supplementary metadata (project id, timestamps, etc.)",
+    )
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "status": "success",
+                "data": {"items": []},
+                "warning": None,
+                "error": None,
+                "code": None,
+                "meta": {
+                    "project_id": "proj_123",
+                    "timestamp": "2025-10-24T10:00:00Z",
+                    "source": "artifact",
+                },
+            }
+        }
+
+
 class AuditReport(BaseModel):
     """Complete audit report for a project"""
     project_id: str
@@ -312,16 +342,8 @@ def db_project_to_response(db_project: Project) -> ProjectResponse:
     """
     # Calculate progress based on status
     progress_map = {
-        ProjectStatus.PENDING: 5,
         ProjectStatus.UPLOADED: 10,
-        ProjectStatus.PROCESSING: 30,
-        ProjectStatus.PARSED: 50,
-        ProjectStatus.AUDITED: 90,
-        ProjectStatus.STAGING: 60,
-        ProjectStatus.CURATED: 70,
-        ProjectStatus.AUDIT_IN_PROGRESS: 85,
-        ProjectStatus.AUDIT_COMPLETED: 95,
-        ProjectStatus.HITL_REVIEW: 98,
+        ProjectStatus.PROCESSING: 60,
         ProjectStatus.COMPLETED: 100,
         ProjectStatus.FAILED: 0,
     }
