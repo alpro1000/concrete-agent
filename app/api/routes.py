@@ -128,29 +128,60 @@ def _normalize_file_list(files: Any) -> List[UploadFile]:
     return result
 
 
+def _sanitize_filename(filename: str) -> str:
+    """Ensure uploaded filename cannot escape storage directories."""
+    if not filename:
+        raise HTTPException(400, "Filename is required")
+
+    safe_name = Path(filename).name
+    if safe_name != filename:
+        logger.warning("Rejected unsafe filename '%s'", filename)
+        raise HTTPException(400, "Invalid filename")
+
+    if safe_name in {"", ".", ".."}:
+        logger.warning("Rejected empty or dot filename '%s'", filename)
+        raise HTTPException(400, "Invalid filename")
+
+    return safe_name
+
+
 async def _save_file_streaming(
     file: UploadFile,
-    save_path: Path
+    target_dir: Path,
+    safe_filename: str
 ) -> FileMetadata:
-    """Save uploaded file with streaming"""
-    save_path.parent.mkdir(parents=True, exist_ok=True)
-    
+    """Save uploaded file with streaming ensuring path safety."""
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    resolved_dir = target_dir.resolve()
+    save_path = (resolved_dir / safe_filename).resolve()
+
+    try:
+        save_path.relative_to(resolved_dir)
+    except ValueError:
+        logger.warning(
+            "Rejected path traversal attempt for '%s' -> %s",
+            safe_filename,
+            save_path,
+        )
+        raise HTTPException(400, "Invalid filename")
+
     file_size = 0
     chunk_size = 1024 * 1024  # 1MB chunks
-    
+
     async with aiofiles.open(save_path, 'wb') as f:
         while chunk := await file.read(chunk_size):
             file_size += len(chunk)
             if file_size > MAX_FILE_SIZE:
-                save_path.unlink(missing_ok=True)
-                raise HTTPException(400, f"File {file.filename} exceeds 50MB limit")
+                Path(save_path).unlink(missing_ok=True)
+                raise HTTPException(400, f"File {safe_filename} exceeds 50MB limit")
             await f.write(chunk)
-    
+
     return FileMetadata(
-        filename=file.filename,
+        filename=safe_filename,
         size=file_size,
         uploaded_at=datetime.now().isoformat(),
-        file_type=Path(file.filename).suffix[1:]
+        file_type=Path(safe_filename).suffix[1:]
     )
 
 
@@ -352,16 +383,24 @@ async def upload_project(
 
         # Save files
         vykaz_vymer_meta = None
+        vykaz_vymer_name: Optional[str] = None
         if vykaz_vymer:
             vykaz_dir = project_dir / "vykaz_vymer"
-            vykaz_path = vykaz_dir / vykaz_vymer.filename
-
-            vykaz_vymer_meta = await _save_file_streaming(vykaz_vymer, vykaz_path)
+            vykaz_vymer_name = _sanitize_filename(vykaz_vymer.filename)
+            vykaz_vymer_meta = await _save_file_streaming(
+                vykaz_vymer,
+                vykaz_dir,
+                vykaz_vymer_name,
+            )
+            vykaz_path = vykaz_dir / vykaz_vymer_name
             logger.info(
-                f"✅ Validace OK: {vykaz_vymer.filename} "
+                f"✅ Validace OK: {vykaz_vymer_name} "
                 f"({vykaz_vymer_meta.size / 1024:.1f} KB)"
             )
-            logger.info(f"💾 Uloženo: {vykaz_vymer.filename} ({vykaz_vymer_meta.size / 1024:.1f} KB)")
+            logger.info(
+                f"💾 Uloženo: {vykaz_vymer_name} "
+                f"({vykaz_vymer_meta.size / 1024:.1f} KB)"
+            )
 
             safe_meta = create_safe_file_metadata(
                 file_path=vykaz_path,
@@ -373,12 +412,20 @@ async def upload_project(
             file_locations[safe_meta["file_id"]] = str(vykaz_path)
 
         rozpocet_meta = None
+        rozpocet_name: Optional[str] = None
         if rozpocet:
             rozpocet_dir = project_dir / "rozpocet"
-            rozpocet_path = rozpocet_dir / rozpocet.filename
-
-            rozpocet_meta = await _save_file_streaming(rozpocet, rozpocet_path)
-            logger.info(f"💾 Uloženo: {rozpocet.filename} ({rozpocet_meta.size / 1024:.1f} KB)")
+            rozpocet_name = _sanitize_filename(rozpocet.filename)
+            rozpocet_meta = await _save_file_streaming(
+                rozpocet,
+                rozpocet_dir,
+                rozpocet_name,
+            )
+            rozpocet_path = rozpocet_dir / rozpocet_name
+            logger.info(
+                f"💾 Uloženo: {rozpocet_name} "
+                f"({rozpocet_meta.size / 1024:.1f} KB)"
+            )
 
             safe_meta = create_safe_file_metadata(
                 file_path=rozpocet_path,
@@ -391,10 +438,16 @@ async def upload_project(
 
         # Save vykresy
         vykresy_dir = project_dir / "vykresy"
+        vykresy_names: List[str] = []
         for vykres in vykresy_files:
-            vykres_path = vykresy_dir / vykres.filename
-            vykres_meta = await _save_file_streaming(vykres, vykres_path)
-            logger.info(f"💾 Uloženo: {vykres.filename}")
+            vykres_name = _sanitize_filename(vykres.filename)
+            vykres_meta = await _save_file_streaming(
+                vykres,
+                vykresy_dir,
+                vykres_name,
+            )
+            vykres_path = vykresy_dir / vykres_name
+            logger.info(f"💾 Uloženo: {vykres_name}")
 
             safe_meta = create_safe_file_metadata(
                 file_path=vykres_path,
@@ -404,13 +457,20 @@ async def upload_project(
             )
             safe_files.append(safe_meta)
             file_locations[safe_meta["file_id"]] = str(vykres_path)
+            vykresy_names.append(vykres_name)
 
         # Save dokumentace
         dokumentace_dir = project_dir / "dokumentace"
+        dokumentace_names: List[str] = []
         for doc in dokumentace_files:
-            doc_path = dokumentace_dir / doc.filename
-            doc_meta = await _save_file_streaming(doc, doc_path)
-            logger.info(f"💾 Uloženo: {doc.filename}")
+            doc_name = _sanitize_filename(doc.filename)
+            doc_meta = await _save_file_streaming(
+                doc,
+                dokumentace_dir,
+                doc_name,
+            )
+            doc_path = dokumentace_dir / doc_name
+            logger.info(f"💾 Uloženo: {doc_name}")
 
             safe_meta = create_safe_file_metadata(
                 file_path=doc_path,
@@ -420,13 +480,20 @@ async def upload_project(
             )
             safe_files.append(safe_meta)
             file_locations[safe_meta["file_id"]] = str(doc_path)
+            dokumentace_names.append(doc_name)
 
         # Save zmeny
         zmeny_dir = project_dir / "zmeny"
+        zmeny_names: List[str] = []
         for zmena in zmeny_files:
-            zmena_path = zmeny_dir / zmena.filename
-            zmena_meta = await _save_file_streaming(zmena, zmena_path)
-            logger.info(f"💾 Uloženo: {zmena.filename}")
+            zmena_name = _sanitize_filename(zmena.filename)
+            zmena_meta = await _save_file_streaming(
+                zmena,
+                zmeny_dir,
+                zmena_name,
+            )
+            zmena_path = zmeny_dir / zmena_name
+            logger.info(f"💾 Uloženo: {zmena_name}")
 
             safe_meta = create_safe_file_metadata(
                 file_path=zmena_path,
@@ -436,6 +503,7 @@ async def upload_project(
             )
             safe_files.append(safe_meta)
             file_locations[safe_meta["file_id"]] = str(zmena_path)
+            zmeny_names.append(zmena_name)
         
         # Store project metadata
         project_store[project_id] = {
@@ -466,9 +534,9 @@ async def upload_project(
             "files": {
                 "vykaz_vymer": vykaz_vymer_meta.model_dump() if vykaz_vymer_meta else None,
                 "rozpocet": rozpocet_meta.model_dump() if rozpocet_meta else None,
-                "vykresy": [f.filename for f in vykresy_files],
-                "dokumentace": [f.filename for f in dokumentace_files],
-                "zmeny": [f.filename for f in zmeny_files]
+                "vykresy": vykresy_names,
+                "dokumentace": dokumentace_names,
+                "zmeny": zmeny_names
             },
             "project_dir": str(project_dir),
             "files_metadata": safe_files,
