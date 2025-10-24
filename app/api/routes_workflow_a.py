@@ -47,6 +47,17 @@ class MaterialsRequest(BaseModel):
     action: str = Field(default="materials", description="Action type")
 
 
+class EnrichPositionRequest(BaseModel):
+    """Request for enrichment of a position."""
+
+    project_id: str = Field(..., description="Project ID")
+    position_id: str = Field(..., description="Position ID")
+    include_claude_analysis: bool = Field(
+        default=False,
+        description="Enable Claude analysis",
+    )
+
+
 class PositionsRequest(BaseModel):
     """Request for listing positions."""
     project_id: str = Field(..., description="Project ID")
@@ -561,6 +572,84 @@ async def generate_materials(request: MaterialsRequest) -> APIResponse:
             "source": source,
         },
     )
+
+
+@router.post("/enrich", response_model=APIResponse)
+async def enrich_position(request: EnrichPositionRequest) -> APIResponse:
+    """
+    Enrich a position with full technical information.
+
+    Обогащение добавляет:
+    - ✅ Материалы и характеристики
+    - ✅ Применимые нормы (ČSN, TKP)
+    - ✅ Поставщиков и ориентировочные цены
+    - ✅ Трудозатраты (labor hours, workers)
+    - ✅ Необходимое оборудование
+    - ✅ Claude анализ (опционально)
+
+    **Request Body:**
+    ```json
+    {
+        "project_id": "proj_abc123",
+        "position_id": "pos_001",
+        "include_claude_analysis": true
+    }
+    ```
+    """
+
+    logger.info("🧬 Enrich request: %s:%s", request.project_id, request.position_id)
+
+    project = _validate_project_exists(request.project_id)
+
+    audit_payload = _load_json(ArtifactPaths.audit_results(request.project_id))
+    if audit_payload is None:
+        return APIResponse(
+            status="pending",
+            data=None,
+            warning="Audit results not ready",
+            meta={
+                "project_id": request.project_id,
+                "position_id": request.position_id,
+            },
+        )
+
+    position = _extract_position(audit_payload, request.position_id)
+    if position is None:
+        raise HTTPException(404, f"Position {request.position_id} not found")
+
+    try:
+        from app.services.enrichment_service import PositionEnricher
+
+        enricher = PositionEnricher()
+        enriched = await enricher.enrich_position(
+            position,
+            request.project_id,
+            enable_claude=request.include_claude_analysis,
+        )
+
+        enriched_path = ArtifactPaths.enriched_position(
+            request.project_id,
+            request.position_id,
+        )
+        _dump_json(enriched_path, enriched)
+
+        logger.info("✅ Position enriched: %s", request.position_id)
+
+        return APIResponse(
+            status="success",
+            data={"enriched_position": enriched},
+            meta={
+                "project_id": request.project_id,
+                "project_name": project.get("project_name"),
+                "position_id": request.position_id,
+                "confidence": enriched.get("enrichment", {}).get("confidence"),
+                "warnings": enriched.get("enrichment", {}).get("warnings"),
+            },
+        )
+
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.error("Enrichment failed: %s", exc, exc_info=True)
+        raise HTTPException(500, f"Enrichment failed: {str(exc)}")
 
 
 # ============================================================================
