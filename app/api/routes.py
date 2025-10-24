@@ -344,6 +344,15 @@ async def upload_project(
         workflow = workflow.upper()
         if workflow not in ['A', 'B']:
             raise HTTPException(400, "workflow must be 'A' or 'B'")
+
+        if workflow == 'B' and not settings.ENABLE_WORKFLOW_B:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Workflow B is currently disabled. Please contact the system "
+                    "administrator to enable it or try Workflow A."
+                ),
+            )
         
         # Normalize files
         vykaz_vymer = _normalize_optional_file(vykaz_vymer)

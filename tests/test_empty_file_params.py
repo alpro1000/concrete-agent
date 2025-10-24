@@ -8,6 +8,7 @@ from io import BytesIO
 
 from app.main import app
 from app.api.routes import project_store
+from app.core.config import settings
 
 
 @pytest.fixture
@@ -22,6 +23,15 @@ def clear_project_store():
     project_store.clear()
     yield
     project_store.clear()
+
+
+@pytest.fixture
+def enable_workflow_b(monkeypatch):
+    """Temporarily enable Workflow B"""
+    original = settings.ENABLE_WORKFLOW_B
+    monkeypatch.setattr(settings, "ENABLE_WORKFLOW_B", True)
+    yield
+    monkeypatch.setattr(settings, "ENABLE_WORKFLOW_B", original)
 
 
 class TestEmptyFileParameters:
@@ -100,10 +110,10 @@ class TestEmptyFileParameters:
         assert "project_id" in result
         assert result["status"] in ["uploaded", "processing"]
     
-    def test_workflow_b_with_empty_optional_files(self, client):
+    def test_workflow_b_with_empty_optional_files(self, client, enable_workflow_b):
         """Test Workflow B with empty optional file parameters"""
         drawing_content = b"PDF content for testing"
-        
+
         response = client.post(
             "/api/upload",
             data={
@@ -118,9 +128,35 @@ class TestEmptyFileParameters:
                 "vykresy": ("drawing.pdf", BytesIO(drawing_content), "application/pdf"),
             }
         )
-        
+
         assert response.status_code != 422, f"Validation error: {response.json()}"
         assert response.status_code == 200, f"Upload failed: {response.json()}"
+
+    def test_workflow_b_rejected_when_disabled(self, client, monkeypatch):
+        """Workflow B uploads should be rejected when feature is disabled"""
+        monkeypatch.setattr(settings, "ENABLE_WORKFLOW_B", False)
+
+        drawing_content = b"PDF content for testing"
+
+        response = client.post(
+            "/api/upload",
+            data={
+                "project_name": "Test Project",
+                "workflow": "B",
+                "auto_start_audit": "false",
+            },
+            files={
+                "vykresy": ("drawing.pdf", BytesIO(drawing_content), "application/pdf"),
+            }
+        )
+
+        assert response.status_code == 503
+        assert response.json() == {
+            "detail": (
+                "Workflow B is currently disabled. Please contact the system "
+                "administrator to enable it or try Workflow A."
+            )
+        }
 
 
 class TestNewFileExtensions:
