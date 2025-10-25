@@ -109,9 +109,17 @@ async def shutdown_event():
     logger.info("🛑 Czech Building Audit System shutting down...")
 
 
-# REMOVED: Duplicate root endpoint
-# The root endpoint is now handled by routes.py
-# This prevents the "Duplicate Operation ID" warning
+# Basic health endpoints for service discovery tooling
+@app.get("/")
+@app.head("/")
+async def root():
+    return {"status": "ok", "docs": "/docs"}
+
+
+@app.get("/health")
+@app.head("/health")
+async def health_check():
+    return {"status": "healthy"}
 
 
 if __name__ == "__main__":
