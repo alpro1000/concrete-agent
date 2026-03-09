@@ -1,37 +1,22 @@
 """
-Specialized parsers for construction documents
-БЕЗ CLAUDE FALLBACK - только локальные парсеры
+Parsers package.
 
-Экспорты:
-- SmartParser - умный выбор парсера (рекомендуется!)
-- ExcelParser - Excel парсер
-- PDFParser - PDF парсер
-- KROSParser - KROS XML парсер
-- MemoryEfficientExcelParser - streaming Excel
-- MemoryEfficientPDFParser - streaming PDF
-- MemoryEfficientXMLParser - streaming XML
+Главный класс для использования в routes и сервисах:
+    from app.parsers import SmartPdfParser
+
+Прямой доступ к отдельным парсерам (для тестов):
+    from app.parsers import PDFParser, PdfVisionParser, MinerUParser
 """
-from app.parsers.smart_parser import SmartParser
-from app.parsers.excel_parser import ExcelParser
 from app.parsers.pdf_parser import PDFParser
-from app.parsers.kros_parser import KROSParser
-from app.parsers.memory_efficient import (
-    MemoryEfficientExcelParser,
-    MemoryEfficientPDFParser,
-    MemoryEfficientXMLParser
-)
+from app.parsers.pdf_vision_parser import PdfVisionParser
+from app.parsers.mineru_parser import MinerUParser
+from app.parsers.smart_pdf_parser import SmartPdfParser
+from app.parsers.excel_parser import ExcelParser
 
 __all__ = [
-    # Рекомендуемый - умный выбор парсера
-    'SmartParser',
-    
-    # Стандартные парсеры
-    'ExcelParser',
-    'PDFParser',
-    'KROSParser',
-    
-    # Memory-efficient парсеры (для больших файлов)
-    'MemoryEfficientExcelParser',
-    'MemoryEfficientPDFParser',
-    'MemoryEfficientXMLParser',
+    "SmartPdfParser",   # ← использовать в продакшне
+    "PDFParser",         # pdfplumber
+    "PdfVisionParser",   # Claude Vision
+    "MinerUParser",      # MinerU 2.x (тяжёлый)
+    "ExcelParser",
 ]
