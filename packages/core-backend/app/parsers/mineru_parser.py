@@ -1,146 +1,272 @@
 """
-MinerU Parser — тяжёлый парсер для сложных PDF (MinerU 2.x).
+MinerU PDF parser — production-ready version.
 
-Активируется ТОЛЬКО если:
-  1. ENABLE_MINERU=true в .env
-  2. Переменная USE_MINERU=true в запросе (явный выбор)
-
-На Render Free (512MB) — ОТКЛЮЧЁН по умолчанию.
-Для включения нужен сервис с 2GB+ RAM.
-
-Если mineru не установлен — логирует предупреждение и возвращает None,
-чтобы SmartPdfParser мог переключиться на fallback.
+Fixes:
+- Windows diacritics bug: slugify input filename before passing to MinerU
+- UTF-8 read: explicit encoding when reading output .md file
+- Async execution: subprocess via asyncio to avoid blocking the event loop
 """
-import os
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import re
+import shutil
+import tempfile
+import unicodedata
 from pathlib import Path
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Optional
 
-from loguru import logger
+logger = logging.getLogger(__name__)
 
-# Флаг: загружен ли mineru в текущем окружении
-_MINERU_AVAILABLE: bool = False
-_MINERU_IMPORT_ERROR: str = ""
 
-try:
-    if os.getenv("ENABLE_MINERU", "false").lower() == "true":
-        from mineru.cli.common import do_parse  # type: ignore
-        _MINERU_AVAILABLE = True
-        logger.info("MinerU 2.x loaded successfully")
-    else:
-        logger.info("MinerU disabled (ENABLE_MINERU != true), skipping import")
-except ImportError as e:
-    _MINERU_IMPORT_ERROR = str(e)
-    logger.warning(
-        f"MinerU not available: {e}. "
-        "Install with: pip install mineru[pipeline]"
-    )
-except Exception as e:
-    _MINERU_IMPORT_ERROR = str(e)
-    logger.error(f"MinerU import failed unexpectedly: {e}")
+# ---------------------------------------------------------------------------
+# Value Objects
+# ---------------------------------------------------------------------------
 
+@dataclass(frozen=True)
+class MinerUParseResult:
+    """Immutable result of a MinerU parse operation."""
+    source_path: Path
+    markdown_content: str
+    output_dir: Path
+    page_count: int
+    table_count: int = 0
+    errors: list[str] = field(default_factory=list)
+
+    @property
+    def is_successful(self) -> bool:
+        return bool(self.markdown_content) and not self.errors
+
+
+@dataclass(frozen=True)
+class MinerUParseError:
+    """Structured error from MinerU parser."""
+    source_path: Path
+    error_code: str
+    message: str
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _slugify_filename(original_name: str) -> str:
+    """
+    Convert a filename with diacritics to ASCII-safe slug.
+
+    Example:
+        'IV MM-Ceník2026.pdf'  →  'IV_MM-Cenik2026.pdf'
+    """
+    stem = Path(original_name).stem
+    suffix = Path(original_name).suffix
+
+    # Normalize Unicode → decompose diacritics → drop combining marks
+    normalized = unicodedata.normalize("NFKD", stem)
+    ascii_stem = normalized.encode("ascii", "ignore").decode("ascii")
+
+    # Replace spaces and unsafe chars with underscores
+    safe_stem = re.sub(r"[^\w\-]", "_", ascii_stem)
+    safe_stem = re.sub(r"_+", "_", safe_stem).strip("_")
+
+    return f"{safe_stem}{suffix}"
+
+
+def _count_tables_in_markdown(markdown_content: str) -> int:
+    return markdown_content.count("<table>")
+
+
+# ---------------------------------------------------------------------------
+# Parser
+# ---------------------------------------------------------------------------
 
 class MinerUParser:
     """
-    Обёртка над MinerU 2.x pipeline.
+    Async wrapper around the MinerU CLI.
 
-    Условие использования:
-    - ENABLE_MINERU=true в .env
-    - Сервис с 2GB+ RAM
-    - Установлен пакет: pip install mineru[pipeline]
+    Responsibilities (SRP):
+    - Copy input PDF to a temp dir with ASCII-safe filename
+    - Run `mineru` CLI as async subprocess
+    - Read result .md with explicit UTF-8 encoding
+    - Return structured MinerUParseResult
 
-    Возвращает None если MinerU недоступен — SmartPdfParser
-    автоматически переключится на PdfVisionParser.
+    Does NOT handle: indexing, storage, LLM extraction (separate services).
     """
 
-    def __init__(self, output_dir: str = "/tmp/mineru_output"):
-        self._output_dir = Path(output_dir)
-        self._output_dir.mkdir(parents=True, exist_ok=True)
-
-    @property
-    def is_available(self) -> bool:
-        return _MINERU_AVAILABLE
-
-    def parse(
+    def __init__(
         self,
-        file_path: Path,
-        method: str = "auto",
-    ) -> dict[str, Any] | None:
+        backend: str = "pipeline",
+        device: str = "cpu",
+        mineru_executable: str = "mineru",
+    ) -> None:
+        self._backend = backend
+        self._device = device
+        self._mineru_executable = mineru_executable
+
+    async def parse_document(
+        self,
+        source_pdf_path: Path,
+        output_base_dir: Path,
+    ) -> MinerUParseResult | MinerUParseError:
         """
-        Парсит PDF через MinerU 2.x.
+        Parse a PDF file using MinerU CLI asynchronously.
 
         Args:
-            file_path: Путь к PDF
-            method:    'auto' | 'ocr' | 'txt'
-                       auto — MinerU сам определяет
-                       ocr  — принудительный OCR (для сканов)
-                       txt  — только текстовый слой (быстро)
+            source_pdf_path: Original PDF path (may contain diacritics).
+            output_base_dir: Directory where MinerU writes its output.
 
         Returns:
-            dict с ключами positions/markdown/tables
-            или None если MinerU недоступен
+            MinerUParseResult on success, MinerUParseError on failure.
         """
-        if not _MINERU_AVAILABLE:
-            logger.warning(
-                f"MinerU unavailable, cannot parse {file_path.name}. "
-                f"Error: {_MINERU_IMPORT_ERROR}"
+        if not source_pdf_path.exists():
+            return MinerUParseError(
+                source_path=source_pdf_path,
+                error_code="FILE_NOT_FOUND",
+                message=f"Source PDF not found: {source_pdf_path}",
             )
-            return None
 
-        logger.info(f"MinerU parsing: {file_path.name}, method={method}")
+        with tempfile.TemporaryDirectory(prefix="mineru_input_") as tmp_dir:
+            safe_filename = _slugify_filename(source_pdf_path.name)
+            safe_input_path = Path(tmp_dir) / safe_filename
 
-        output_path = self._output_dir / file_path.stem
-        output_path.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_pdf_path, safe_input_path)
+            logger.info(
+                "Copied '%s' → '%s' (slugified)",
+                source_pdf_path.name,
+                safe_filename,
+            )
+
+            output_dir = output_base_dir / safe_input_path.stem / "auto"
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            parse_result = await self._run_mineru_subprocess(
+                input_path=safe_input_path,
+                output_dir=output_base_dir,
+            )
+
+            if isinstance(parse_result, MinerUParseError):
+                return parse_result
+
+            return self._read_mineru_output(
+                source_path=source_pdf_path,
+                output_dir=output_dir,
+                stem=safe_input_path.stem,
+            )
+
+    async def _run_mineru_subprocess(
+        self,
+        input_path: Path,
+        output_dir: Path,
+    ) -> None | MinerUParseError:
+        """Run MinerU CLI as async subprocess, stream stderr to logger."""
+        cmd = [
+            self._mineru_executable,
+            "-p", str(input_path),
+            "-o", str(output_dir),
+            "-b", self._backend,
+            "-d", self._device,
+        ]
+
+        logger.info("Running MinerU: %s", " ".join(cmd))
 
         try:
-            # MinerU 2.x API
-            from mineru.cli.common import do_parse  # type: ignore
-
-            do_parse(
-                source=str(file_path),
-                output_dir=str(output_path),
-                method=method,
-                backend="pipeline",   # pipeline = без VLM сервера
-                lang="cs",            # чешский по умолчанию
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
+            stdout, stderr = await process.communicate()
 
-            # Читаем результаты из output директории
-            md_files = list(output_path.glob("**/*.md"))
-            json_files = list(output_path.glob("**/*.json"))
-
-            markdown_content = ""
-            if md_files:
-                markdown_content = md_files[0].read_text(encoding="utf-8")
-
-            tables = []
-            if json_files:
-                import json
-                raw_json = json.loads(json_files[0].read_text(encoding="utf-8"))
-                tables = raw_json.get("tables", [])
+            if process.returncode != 0:
+                error_message = stderr.decode("utf-8", errors="replace")
+                logger.error(
+                    "MinerU failed (exit %d): %s",
+                    process.returncode,
+                    error_message,
+                )
+                return MinerUParseError(
+                    source_path=input_path,
+                    error_code="MINERU_PROCESS_FAILED",
+                    message=error_message[:500],
+                )
 
             logger.info(
-                f"MinerU done: {file_path.name}, "
-                f"md_chars={len(markdown_content)}, tables={len(tables)}"
-            )
-
-            return {
-                "document_info": {
-                    "filename": file_path.name,
-                    "format": "pdf_mineru",
-                    "method_used": method,
-                },
-                "positions": [],   # MinerU даёт markdown, не positions напрямую
-                "markdown": markdown_content,
-                "tables": tables,
-                "diagnostics": {
-                    "source": "mineru",
-                    "method": method,
-                    "md_chars": len(markdown_content),
-                    "tables_found": len(tables),
-                },
-            }
-
-        except Exception as e:
-            logger.error(
-                f"MinerU parse error for {file_path.name}: {e}", exc_info=True
+                "MinerU completed successfully for '%s'",
+                input_path.name,
             )
             return None
+
+        except FileNotFoundError:
+            return MinerUParseError(
+                source_path=input_path,
+                error_code="MINERU_NOT_INSTALLED",
+                message=(
+                    f"'{self._mineru_executable}' not found in PATH. "
+                    "Install with: pip install mineru"
+                ),
+            )
+        except Exception as exc:
+            logger.error(
+                "Unexpected error running MinerU for '%s': %s",
+                input_path.name,
+                exc,
+                exc_info=True,
+            )
+            return MinerUParseError(
+                source_path=input_path,
+                error_code="UNEXPECTED_ERROR",
+                message=str(exc),
+            )
+
+    def _read_mineru_output(
+        self,
+        source_path: Path,
+        output_dir: Path,
+        stem: str,
+    ) -> MinerUParseResult | MinerUParseError:
+        """
+        Read MinerU .md output with explicit UTF-8 encoding.
+
+        MinerU always writes UTF-8. PowerShell default (cp1252) causes
+        mojibake — we must specify encoding explicitly here.
+        """
+        md_path = output_dir / f"{stem}.md"
+
+        if not md_path.exists():
+            logger.error("Expected MinerU output not found: %s", md_path)
+            return MinerUParseError(
+                source_path=source_path,
+                error_code="OUTPUT_NOT_FOUND",
+                message=f"MinerU output .md not found at: {md_path}",
+            )
+
+        try:
+            markdown_content = md_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            logger.warning(
+                "UTF-8 decode failed for '%s', retrying with errors='replace': %s",
+                md_path,
+                exc,
+            )
+            markdown_content = md_path.read_text(encoding="utf-8", errors="replace")
+
+        table_count = _count_tables_in_markdown(markdown_content)
+        page_count = markdown_content.count("\n---\n") + 1
+
+        logger.info(
+            "Parsed '%s': %d chars, %d tables, ~%d pages",
+            source_path.name,
+            len(markdown_content),
+            table_count,
+            page_count,
+        )
+
+        return MinerUParseResult(
+            source_path=source_path,
+            markdown_content=markdown_content,
+            output_dir=output_dir,
+            page_count=page_count,
+            table_count=table_count,
+        )
